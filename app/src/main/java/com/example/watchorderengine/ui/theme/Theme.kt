@@ -1,64 +1,193 @@
 package com.example.watchorderengine.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
-private val DarkColorScheme = darkColorScheme(
-    primary              = WOEColors.Watching,
-    onPrimary            = Color.White,
-    background           = WOEColors.OledBlack,
-    onBackground         = WOEColors.TextPrimaryDark,
-    surface              = WOEColors.SurfaceCard,
-    onSurface            = WOEColors.TextPrimaryDark,
-    surfaceVariant       = WOEColors.SurfaceElevated,
-    onSurfaceVariant     = WOEColors.TextSecondaryDark,
-    error                = WOEColors.Dropped,
-    onError              = Color.White,
+enum class AppThemeMode {
+    LIGHT, DARK, COMIC, MANGA, RETRO, BOLLYWOOD, NARUTO
+}
+
+data class AppThemeConfig(
+    val primary: Color,
+    val secondary: Color,
+    val accent: Color,
+    val background: Color,
+    val surface: Color,
+    val surfaceHover: Color,
+    val textPrimary: Color,
+    val textSecondary: Color,
+    val border: Color,
+    val statusCanon: Color,
+    val statusFiller: Color,
+    val statusMixed: Color,
+    val appRadius: Dp,
+    val isComic: Boolean = false,
+    val isManga: Boolean = false,
+    val isRetro: Boolean = false
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary              = WOEColors.Watching,
-    onPrimary            = Color.White,
-    background           = WOEColors.LightBackground,
-    onBackground         = WOEColors.TextPrimaryLight,
-    surface              = WOEColors.LightSurfaceCard,
-    onSurface            = WOEColors.TextPrimaryLight,
-    surfaceVariant       = WOEColors.LightSurface,
-    onSurfaceVariant     = WOEColors.TextSecondaryLight,
-    outline              = WOEColors.LightBorder,
-    error                = WOEColors.Dropped,
-    onError              = Color.White,
+val LocalAppTheme = staticCompositionLocalOf<AppThemeConfig> {
+    error("No AppThemeConfig provided")
+}
+
+private val LightThemeConfig = AppThemeConfig(
+    primary = WOEColors.LightPrimary,
+    secondary = WOEColors.LightSecondary,
+    accent = WOEColors.LightAccent,
+    background = WOEColors.LightBackground,
+    surface = WOEColors.LightSurface,
+    surfaceHover = WOEColors.LightSurfaceHover,
+    textPrimary = WOEColors.LightTextPrimary,
+    textSecondary = WOEColors.LightTextSecondary,
+    border = WOEColors.LightBorder,
+    statusCanon = WOEColors.LightStatusCanon,
+    statusFiller = WOEColors.LightStatusFiller,
+    statusMixed = WOEColors.LightStatusMixed,
+    appRadius = 16.dp
 )
 
-val WOETypography = Typography(
-    displayMedium = TextStyle(fontWeight = FontWeight.Black, fontSize = 45.sp),
-    headlineMedium = TextStyle(fontWeight = FontWeight.Black, fontSize = 24.sp),
-    titleLarge    = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 18.sp),
-    titleMedium   = TextStyle(fontWeight = FontWeight.Medium, fontSize = 16.sp),
-    titleSmall    = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
-    bodyLarge     = TextStyle(fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp),
-    bodyMedium    = TextStyle(fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall     = TextStyle(fontWeight = FontWeight.Normal, fontSize = 12.sp),
-    labelLarge    = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
-    labelMedium   = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp),
-    labelSmall    = TextStyle(fontWeight = FontWeight.Medium, fontSize = 11.sp),
+private val DarkThemeConfig = AppThemeConfig(
+    primary = WOEColors.DarkPrimary,
+    secondary = WOEColors.DarkSecondary,
+    accent = WOEColors.DarkAccent,
+    background = WOEColors.DarkBackground,
+    surface = WOEColors.DarkSurface,
+    surfaceHover = WOEColors.DarkSurfaceHover,
+    textPrimary = WOEColors.DarkTextPrimary,
+    textSecondary = WOEColors.DarkTextSecondary,
+    border = WOEColors.DarkBorder,
+    statusCanon = WOEColors.DarkStatusCanon,
+    statusFiller = WOEColors.DarkStatusFiller,
+    statusMixed = WOEColors.DarkStatusMixed,
+    appRadius = 12.dp
+)
+
+private val ComicThemeConfig = AppThemeConfig(
+    primary = WOEColors.ComicPrimary,
+    secondary = WOEColors.ComicSecondary,
+    accent = WOEColors.ComicAccent,
+    background = WOEColors.ComicBackground,
+    surface = WOEColors.ComicSurface,
+    surfaceHover = WOEColors.ComicSurfaceHover,
+    textPrimary = WOEColors.ComicTextPrimary,
+    textSecondary = WOEColors.ComicTextSecondary,
+    border = WOEColors.ComicBorder,
+    statusCanon = WOEColors.ComicStatusCanon,
+    statusFiller = WOEColors.ComicStatusFiller,
+    statusMixed = WOEColors.ComicStatusMixed,
+    appRadius = 0.dp,
+    isComic = true
+)
+
+private val MangaThemeConfig = AppThemeConfig(
+    primary = WOEColors.MangaPrimary,
+    secondary = WOEColors.MangaSecondary,
+    accent = WOEColors.MangaAccent,
+    background = WOEColors.MangaBackground,
+    surface = WOEColors.MangaSurface,
+    surfaceHover = WOEColors.MangaSurfaceHover,
+    textPrimary = WOEColors.MangaTextPrimary,
+    textSecondary = WOEColors.MangaTextSecondary,
+    border = WOEColors.MangaBorder,
+    statusCanon = WOEColors.MangaStatusCanon,
+    statusFiller = WOEColors.MangaStatusFiller,
+    statusMixed = WOEColors.MangaStatusMixed,
+    appRadius = 0.dp,
+    isManga = true
+)
+
+private val RetroThemeConfig = AppThemeConfig(
+    primary = WOEColors.RetroPrimary,
+    secondary = WOEColors.RetroSecondary,
+    accent = WOEColors.RetroAccent,
+    background = WOEColors.RetroBackground,
+    surface = WOEColors.RetroSurface,
+    surfaceHover = WOEColors.RetroSurfaceHover,
+    textPrimary = WOEColors.RetroTextPrimary,
+    textSecondary = WOEColors.RetroTextSecondary,
+    border = WOEColors.RetroBorder,
+    statusCanon = WOEColors.RetroStatusCanon,
+    statusFiller = WOEColors.RetroStatusFiller,
+    statusMixed = WOEColors.RetroStatusMixed,
+    appRadius = 8.dp,
+    isRetro = true
+)
+
+private val BollywoodThemeConfig = AppThemeConfig(
+    primary = WOEColors.BollywoodPrimary,
+    secondary = WOEColors.BollywoodSecondary,
+    accent = WOEColors.BollywoodAccent,
+    background = WOEColors.BollywoodBackground,
+    surface = WOEColors.BollywoodSurface,
+    surfaceHover = WOEColors.BollywoodSurfaceHover,
+    textPrimary = WOEColors.BollywoodTextPrimary,
+    textSecondary = WOEColors.BollywoodTextSecondary,
+    border = WOEColors.BollywoodBorder,
+    statusCanon = WOEColors.BollywoodStatusCanon,
+    statusFiller = WOEColors.BollywoodStatusFiller,
+    statusMixed = WOEColors.BollywoodStatusMixed,
+    appRadius = 24.dp
+)
+
+private val NarutoThemeConfig = AppThemeConfig(
+    primary = WOEColors.NarutoPrimary,
+    secondary = WOEColors.NarutoSecondary,
+    accent = WOEColors.NarutoAccent,
+    background = WOEColors.NarutoBackground,
+    surface = WOEColors.NarutoSurface,
+    surfaceHover = WOEColors.NarutoSurfaceHover,
+    textPrimary = WOEColors.NarutoTextPrimary,
+    textSecondary = WOEColors.NarutoTextSecondary,
+    border = WOEColors.NarutoBorder,
+    statusCanon = WOEColors.NarutoStatusCanon,
+    statusFiller = WOEColors.NarutoStatusFiller,
+    statusMixed = WOEColors.NarutoStatusMixed,
+    appRadius = 12.dp
 )
 
 @Composable
 fun WatchOrderEngineTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    mode: AppThemeMode = AppThemeMode.DARK,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val config = when (mode) {
+        AppThemeMode.LIGHT -> LightThemeConfig
+        AppThemeMode.DARK -> DarkThemeConfig
+        AppThemeMode.COMIC -> ComicThemeConfig
+        AppThemeMode.MANGA -> MangaThemeConfig
+        AppThemeMode.RETRO -> RetroThemeConfig
+        AppThemeMode.BOLLYWOOD -> BollywoodThemeConfig
+        AppThemeMode.NARUTO -> NarutoThemeConfig
+    }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography  = WOETypography,
-        content     = content
-    )
+    val colorScheme = if (mode == AppThemeMode.LIGHT) {
+        lightColorScheme(
+            primary = config.accent,
+            onPrimary = config.primary,
+            background = config.background,
+            onBackground = config.textPrimary,
+            surface = config.surface,
+            onSurface = config.textPrimary
+        )
+    } else {
+        darkColorScheme(
+            primary = config.accent,
+            onPrimary = config.primary,
+            background = config.background,
+            onBackground = config.textPrimary,
+            surface = config.surface,
+            onSurface = config.textPrimary
+        )
+    }
+
+    CompositionLocalProvider(LocalAppTheme provides config) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = WOETypography,
+            content = content
+        )
+    }
 }

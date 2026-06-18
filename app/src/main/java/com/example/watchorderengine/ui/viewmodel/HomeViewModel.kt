@@ -24,6 +24,9 @@ class HomeViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
 
+    private val _trendingList = MutableStateFlow<List<MediaSummary>>(emptyList())
+    val trendingList: StateFlow<List<MediaSummary>> = _trendingList
+
     init {
         refresh()
     }
@@ -34,6 +37,7 @@ class HomeViewModel @Inject constructor(
             try {
                 _watchingList.value = repository.getWatchingList()
                 _plannedList.value = repository.getPlannedList()
+                _trendingList.value = repository.getTrending()
             } finally {
                 _isLoading.value = false
             }

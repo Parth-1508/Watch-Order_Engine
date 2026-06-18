@@ -1,0 +1,189 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-border: var(--border);
+  --color-status-canon: var(--status-canon);
+  --color-status-filler: var(--status-filler);
+  --color-status-mixed: var(--status-mixed);
+}
+
+:root {
+  /* LIGHT MODE (Apple Aesthetic) */
+  --primary: #000000;
+  --secondary: #f3f4f6;
+  --accent: #007aff;
+  --background: #fbfbfd;
+  --surface: #ffffff;
+  --surface-hover: #f1f1f1;
+  --text-primary: #1d1d1f;
+  --text-secondary: #86868b;
+  --border: #e5e5ea;
+  --status-canon: #34c759;
+  --status-filler: #ff3b30;
+  --status-mixed: #ff9500;
+  --app-radius: 16px;
+  background-color: var(--background);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] {
+  /* DARK MODE (Netflix Aesthetic) */
+  --primary: #ffffff;
+  --secondary: #1a1a1a;
+  --accent: #e50914; /* Netflix Red */
+  --background: #000000; /* OLED Black */
+  --surface: rgba(20, 20, 20, 0.7); /* Frosted Glass Base */
+  --surface-hover: rgba(40, 40, 40, 0.9);
+  --text-primary: #ffffff;
+  --text-secondary: #a3a3a3;
+  --border: rgba(255, 255, 255, 0.1);
+  --status-canon: #4ade80;
+  --status-filler: #f87171;
+  --status-mixed: #fbbf24;
+  --app-radius: 12px;
+}
+
+[data-theme='comic'] {
+  /* COMIC-CON MODE */
+  --primary: #1a1a1a;
+  --secondary: #ffffff;
+  --accent: #ff00ff; /* Hot pink */
+  --background: #dbeafe; /* Light blue */
+  --surface: #ffffff;
+  --surface-hover: #eff6ff;
+  --text-primary: #000000;
+  --text-secondary: #1e3a8a;
+  --border: #000000;
+  --status-canon: #00ff00; /* Radioactive Green */
+  --status-filler: #ff4500; /* Orange */
+  --status-mixed: #00ffff; /* Electric Blue */
+  --app-radius: 0px;
+}
+
+[data-theme='manga'] {
+  /* MANGA MODE */
+  --primary: #000000;
+  --secondary: #ffffff;
+  --accent: #000000;
+  --background: #ffffff;
+  --surface: #f3f4f6;
+  --surface-hover: #e5e7eb;
+  --text-primary: #000000;
+  --text-secondary: #4b5563;
+  --border: #000000;
+  --status-canon: #111827;
+  --status-filler: #9ca3af;
+  --status-mixed: #4b5563;
+  --app-radius: 0px;
+}
+
+[data-theme='retro'] {
+  /* RETRO VAPORWAVE MODE */
+  --primary: #ffffff;
+  --secondary: #2d1b4e;
+  --accent: #ff00c8;
+  --background: #120458;
+  --surface: #200f54;
+  --surface-hover: #2a1b63;
+  --text-primary: #00ffcc;
+  --text-secondary: #ff00c8;
+  --border: #ff00c8;
+  --status-canon: #00ffcc;
+  --status-filler: #ff00c8;
+  --status-mixed: #facc15;
+  --app-radius: 8px;
+}
+
+[data-theme='bollywood'] {
+  /* DESI BOLLYWOOD MODE */
+  --primary: #ffffff;
+  --secondary: #fffbeb;
+  --accent: #e11d48;
+  --background: #fff7ed;
+  --surface: #ffedd5;
+  --surface-hover: #fed7aa;
+  --text-primary: #831843;
+  --text-secondary: #be123c;
+  --border: #f59e0b;
+  --status-canon: #16a34a;
+  --status-filler: #dc2626;
+  --status-mixed: #d97706;
+  --app-radius: 24px;
+}
+
+[data-theme='naruto'] {
+  /* NARUTO SPECIAL MODE */
+  --primary: #ffffff;
+  --secondary: #1f2937;
+  --accent: #f97316; /* Orange */
+  --background: #111827;
+  --surface: #1f2937;
+  --surface-hover: #374151;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --border: #f97316;
+  --status-canon: #3b82f6; /* Blue for canon */
+  --status-filler: #ef4444; /* Red for filler */
+  --status-mixed: #eab308; /* Yellow */
+  --app-radius: 12px;
+}
+
+/* Comic-Con special utilities */
+[data-theme='comic'] body {
+  background-image: radial-gradient(black 1px, transparent 1px);
+  background-size: 16px 16px;
+  background-color: var(--background);
+}
+[data-theme='comic'] .theme-border {
+  border: 4px solid var(--border);
+  box-shadow: 4px 4px 0 0 var(--border);
+}
+
+[data-theme='manga'] body {
+  background-image: repeating-linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%, #e5e7eb), repeating-linear-gradient(45deg, #e5e7eb 25%, #ffffff 25%, #ffffff 75%, #e5e7eb 75%, #e5e7eb);
+  background-position: 0 0, 4px 4px;
+  background-size: 8px 8px;
+  background-color: var(--background);
+}
+[data-theme='manga'] .theme-border {
+  border: 2px solid var(--border);
+  box-shadow: -4px 4px 0 0 var(--border);
+}
+
+[data-theme='retro'] body {
+  background: linear-gradient(180deg, #120458 0%, #000000 100%);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] body {
+  background-color: var(--background);
+}
+
+[data-theme='dark'] .glass-panel {
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+}
+
+/* Transition utility for smooth theme switching */
+.theme-transition {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Hide scrollbars for cleaner look on mobile */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

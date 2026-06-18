@@ -21,7 +21,7 @@ import com.example.watchorderengine.viewmodel.TimelineRow
 // ─── Dimension Constants ──────────────────────────────────────────────────────
 
 /** Width of each node card column in the branching layout. */
-private val COLUMN_WIDTH: Dp = 300.dp
+private val COLUMN_WIDTH: Dp = 180.dp
 
 /** Horizontal gap between adjacent columns (for visual breathing room). */
 private val COLUMN_GAP: Dp = 12.dp

@@ -1,7 +1,6 @@
 package com.example.watchorderengine.network
 
-import com.example.watchorderengine.network.model.TmdbMovieResponse
-import com.example.watchorderengine.network.model.TmdbTvResponse
+import com.example.watchorderengine.network.model.TmdbDetailResponse
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
@@ -42,7 +41,7 @@ interface TmdbApiService {
         @Path("movieId")          movieId: Int,
         @Query("language")        language: String = "en-US",
         @Query("append_to_response") appendToResponse: String = TmdbConfig.APPEND_TO_RESPONSE_MOVIE
-    ): Response<TmdbMovieResponse>
+    ): Response<TmdbDetailResponse>
 
     /**
      * Fetches full metadata for a single TV show.
@@ -57,7 +56,27 @@ interface TmdbApiService {
         @Path("tvId")             tvId: Int,
         @Query("language")        language: String = "en-US",
         @Query("append_to_response") appendToResponse: String = TmdbConfig.APPEND_TO_RESPONSE_TV
-    ): Response<TmdbTvResponse>
+    ): Response<TmdbDetailResponse>
+
+    /**
+     * Fetches trending media.
+     */
+    @GET("trending/all/day")
+    suspend fun getTrending(
+        @Query("language") language: String = "en-US",
+        @Query("page") page: Int = 1
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
+
+    /**
+     * Searches for movies and TV shows.
+     */
+    @GET("search/multi")
+    suspend fun searchMulti(
+        @Query("query") query: String,
+        @Query("language") language: String = "en-US",
+        @Query("page") page: Int = 1,
+        @Query("include_adult") includeAdult: Boolean = false
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
 }
 
 // ─── OkHttp Auth Interceptor ──────────────────────────────────────────────────

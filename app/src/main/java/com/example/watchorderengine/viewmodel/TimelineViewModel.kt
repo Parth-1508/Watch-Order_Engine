@@ -255,9 +255,7 @@ class TimelineViewModel @Inject constructor(
         }
 
         // ── STEP 7: Compute connector lines between levels ────────────────────
-        val displayNodeMeta = displayNodes.associate { dn ->
-            dn.node.id to (dn.column to dn.isCompleted)
-        }
+        val displayNodeMeta = displayNodes.associate { it.node.id to (it.column to it.isCompleted) }
         val connections = GraphEngine.computeConnections(
             displayNodeMap = displayNodeMeta,
             edges = filteredEdges,

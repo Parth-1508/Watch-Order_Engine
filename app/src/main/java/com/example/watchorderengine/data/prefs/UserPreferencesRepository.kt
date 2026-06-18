@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.watchorderengine.ui.theme.AppThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -11,7 +12,7 @@ import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_prefs")
 
-enum class ThemeMode { SYSTEM, LIGHT, DARK }
+enum class ThemeMode { SYSTEM, LIGHT, DARK, COMIC, MANGA, RETRO, BOLLYWOOD, NARUTO }
 enum class LayoutStyle { COMFORT, COMPACT }
 
 @Singleton
@@ -24,7 +25,7 @@ class UserPreferencesRepository @Inject constructor(private val context: Context
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { preferences ->
-        ThemeMode.valueOf(preferences[PreferencesKeys.THEME_MODE] ?: ThemeMode.SYSTEM.name)
+        ThemeMode.valueOf(preferences[PreferencesKeys.THEME_MODE] ?: ThemeMode.DARK.name)
     }
 
     val layoutStyle: Flow<LayoutStyle> = context.dataStore.data.map { preferences ->

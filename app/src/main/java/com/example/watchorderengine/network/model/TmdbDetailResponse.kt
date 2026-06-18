@@ -188,6 +188,7 @@ data class TmdbMediaResult(
     @Json(name = "title")        val title: String?,
     @Json(name = "name")         val name: String?,
     @Json(name = "poster_path")  val posterPath: String?,
+    @Json(name = "backdrop_path") val backdropPath: String?,
     @Json(name = "media_type")   val mediaType: String?,
     @Json(name = "vote_average") val voteAverage: Double?,
 )
@@ -265,9 +266,3 @@ data class TmdbMediaDetail(
 }
 
 enum class TmdbMediaType { MOVIE, TV }
-
-@JsonClass(generateAdapter = true)
-data class TmdbMovieResponse(val id: Int) { fun toDomainModel() = TmdbMediaDetail(tmdbId = id, title = "", overview = "", posterUrl = null, backdropUrl = null, releaseDate = "", runtimeMinutes = 0, episodeCount = 0, seasonCount = 0, voteAverage = 0f, voteCount = 0, genres = emptyList(), status = "", tagline = "", imdbId = null, mediaType = TmdbMediaType.MOVIE) }
-
-@JsonClass(generateAdapter = true)
-data class TmdbTvResponse(val id: Int) { fun toDomainModel() = TmdbMediaDetail(tmdbId = id, title = "", overview = "", posterUrl = null, backdropUrl = null, releaseDate = "", runtimeMinutes = 0, episodeCount = 0, seasonCount = 0, voteAverage = 0f, voteCount = 0, genres = emptyList(), status = "", tagline = "", imdbId = null, mediaType = TmdbMediaType.TV) }

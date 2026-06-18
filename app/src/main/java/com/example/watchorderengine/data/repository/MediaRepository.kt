@@ -3,6 +3,8 @@ package com.example.watchorderengine.data.repository
 import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.db.entity.*
 import com.example.watchorderengine.data.model.*
+import com.example.watchorderengine.network.TmdbApiService
+import com.example.watchorderengine.network.TmdbConfig
 import com.google.firebase.firestore.FirebaseFirestore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
@@ -17,7 +19,8 @@ import javax.inject.Singleton
 class MediaRepository @Inject constructor(
     private val db: WatchOrderDatabase,
     private val firestore: FirebaseFirestore,
-    private val moshi: Moshi
+    private val moshi: Moshi,
+    private val apiService: TmdbApiService
 ) {
     private val castType = Types.newParameterizedType(List::class.java, CastMember::class.java)
     private val castAdapter by lazy { moshi.adapter<List<CastMember>>(castType) }
@@ -214,6 +217,38 @@ class MediaRepository @Inject constructor(
             topGenres      = emptyList(),
             averageRating  = allProgress.mapNotNull { it.userRating }.average().toFloat()
                 .takeIf { !it.isNaN() }
+        )
+    }
+
+    suspend fun getTrending(): List<MediaSummary> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.getTrending()
+            if (response.isSuccessful) {
+                response.body()?.results?.mapNotNull { it.toSummary() } ?: emptyList()
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun com.example.watchorderengine.network.model.TmdbMediaResult.toSummary(): MediaSummary {
+        return MediaSummary(
+            id = id.toString(),
+            tmdbId = id,
+            title = title ?: name ?: "Unknown",
+            posterUrl = if (posterPath != null) "https://image.tmdb.org/t/p/w500$posterPath" else null,
+            backdropUrl = if (backdropPath != null) "https://image.tmdb.org/t/p/w780$backdropPath" else null,
+            mediaCategory = when (mediaType) {
+                "movie" -> MediaCategory.MOVIE
+                "tv" -> MediaCategory.TV_SHOW
+                else -> MediaCategory.ANIME
+            },
+            voteAverage = voteAverage?.toFloat() ?: 0f,
+            releaseYear = "",
+            trackingState = null,
+            ageRating = "NR"
         )
     }
 
