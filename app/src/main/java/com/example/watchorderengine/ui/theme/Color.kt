@@ -34,8 +34,8 @@ object WOEColors {
     val DarkStatusMixed = Color(0xFFFBBF24)
 
     // --- COMIC-CON MODE ---
-    val ComicPrimary = Color(0xFF1A1A1A)
-    val ComicSecondary = Color(0xFFFFFFFF)
+    val ComicPrimary = Color(0xFFFFFFFF) // For text on accent
+    val ComicSecondary = Color(0xFF1A1A1A)
     val ComicAccent = Color(0xFFFF00FF)
     val ComicBackground = Color(0xFFDBEAFE)
     val ComicSurface = Color(0xFFFFFFFF)
@@ -48,8 +48,8 @@ object WOEColors {
     val ComicStatusMixed = Color(0xFF00FFFF)
 
     // --- MANGA MODE ---
-    val MangaPrimary = Color(0xFF000000)
-    val MangaSecondary = Color(0xFFFFFFFF)
+    val MangaPrimary = Color(0xFFFFFFFF) // For text on accent
+    val MangaSecondary = Color(0xFF000000)
     val MangaAccent = Color(0xFF000000)
     val MangaBackground = Color(0xFFFFFFFF)
     val MangaSurface = Color(0xFFF3F4F6)

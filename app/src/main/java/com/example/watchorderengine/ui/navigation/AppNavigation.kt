@@ -28,6 +28,10 @@ import com.example.watchorderengine.ui.screens.home.HomeScreenWrapper
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.TimelineScreen
 
+// ─── Navigation helper: ensures all mediaIds passed to Detail use the tmdb_ prefix ───
+private fun safeMediaId(raw: String): String =
+    if (raw.startsWith("tmdb_") || raw.startsWith("anilist_")) raw else "tmdb_$raw"
+
 sealed class Screen(val route: String) {
     object Opening   : Screen("opening")
     object Home      : Screen("home")
@@ -51,6 +55,7 @@ fun AppNavigation() {
     val showBottomBar = currentRoute in listOf(
         Screen.Home.route,
         Screen.Discovery.route,
+        Screen.Search.route,
         Screen.Graph.route,
         Screen.Community.route,
         Screen.Profile.route
@@ -89,13 +94,20 @@ fun AppNavigation() {
             }
             composable(Screen.Home.route) {
                 HomeScreenWrapper(
-                    onMediaClick = { navController.navigate(Screen.Detail.route(it)) },
+                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                    onSearchClick = { navController.navigate(Screen.Search.route) },
                     onSettingsClick = { navController.navigate(Screen.Settings.route) }
+                )
+            }
+            composable(Screen.Search.route) {
+                SearchScreen(
+                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                    onBack = { navController.popBackStack() }
                 )
             }
             composable(Screen.Discovery.route) {
                 DiscoveryScreen(
-                    onMediaClick = { navController.navigate(Screen.Detail.route(it)) },
+                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -114,7 +126,7 @@ fun AppNavigation() {
                 TimelineScreen(
                     universeId = universeId,
                     onBack = { navController.popBackStack() },
-                    onNodeDetail = { navController.navigate(Screen.Detail.route(it)) }
+                    onNodeDetail = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
                 )
             }
             composable(Screen.Community.route) {
@@ -131,7 +143,13 @@ fun AppNavigation() {
                 arguments = listOf(navArgument("mediaId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val mediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
-                MediaDetailScreen(mediaId = mediaId, onBack = { navController.popBackStack() })
+                MediaDetailScreen(
+                    mediaId = safeMediaId(mediaId),
+                    onBack = { navController.popBackStack() },
+                    onUniverseClick = { universeId ->
+                        navController.navigate("timeline/$universeId")
+                    }
+                )
             }
         }
     }
@@ -167,6 +185,12 @@ fun AppBottomBar(currentRoute: String?, onNavigate: (String) -> Unit) {
                     onClick = { onNavigate(Screen.Discovery.route) }
                 )
                 BottomNavItem(
+                    label = "Search",
+                    icon = if (currentRoute == Screen.Search.route) Icons.Filled.Search else Icons.Outlined.Search,
+                    isSelected = currentRoute == Screen.Search.route,
+                    onClick = { onNavigate(Screen.Search.route) }
+                )
+                BottomNavItem(
                     label = "Graph",
                     icon = if (currentRoute == Screen.Graph.route) Icons.Filled.AccountTree else Icons.Outlined.AccountTree,
                     isSelected = currentRoute == Screen.Graph.route,
@@ -195,7 +219,7 @@ fun BottomNavItem(label: String, icon: ImageVector, isSelected: Boolean, onClick
     Column(
         modifier = Modifier
             .clickable { onClick() }
-            .padding(8.dp),
+            .padding(vertical = 8.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -203,13 +227,14 @@ fun BottomNavItem(label: String, icon: ImageVector, isSelected: Boolean, onClick
             imageVector = icon,
             contentDescription = label,
             tint = if (isSelected) theme.accent else Color.Gray,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(22.dp)
         )
         Text(
             text = label,
-            fontSize = 10.sp,
+            fontSize = 9.sp,
             color = if (isSelected) theme.accent else Color.Gray,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            maxLines = 1
         )
     }
 }

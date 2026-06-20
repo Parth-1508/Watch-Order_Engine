@@ -1,6 +1,6 @@
 package com.example.watchorderengine.data.cache
 
-import com.example.watchorderengine.data.MediaNode
+import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.network.model.TmdbMediaDetail
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -46,13 +46,13 @@ class TmdbMetadataCache @Inject constructor() {
      * Filters [nodes] to only those that do NOT have a successful cache entry.
      */
     fun filterUncached(nodes: List<MediaNode>): List<MediaNode> =
-        nodes.filter { !isSuccessfullyCached(it.tmdbId) }
+        nodes.filter { !isSuccessfullyCached(it.tmdb_id) }
 
     /**
      * Builds a snapshot map of tmdbId → [TmdbFetchState] for a given list of nodes.
      */
     fun snapshotFor(nodes: List<MediaNode>): Map<Int, TmdbFetchState> =
-        nodes.associate { it.tmdbId to getOrLoading(it.tmdbId) }
+        nodes.associate { it.tmdb_id to getOrLoading(it.tmdb_id) }
 
     /** Clears all cached entries. */
     fun invalidateAll() = store.clear()

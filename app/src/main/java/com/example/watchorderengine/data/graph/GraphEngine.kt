@@ -1,7 +1,7 @@
 package com.example.watchorderengine.data.graph
 
-import com.example.watchorderengine.data.Edge
-import com.example.watchorderengine.data.MediaNode
+import com.example.watchorderengine.data.model.Edge
+import com.example.watchorderengine.data.model.MediaNode
 import java.util.LinkedList
 
 /**
@@ -69,9 +69,9 @@ object GraphEngine {
 
         for (edge in edges) {
             // Skip dangling edges that reference nodes not in our filtered set
-            if (edge.fromNodeId !in allIds || edge.toNodeId !in allIds) continue
-            outEdges.getOrPut(edge.fromNodeId) { mutableListOf() }.add(edge.toNodeId)
-            inEdges.getOrPut(edge.toNodeId) { mutableListOf() }.add(edge.fromNodeId)
+            if (edge.from_node_id !in allIds || edge.to_node_id !in allIds) continue
+            outEdges.getOrPut(edge.from_node_id) { mutableListOf() }.add(edge.to_node_id)
+            inEdges.getOrPut(edge.to_node_id) { mutableListOf() }.add(edge.from_node_id)
         }
 
         // ── Kahn's Algorithm ─────────────────────────────────────────────────
@@ -226,8 +226,8 @@ object GraphEngine {
         // Only consider edges where both nodes are in the current visible set.
         val predecessors = mutableMapOf<String, MutableSet<String>>()
         for (edge in edges) {
-            if (edge.fromNodeId in allVisibleIds && edge.toNodeId in allVisibleIds) {
-                predecessors.getOrPut(edge.toNodeId) { mutableSetOf() }.add(edge.fromNodeId)
+            if (edge.from_node_id in allVisibleIds && edge.to_node_id in allVisibleIds) {
+                predecessors.getOrPut(edge.to_node_id) { mutableSetOf() }.add(edge.from_node_id)
             }
         }
 
@@ -266,9 +266,9 @@ object GraphEngine {
         val result = mutableMapOf<Int, MutableList<OutgoingConnection>>()
 
         for (edge in edges) {
-            val (fromCol, fromCompleted) = displayNodeMap[edge.fromNodeId] ?: continue
-            val (toCol, _) = displayNodeMap[edge.toNodeId] ?: continue
-            val fromLevel = levelMap[edge.fromNodeId] ?: continue
+            val (fromCol, fromCompleted) = displayNodeMap[edge.from_node_id] ?: continue
+            val (toCol, _) = displayNodeMap[edge.to_node_id] ?: continue
+            val fromLevel = levelMap[edge.from_node_id] ?: continue
 
             result.getOrPut(fromLevel) { mutableListOf() }.add(
                 OutgoingConnection(fromCol, toCol, fromCompleted)

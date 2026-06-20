@@ -1,5 +1,6 @@
 package com.example.watchorderengine.data
 
+import com.example.watchorderengine.data.model.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -8,6 +9,7 @@ import com.google.firebase.firestore.toObject
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -118,7 +120,27 @@ class WatchOrderRepository @Inject constructor(
     }
 
 
-    // ─── Write Operations ─────────────────────────────────────────────────────
+    /** Finds if this media belongs to any universe tree. */
+    fun findUniverseForMedia(tmdbId: Int): Flow<Universe?> = callbackFlow {
+        val listener = firestore.collection("universes")
+            .addSnapshotListener { snap, err ->
+                if (err != null) { close(err); return@addSnapshotListener }
+                
+                val universes = snap?.documents?.mapNotNull { it.toObject<Universe>() } ?: emptyList()
+                
+                this@callbackFlow.launch {
+                    for (u in universes) {
+                        val nodesSnap = nodesRef(u.id).whereEqualTo("tmdb_id", tmdbId).get().await()
+                        if (!nodesSnap.isEmpty) {
+                            trySend(u)
+                            return@launch
+                        }
+                    }
+                    trySend(null)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
 
     suspend fun setNodeCompletion(
         universeId: String,

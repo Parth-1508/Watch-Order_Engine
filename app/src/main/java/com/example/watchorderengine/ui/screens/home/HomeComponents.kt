@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.rememberAsyncImagePainter
+import coil.compose.AsyncImage
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 
 @Composable
@@ -155,7 +155,7 @@ fun MediaCard(show: MediaShowItem, onClick: () -> Unit) {
     
     Column(
         modifier = Modifier
-            .width(140.dp)
+            .fillMaxWidth()
             .clickable { onClick() }
     ) {
         Box(
@@ -164,8 +164,8 @@ fun MediaCard(show: MediaShowItem, onClick: () -> Unit) {
                 .then(ThemeBorderModifier())
                 .background(Color.Black)
         ) {
-            Image(
-                painter = rememberAsyncImagePainter(show.imageUrl),
+            AsyncImage(
+                model = show.imageUrl,
                 contentDescription = show.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

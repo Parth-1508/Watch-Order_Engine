@@ -3,6 +3,7 @@ package com.example.watchorderengine.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.*
+import com.example.watchorderengine.data.model.*
 import com.example.watchorderengine.data.cache.TmdbFetchState
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
 import com.example.watchorderengine.data.graph.GraphEngine
@@ -212,13 +213,13 @@ class TimelineViewModel @Inject constructor(
         // ── STEP 1: Apply route filter ────────────────────────────────────────
         // Remove nodes not matching the active route (e.g., non-canon nodes
         // when the user has selected "Canon Only").
-        val filteredNodes = GraphEngine.applyRouteFilter(nodes, progress.activeRoute)
+        val filteredNodes = GraphEngine.applyRouteFilter(nodes, progress.active_route ?: "ALL")
         val filteredNodeIds = filteredNodes.map { it.id }.toSet()
 
         // Also prune edges that reference nodes removed by the filter.
         // Dangling edges would confuse the topological sort.
         val filteredEdges = edges.filter {
-            it.fromNodeId in filteredNodeIds && it.toNodeId in filteredNodeIds
+            it.from_node_id in filteredNodeIds && it.to_node_id in filteredNodeIds
         }
 
         // ── STEP 2: Compute DAG layout ────────────────────────────────────────
@@ -234,23 +235,23 @@ class TimelineViewModel @Inject constructor(
 
         // ── STEP 4: Merge Firestore state with optimistic overrides ───────────
         val effectiveCompleted = buildEffectiveCompleted(
-            firestoreCompleted = progress.completedNodeIds.toSet(),
+            firestoreCompleted = progress.completed_node_ids.toSet(),
             overrides = overrides
         )
 
         // ── STEP 5: Compute spoiler blur set ──────────────────────────────────
-        val blurredIds = if (progress.spoilerShieldEnabled) {
+        val blurredIds = if (progress.spoiler_shield_enabled) {
             GraphEngine.computeSpoilerShield(sortedNodes, filteredEdges, effectiveCompleted)
         } else emptySet()
 
         // ── STEP 6: Build DisplayNode list ────────────────────────────────────
-        val displayNodes = sortedNodes.map { node ->
+        val displayNodes = sortedNodes.map { mediaNode ->
             DisplayNode(
-                node = node,
-                column = layout.columnMap[node.id] ?: 0,
-                isCompleted = node.id in effectiveCompleted,
-                isSpoilerBlurred = node.id in blurredIds,
-                metadata = tmdbCache.getOrLoading(node.tmdbId)
+                node = mediaNode,
+                column = layout.columnMap[mediaNode.id] ?: 0,
+                isCompleted = mediaNode.id in effectiveCompleted,
+                isSpoilerBlurred = mediaNode.id in blurredIds,
+                metadata = tmdbCache.getOrLoading(mediaNode.tmdb_id)
             )
         }
 
@@ -280,8 +281,8 @@ class TimelineViewModel @Inject constructor(
             universe = universe,
             rows = rows,
             availableTags = tags,
-            activeRouteTag = progress.activeRoute,
-            spoilerShieldEnabled = progress.spoilerShieldEnabled,
+            activeRouteTag = progress.active_route ?: "ALL",
+            spoilerShieldEnabled = progress.spoiler_shield_enabled,
             completedCount = effectiveCompleted.intersect(filteredNodeIds).size,
             totalNodeCount = filteredNodes.size
         )
@@ -359,8 +360,12 @@ class TimelineViewModel @Inject constructor(
 
     /** Navigates to a node's detail screen (handled by nav host). */
     fun onNodeClick(nodeId: String) {
+        val state = _uiState.value as? TimelineUiState.Success
+        val node = state?.rows?.flatMap { it.nodes }?.find { it.node.id == nodeId }?.node
+        val targetId = if (node != null && node.tmdb_id > 0) "tmdb_${node.tmdb_id}" else nodeId
+        
         viewModelScope.launch {
-            _events.send(TimelineEvent.NavigateToDetail(nodeId))
+            _events.send(TimelineEvent.NavigateToDetail(targetId))
         }
     }
 }

@@ -2,7 +2,7 @@ package com.example.watchorderengine.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.watchorderengine.data.Universe
+import com.example.watchorderengine.data.model.Universe
 import com.example.watchorderengine.data.WatchOrderRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*

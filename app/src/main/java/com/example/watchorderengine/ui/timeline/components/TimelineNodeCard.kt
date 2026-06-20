@@ -1,12 +1,11 @@
 package com.example.watchorderengine.ui.timeline.components
 
 import android.os.Build
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
@@ -14,22 +13,36 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import coil.compose.AsyncImage
-import com.example.watchorderengine.data.MediaNode
-import com.example.watchorderengine.data.MediaType
+import com.example.watchorderengine.data.model.MediaCategory
+import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.data.cache.TmdbFetchState
 import com.example.watchorderengine.ui.theme.WatchOrderColors
 import com.example.watchorderengine.viewmodel.DisplayNode
+
+val HexagonShape = object : Shape {
+    override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val path = Path().apply {
+            val radius = size.minDimension / 2
+            val angle = (Math.PI * 2) / 6
+            for (i in 0 until 6) {
+                val x = size.width / 2 + radius * Math.cos(angle * i - Math.PI / 2).toFloat()
+                val y = size.height / 2 + radius * Math.sin(angle * i - Math.PI / 2).toFloat()
+                if (i == 0) moveTo(x, y) else lineTo(x, y)
+            }
+            close()
+        }
+        return Outline.Generic(path)
+    }
+}
 
 /**
  * The individual node card rendered in the timeline.
@@ -53,110 +66,113 @@ fun TimelineNodeCard(
 
     val borderColor = when {
         displayNode.isCompleted      -> WatchOrderColors.CompletedGreen
-        displayNode.isSpoilerBlurred -> WatchOrderColors.SpoilerPurple
-        else                         -> WatchOrderColors.CardBorder
+        displayNode.isSpoilerBlurred -> WatchOrderColors.SpoilerPurple.copy(alpha = 0.5f)
+        else                         -> WatchOrderColors.CardBorder.copy(alpha = 0.3f)
     }
 
     val spoilerModifier: Modifier = if (displayNode.isSpoilerBlurred) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             Modifier.blur(
                 radius = blurRadius,
-                edgeTreatment = androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded
+                edgeTreatment = BlurredEdgeTreatment.Unbounded
             )
         } else {
-            Modifier.alpha(0.08f)
+            Modifier.alpha(0.1f)
         }
     } else Modifier
 
-    Card(
+    val scale by animateFloatAsState(
+        targetValue = if (displayNode.isCompleted) 1.05f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "completed_scale"
+    )
+
+    Box(
         modifier = modifier
-            .fillMaxWidth()
+            .scale(scale)
+            .padding(4.dp)
             .clickable(onClick = onCardClick, enabled = !displayNode.isSpoilerBlurred),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = WatchOrderColors.CardSurface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        contentAlignment = Alignment.Center
     ) {
-        Row(
+        // Hexagonal background for skill-tree feel
+        Canvas(modifier = Modifier.size(80.dp)) {
+            val path = Path().apply {
+                val radius = size.minDimension / 2
+                val angle = (Math.PI * 2) / 6
+                for (i in 0 until 6) {
+                    val x = size.width / 2 + radius * Math.cos(angle * i - Math.PI / 2).toFloat()
+                    val y = size.height / 2 + radius * Math.sin(angle * i - Math.PI / 2).toFloat()
+                    if (i == 0) moveTo(x, y) else lineTo(x, y)
+                }
+                close()
+            }
+            drawPath(path, color = WatchOrderColors.CardSurface)
+            drawPath(path, color = borderColor, style = Stroke(width = 2.dp.toPx()))
+            
+            if (displayNode.isCompleted) {
+                drawPath(path, color = WatchOrderColors.CompletedGreen.copy(alpha = 0.1f))
+            }
+        }
+
+        Box(
             modifier = Modifier
-                .drawColoredLeftBorder(borderColor, width = 3.dp)
-                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .size(72.dp)
+                .clip(HexagonShape)
+                .background(WatchOrderColors.ElevatedSurface)
+                .then(spoilerModifier),
+            contentAlignment = Alignment.Center
         ) {
-            // ── Poster / Icon ─────────────────────────────────────────────────
-            Box(
-                modifier = Modifier
-                    .size(width = 60.dp, height = 90.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(WatchOrderColors.ElevatedSurface)
-                    .then(spoilerModifier),
-                contentAlignment = Alignment.Center
-            ) {
-                when (metadata) {
-                    is TmdbFetchState.Success -> {
-                        AsyncImage(
-                            model = metadata.detail.posterUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                        )
-                    }
-                    is TmdbFetchState.Loading -> {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                    }
-                    else -> {
-                        Icon(
-                            imageVector = node.type.icon(),
-                            contentDescription = null,
-                            tint = WatchOrderColors.AccentBlue,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+            when (metadata) {
+                is TmdbFetchState.Success -> {
+                    AsyncImage(
+                        model = metadata.detail.posterUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+                is TmdbFetchState.Loading -> {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = WatchOrderColors.AccentGold)
+                }
+                else -> {
+                    Icon(
+                        imageVector = node.type.icon(),
+                        contentDescription = null,
+                        tint = WatchOrderColors.AccentBlue.copy(alpha = 0.5f),
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
+        }
 
-            Spacer(Modifier.width(12.dp))
-
-            // ── Title and metadata ────────────────────────────────────────────
-            Column(modifier = Modifier.weight(1f).then(spoilerModifier)) {
-                val title = if (metadata is TmdbFetchState.Success) metadata.detail.title else node.title
-                Text(
-                    text = if (displayNode.isSpoilerBlurred && (Build.VERSION.SDK_INT < Build.VERSION_CODES.S)) "???" else title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = WatchOrderColors.TextPrimary
-                )
-
-                Spacer(Modifier.height(4.dp))
-
-                val metaText = if (metadata is TmdbFetchState.Success) {
-                    "${metadata.detail.releaseYear} · ${metadata.detail.runtimeDisplay}"
-                } else {
-                    buildMetaString(node)
-                }
-
-                Text(
-                    text = metaText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = WatchOrderColors.TextSecondary
-                )
-
-                if (node.phase.isNotBlank() && !displayNode.isSpoilerBlurred) {
-                    Spacer(Modifier.height(4.dp))
-                    PhaseBadge(phase = node.phase)
-                }
-            }
-
-            Checkbox(
-                checked = displayNode.isCompleted,
-                onCheckedChange = { onCheckToggle() },
-                enabled = !displayNode.isSpoilerBlurred,
-                colors = CheckboxDefaults.colors(
-                    checkedColor = WatchOrderColors.CompletedGreen,
-                    checkmarkColor = WatchOrderColors.DeepSpace
-                )
+        if (displayNode.isSpoilerBlurred) {
+            Icon(
+                Icons.Default.Lock,
+                null,
+                tint = WatchOrderColors.SpoilerPurple,
+                modifier = Modifier.size(20.dp)
+            )
+        } else if (displayNode.isCompleted) {
+            Icon(
+                Icons.Default.CheckCircle,
+                null,
+                tint = WatchOrderColors.CompletedGreen,
+                modifier = Modifier.align(Alignment.BottomEnd).size(20.dp).offset(x = 8.dp, y = 8.dp)
             )
         }
+
+        // Floating Title below
+        Text(
+            text = if (displayNode.isSpoilerBlurred) "???" else node.title,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = if (displayNode.isCompleted) WatchOrderColors.TextPrimary else WatchOrderColors.TextSecondary,
+            modifier = Modifier.offset(y = 50.dp).width(90.dp),
+            textAlign = TextAlign.Center,
+            fontSize = 9.sp,
+            fontWeight = if (displayNode.isCompleted) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }
 
@@ -177,16 +193,17 @@ private fun PhaseBadge(phase: String) {
     }
 }
 
-/** Maps MediaType to a Material Icon that conveys the media format clearly. */
-private fun MediaType.icon(): ImageVector = when (this) {
-    MediaType.MOVIE   -> Icons.Filled.Movie
-    MediaType.SERIES  -> Icons.Filled.Tv
-    MediaType.EPISODE -> Icons.Filled.PlayCircleFilled
-    MediaType.SHORT   -> Icons.Filled.PlayArrow
-    MediaType.SPECIAL -> Icons.Filled.StarRate
-    MediaType.COMIC   -> Icons.AutoMirrored.Filled.MenuBook
-    MediaType.NOVEL   -> Icons.Filled.AutoStories
-    MediaType.GAME    -> Icons.Filled.SportsEsports
+/** Maps MediaCategory to a Material Icon that conveys the media format clearly. */
+private fun MediaCategory.icon(): ImageVector = when (this) {
+    MediaCategory.MOVIE   -> Icons.Filled.Movie
+    MediaCategory.TV_SHOW  -> Icons.Filled.Tv
+    MediaCategory.ANIME   -> Icons.Filled.Animation
+    MediaCategory.EPISODE -> Icons.Filled.PlayCircleFilled
+    MediaCategory.SHORT   -> Icons.Filled.PlayArrow
+    MediaCategory.SPECIAL -> Icons.Filled.StarRate
+    MediaCategory.COMIC   -> Icons.AutoMirrored.Filled.MenuBook
+    MediaCategory.NOVEL   -> Icons.Filled.AutoStories
+    MediaCategory.GAME    -> Icons.Filled.SportsEsports
 }
 
 /** Builds the metadata subtitle: "SERIES • 2021 • 26 eps" or "MOVIE • 2019 • 181 min". */
@@ -195,7 +212,7 @@ private fun buildMetaString(node: MediaNode): String {
         add(node.type.name.lowercase().replaceFirstChar { it.uppercase() })
         if (node.releaseYear > 0) add(node.releaseYear.toString())
         when {
-            (node.type == MediaType.SERIES) && (node.episodeCount > 0) ->
+            (node.type == MediaCategory.TV_SHOW || node.type == MediaCategory.ANIME) && (node.episodeCount > 0) ->
                 add("${node.episodeCount} eps")
             node.durationMin > 0 ->
                 add("${node.durationMin} min")

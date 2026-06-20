@@ -21,39 +21,50 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
+import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.example.watchorderengine.data.model.MediaSummary
+import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.ui.theme.LocalAppTheme
+import com.example.watchorderengine.ui.viewmodel.DiscoveryViewModel
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun DiscoveryScreen(
     onMediaClick: (String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: DiscoveryViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
-    val genres = listOf("All", "Sci-Fi", "Action", "Cyberpunk", "Fantasy", "Military", "Psychological", "Thriller", "Ninja", "Mecha", "Drama", "Adventure")
+    val deck by viewModel.discoveryDeck.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    
+    val genres = listOf("All", "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", "Sci-Fi", "TV Movie", "Thriller", "War", "Western")
     var activeGenre by remember { mutableStateOf("All") }
     
-    val mockCards = listOf(
-        DiscoveryCardData("5", "NEON GENESIS: REDUX", "Sci-Fi • Psychological • Mecha", "Teenage pilots defend what remains of humanity...", "https://images.unsplash.com/photo-1643560413634-edc1135c7e4b"),
-        DiscoveryCardData("2", "CYBER CITY X", "Cyberpunk • Mystery • Thriller", "A rogue cop and a sentient AI tear through a neon-drenched undercity...", "https://images.unsplash.com/photo-1601042879364-f3947d3f9c16")
-    )
-    
-    var currentCards by remember { mutableStateOf(mockCards) }
+    val filteredDeck = remember(deck, activeGenre) {
+        if (activeGenre == "All") deck
+        else deck.filter { media -> 
+            media.genres.any { it.equals(activeGenre, ignoreCase = true) }
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        if (currentCards.isNotEmpty()) {
+        if (filteredDeck.isNotEmpty()) {
             AsyncImage(
-                model = currentCards.last().image,
+                model = filteredDeck.last().backdropUrl ?: filteredDeck.last().posterUrl,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize().alpha(0.3f),
                 contentScale = ContentScale.Crop
@@ -93,16 +104,19 @@ fun DiscoveryScreen(
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                if (currentCards.isEmpty()) {
-                    EmptyDiscoveryView { currentCards = mockCards }
+                if (isLoading) {
+                    CircularProgressIndicator(color = theme.accent)
+                } else if (filteredDeck.isEmpty()) {
+                    EmptyDiscoveryView { viewModel.resetDeck() }
                 } else {
-                    currentCards.forEachIndexed { index, card ->
+                    filteredDeck.forEachIndexed { index, media ->
                         DiscoveryCard(
-                            card = card,
-                            isTop = index == currentCards.size - 1,
-                            onSwipe = { status ->
-                                currentCards = currentCards.filter { it.showId != card.showId }
-                            }
+                            media = media,
+                            isTop = index == filteredDeck.size - 1,
+                            onSwipe = { state ->
+                                viewModel.handleSwipe(media, state)
+                            },
+                            onClick = { onMediaClick(media.id) }
                         )
                     }
                 }
@@ -111,13 +125,12 @@ fun DiscoveryScreen(
     }
 }
 
-data class DiscoveryCardData(val showId: String, val title: String, val tags: String, val desc: String, val image: String)
-
 @Composable
 fun DiscoveryCard(
-    card: DiscoveryCardData,
+    media: MediaSummary,
     isTop: Boolean,
-    onSwipe: (String) -> Unit
+    onSwipe: (TrackingState) -> Unit,
+    onClick: () -> Unit
 ) {
     val theme = LocalAppTheme.current
     var offsetX by remember { mutableStateOf(0f) }
@@ -144,11 +157,11 @@ fun DiscoveryCard(
                             },
                             onDragEnd = {
                                 if (abs(offsetX) > 300) {
-                                    onSwipe(if (offsetX > 0) "Watching" else "Dropped")
+                                    onSwipe(if (offsetX > 0) TrackingState.WATCHING else TrackingState.DROPPED)
                                 } else if (offsetY < -300) {
-                                    onSwipe("Planned")
+                                    onSwipe(TrackingState.PLANNED)
                                 } else if (offsetY > 300) {
-                                    onSwipe("Paused")
+                                    onSwipe(TrackingState.PAUSED)
                                 } else {
                                     offsetX = 0f
                                     offsetY = 0f
@@ -160,9 +173,10 @@ fun DiscoveryCard(
             )
             .clip(RoundedCornerShape(24.dp))
             .background(Color.DarkGray)
+            .clickable(enabled = isTop, onClick = onClick)
     ) {
         AsyncImage(
-            model = card.image,
+            model = media.posterUrl,
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -181,42 +195,111 @@ fun DiscoveryCard(
         ) {
             Column(modifier = Modifier.align(Alignment.BottomStart)) {
                 Text(
-                    card.title,
+                    media.title,
                     color = Color.White,
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Black,
                     fontStyle = FontStyle.Italic,
                     lineHeight = 36.sp
                 )
-                Text(card.tags, color = theme.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
-                Text(card.desc, color = Color.LightGray, fontSize = 12.sp, maxLines = 2)
+                Text(
+                    media.mediaCategory.name + " • " + media.releaseYear, 
+                    color = theme.accent, 
+                    fontSize = 14.sp, 
+                    fontWeight = FontWeight.Bold, 
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
-                        .padding(16.dp)
-                ) {
-                    Text("LORE STATS", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Canvas(modifier = Modifier.fillMaxSize().padding(top = 20.dp)) {
-                        val center = Offset(size.width / 2, size.height / 2)
-                        val radius = size.height / 2
-                        repeat(6) { i ->
-                            val angle = (i * 60f) * (Math.PI / 180f).toFloat()
-                            drawLine(
-                                Color.White.copy(alpha = 0.2f),
-                                center,
-                                Offset(center.x + radius * kotlin.math.cos(angle), center.y + radius * kotlin.math.sin(angle))
-                            )
-                        }
-                    }
-                }
+                LoreStatsRadar(media = media, modifier = Modifier.fillMaxWidth().height(150.dp))
             }
         }
+
+        // Action Indicators
+        if (isTop && (abs(offsetX) > 100 || abs(offsetY) > 100)) {
+            val label = when {
+                offsetX > 100 -> "WATCHING"
+                offsetX < -100 -> "SKIP"
+                offsetY < -100 -> "PLANNING"
+                offsetY > 100 -> "PAUSE"
+                else -> ""
+            }
+            val color = when {
+                offsetX > 100 -> Color.Green
+                offsetX < -100 -> Color.Red
+                offsetY < -100 -> theme.accent
+                offsetY > 100 -> Color.Yellow
+                else -> Color.White
+            }
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(color.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    color = color,
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Black,
+                    fontStyle = FontStyle.Italic,
+                    modifier = Modifier.rotate(-15f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun LoreStatsRadar(media: MediaSummary, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val center = Offset(size.width / 2, size.height / 2)
+        val radius = size.height * 0.4f
+        val sides = 6
+        val labels = listOf("POP", "SCORE", "CAST", "LORE", "HYP", "VIBE")
+        
+        // Draw Grid
+        repeat(3) { layer ->
+            val scale = (layer + 1) / 3f
+            val path = Path()
+            for (i in 0 until sides) {
+                val angle = (i * 360f / sides - 90f) * (Math.PI / 180f).toFloat()
+                val x = center.x + radius * scale * cos(angle)
+                val y = center.y + radius * scale * sin(angle)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+            drawPath(path, Color.White.copy(alpha = 0.1f), style = Stroke(width = 1.dp.toPx()))
+        }
+        
+        // Draw Axes and Labels
+        for (i in 0 until sides) {
+            val angle = (i * 360f / sides - 90f) * (Math.PI / 180f).toFloat()
+            drawLine(
+                Color.White.copy(alpha = 0.1f),
+                center,
+                Offset(center.x + radius * cos(angle), center.y + radius * sin(angle))
+            )
+        }
+        
+        // Draw Dynamic Stats Path based on TMDB ID
+        val statsPath = Path()
+        val random = java.util.Random(media.tmdbId.toLong())
+        val score = (media.voteAverage / 10f).coerceIn(0.4f, 1f)
+        
+        for (i in 0 until sides) {
+            // Mix actual score with some random variation for a "radar" look
+            val valScale = (0.3f + random.nextFloat() * 0.4f + score * 0.3f).coerceIn(0.2f, 1f)
+            val angle = (i * 360f / sides - 90f) * (Math.PI / 180f).toFloat()
+            val x = center.x + radius * valScale * cos(angle)
+            val y = center.y + radius * valScale * sin(angle)
+            if (i == 0) statsPath.moveTo(x, y) else statsPath.lineTo(x, y)
+        }
+        statsPath.close()
+        drawPath(statsPath, Color.Cyan.copy(alpha = 0.3f))
+        drawPath(statsPath, Color.Cyan, style = Stroke(width = 2.dp.toPx()))
     }
 }
 
@@ -232,7 +315,7 @@ fun EmptyDiscoveryView(onReset: () -> Unit) {
         }
         Spacer(modifier = Modifier.height(24.dp))
         Text("You're all caught up!", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic)
-        Text("Come back later for more.", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+        Text("Come back later for more trending shows.", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
         Button(
             onClick = onReset,
             modifier = Modifier.padding(top = 32.dp),

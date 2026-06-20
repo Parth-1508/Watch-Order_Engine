@@ -35,9 +35,15 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                _watchingList.value = repository.getWatchingList()
-                _plannedList.value = repository.getPlannedList()
-                _trendingList.value = repository.getTrending()
+                val watching = repository.getWatchingList()
+                val planned = repository.getPlannedList()
+                val trending = repository.getTrending()
+                
+                _watchingList.value = watching
+                _plannedList.value = planned
+                _trendingList.value = trending
+                
+                android.util.Log.d("HomeViewModel", "Refresh: watching=${watching.size}, planned=${planned.size}, trending=${trending.size}")
             } finally {
                 _isLoading.value = false
             }

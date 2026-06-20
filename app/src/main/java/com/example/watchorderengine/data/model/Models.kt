@@ -1,5 +1,7 @@
 package com.example.watchorderengine.data.model
 
+import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.PropertyName
 import kotlinx.serialization.Serializable
 
 /** The 5-state tracking lifecycle for any media item. */
@@ -40,15 +42,15 @@ enum class EpisodeType(val label: String) {
 
 /** Top-level media category for routing to the correct TMDB endpoint and UI template. */
 @Serializable
-enum class MediaCategory { MOVIE, TV_SHOW, ANIME }
+enum class MediaCategory { MOVIE, TV_SHOW, ANIME, EPISODE, SHORT, SPECIAL, COMIC, NOVEL, GAME }
 
 // ─── Media ────────────────────────────────────────────────────────────────────
 
 /** Lightweight list-item representation for grids and search results. */
 @Serializable
 data class MediaSummary(
-    val id: String,
-    val tmdbId: Int,
+    @DocumentId val id: String = "",
+    val tmdbId: Int = 0,
     val title: String,
     val posterUrl: String?,
     val backdropUrl: String?,
@@ -57,14 +59,15 @@ data class MediaSummary(
     val releaseYear: String,
     val trackingState: TrackingState?,  // null if not in user's list
     val ageRating: String,
-    val priorityTag: PriorityTag = PriorityTag.NONE
+    val priorityTag: PriorityTag = PriorityTag.NONE,
+    val genres: List<String> = emptyList()
 )
 
 /** Full rich detail for the Detail Screen. */
 @Serializable
 data class MediaDetail(
-    val id: String,
-    val tmdbId: Int,
+    @DocumentId val id: String = "",
+    val tmdbId: Int = 0,
     val anilistId: Int?,
     val title: String,
     val originalTitle: String,
@@ -100,15 +103,16 @@ data class CastMember(
     val name: String,
     val character: String,
     val profileUrl: String?,
-    val order: Int
+    val order: Int,
+    val biography: String? = null
 )
 
 // ─── Seasons & Episodes ───────────────────────────────────────────────────────
 
 @Serializable
 data class SeasonSummary(
-    val id: String,
-    val mediaId: String,
+    @DocumentId val id: String = "",
+    val mediaId: String = "",
     val seasonNumber: Int,
     val name: String,
     val overview: String,
@@ -119,8 +123,8 @@ data class SeasonSummary(
 
 @Serializable
 data class EpisodeItem(
-    val id: String,
-    val seasonId: String,
+    @DocumentId val id: String = "",
+    val seasonId: String = "",
     val mediaId: String,
     val episodeNumber: Int,
     val seasonNumber: Int,
@@ -152,17 +156,71 @@ data class StoryArc(
 
 @Serializable
 data class UserProgress(
-    val mediaId: String,
-    val trackingState: TrackingState,
-    val currentSeasonNumber: Int,
-    val currentEpisodeNumber: Int,
-    val totalEpisodesWatched: Int,
-    val userRating: Float?,
-    val startedDate: Long?,
-    val completedDate: Long?,
-    val updatedAt: Long,
+    val mediaId: String = "",
+    val trackingState: TrackingState = TrackingState.PLANNED,
+    val currentSeasonNumber: Int = 1,
+    val currentEpisodeNumber: Int = 1,
+    val totalEpisodesWatched: Int = 0,
+    val userRating: Float? = null,
+    val startedDate: Long? = null,
+    val completedDate: Long? = null,
+    val updatedAt: Long = 0,
     val userNotes: String = "",
-    val priorityTag: PriorityTag = PriorityTag.NONE
+    val priorityTag: PriorityTag = PriorityTag.NONE,
+    // Add for Firebase backwards compatibility
+    @get:PropertyName("user_id") @set:PropertyName("user_id") @kotlinx.serialization.Transient var userId: String? = null,
+    @get:PropertyName("universe_id") @set:PropertyName("universe_id") @kotlinx.serialization.Transient var universeId: String? = null,
+    @get:PropertyName("completed_node_ids") @set:PropertyName("completed_node_ids") @kotlinx.serialization.Transient var completed_node_ids: List<String> = emptyList(),
+    @get:PropertyName("active_route") @set:PropertyName("active_route") @kotlinx.serialization.Transient var active_route: String? = null,
+    @get:PropertyName("spoiler_shield_enabled") @set:PropertyName("spoiler_shield_enabled") @kotlinx.serialization.Transient var spoiler_shield_enabled: Boolean = false,
+    @get:PropertyName("last_updated") @set:PropertyName("last_updated") @kotlinx.serialization.Transient var lastUpdatedFirebase: com.google.firebase.Timestamp? = null
+)
+
+// ─── Universe / Graph ─────────────────────────────────────────────────────────
+
+@Serializable
+data class Universe(
+    @DocumentId val id: String = "",
+    val name: String = "",
+    val description: String = "",
+    val posterUrl: String? = null,
+    val bannerUrl: String? = null,
+    val tmdbId: Int? = null,
+    val mediaType: String? = null,
+    @get:PropertyName("available_routes") @set:PropertyName("available_routes") @kotlinx.serialization.Transient var available_routes: List<String> = emptyList(),
+    @get:PropertyName("total_nodes") @set:PropertyName("total_nodes") @kotlinx.serialization.Transient var total_nodes: Int = 0
+)
+
+@Serializable
+data class MediaNode(
+    @DocumentId val id: String = "",
+    val title: String = "",
+    val content_type: String = "", // MOVIE, SERIES, OVA
+    val type: MediaCategory = MediaCategory.TV_SHOW,
+    val tmdb_id: Int = 0,
+    val tmdb_media_type: String = "",
+    val chrono_order: Float = 0f,
+    val release_order: Float = 0f,
+    val phase: String = "",
+    val tags: List<String> = emptyList(),
+    val releaseYear: Int = 0,
+    val episodeCount: Int = 0,
+    val durationMin: Int = 0
+)
+
+@Serializable
+data class Edge(
+    val from_node_id: String = "",
+    val to_node_id: String = "",
+    val type: String = "REQUIRED" // REQUIRED, OPTIONAL
+)
+
+@Serializable
+data class ContextTag(
+    @DocumentId val id: String = "",
+    val label: String = "",
+    val color: String = "#FFFFFF",
+    val order: Int = 0
 )
 
 // ─── Profile Stats ────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 package com.example.watchorderengine.data.repository
 
-import com.example.watchorderengine.data.MediaNode
+import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.data.cache.TmdbFetchState
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
 import com.example.watchorderengine.network.TmdbApiService
@@ -37,14 +37,14 @@ class TmdbRepository @Inject constructor(
             return cache.snapshotFor(nodes)
         }
 
-        uncached.forEach { node -> cache.put(node.tmdbId, TmdbFetchState.Loading) }
+        uncached.forEach { node -> cache.put(node.tmdb_id, TmdbFetchState.Loading) }
 
         uncached.chunked(BATCH_SIZE).forEachIndexed { batchIndex, batch ->
             if (batchIndex > 0) delay(INTER_BATCH_DELAY_MS)
 
             supervisorScope {
                 batch.map { node ->
-                    async { fetchSingle(node.tmdbId, node.tmdbMediaType) }
+                    async { fetchSingle(node.tmdb_id, node.tmdb_media_type) }
                 }.forEach { it.await() }
             }
         }

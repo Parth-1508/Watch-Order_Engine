@@ -30,7 +30,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.rememberAsyncImagePainter
+import coil.compose.AsyncImage
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 
 @Composable
@@ -136,18 +136,19 @@ fun HomeScreen(
                     }
                 } else {
                     // Responsive Grid
-                    filteredShows.chunked(2).forEach { rowShows ->
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            rowShows.forEach { show ->
-                                Box(modifier = Modifier.weight(1f)) {
-                                    MediaCard(show = show, onClick = { onShowClick(show) })
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        filteredShows.chunked(2).forEach { rowShows ->
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                rowShows.forEach { show ->
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        MediaCard(show = show, onClick = { onShowClick(show) })
+                                    }
+                                }
+                                if (rowShows.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
-                            if (rowShows.size == 1) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
 
@@ -173,15 +174,6 @@ fun HomeScreen(
                     }
                 }
             }
-        }
-
-        // Search Overlay
-        if (state.isSearchOpen && state.searchQuery.isNotEmpty()) {
-            SearchOverlay(
-                query = state.searchQuery,
-                results = state.shows.filter { it.title.contains(state.searchQuery, ignoreCase = true) },
-                onResultClick = onShowClick
-            )
         }
     }
 }
@@ -216,10 +208,10 @@ fun Header(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .border(2.dp, Color.Black, CircleShape)
+                .border(2.dp, theme.textPrimary, CircleShape)
         ) {
-            Image(
-                painter = rememberAsyncImagePainter("https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?crop=faces&fit=crop&w=100&h=100"),
+            AsyncImage(
+                model = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?crop=faces&fit=crop&w=100&h=100",
                 contentDescription = "Avatar",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
@@ -244,7 +236,9 @@ fun Header(
                         focusedContainerColor = theme.surface,
                         unfocusedContainerColor = theme.surface,
                         focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = theme.textPrimary,
+                        unfocusedTextColor = theme.textPrimary
                     ),
                     shape = RoundedCornerShape(24.dp),
                     leadingIcon = { Icon(Icons.Default.Search, null, tint = theme.textSecondary) }
@@ -259,7 +253,7 @@ fun Header(
                             fontStyle = FontStyle.Italic,
                             letterSpacing = (-1).sp
                         ),
-                        color = Color.Black,
+                        color = theme.textPrimary,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -270,17 +264,17 @@ fun Header(
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = { onToggleSearch(!isSearchOpen) },
-                modifier = Modifier.size(40.dp).border(2.dp, Color.Black, CircleShape)
+                modifier = Modifier.size(40.dp).border(2.dp, theme.textPrimary, CircleShape)
             ) {
-                Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, null, tint = Color.Black)
+                Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, null, tint = theme.textPrimary)
             }
             if (!isSearchOpen) {
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = onSettingsClick,
-                    modifier = Modifier.size(40.dp).border(2.dp, Color.Black, CircleShape)
+                    modifier = Modifier.size(40.dp).border(2.dp, theme.textPrimary, CircleShape)
                 ) {
-                    Icon(Icons.Default.Settings, null, tint = Color.Black)
+                    Icon(Icons.Default.Settings, null, tint = theme.textPrimary)
                 }
             }
         }
@@ -319,8 +313,8 @@ fun SearchOverlay(
                             .padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Image(
-                            painter = rememberAsyncImagePainter(show.imageUrl),
+                        AsyncImage(
+                            model = show.imageUrl,
                             contentDescription = null,
                             modifier = Modifier.size(48.dp, 64.dp).then(ThemeBorderModifier()),
                             contentScale = ContentScale.Crop

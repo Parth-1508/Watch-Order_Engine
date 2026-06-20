@@ -2,6 +2,7 @@ package com.example.watchorderengine.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.watchorderengine.data.model.EpisodeItem
 import com.example.watchorderengine.data.model.MediaDetail
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.repository.MediaRepository
@@ -23,13 +24,53 @@ class MediaDetailViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _episodes = MutableStateFlow<List<EpisodeItem>>(emptyList())
+    val episodes: StateFlow<List<EpisodeItem>> = _episodes.asStateFlow()
+
+    private val _isAnalyzing = MutableStateFlow(false)
+    val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
+
+    private val _universe = MutableStateFlow<com.example.watchorderengine.data.model.Universe?>(null)
+    val universe: StateFlow<com.example.watchorderengine.data.model.Universe?> = _universe.asStateFlow()
+
     fun loadMediaDetail(mediaId: String) {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.getMediaDetailFlow(mediaId).collect {
-                _mediaDetail.value = it
-                _isLoading.value = false
+            repository.getMediaDetailFlow(mediaId).collect { detail ->
+                _mediaDetail.value = detail
+                if (detail != null) {
+                    _isLoading.value = false
+                    if (_episodes.value.isEmpty() && detail.seasons.isNotEmpty()) {
+                        loadEpisodes(detail.id, detail.seasons.first().seasonNumber)
+                    }
+                    
+                    // Look for universe
+                    launch {
+                        repository.findUniverseForMedia(detail.tmdbId).collect {
+                            _universe.value = it
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    fun loadEpisodes(mediaId: String, seasonNumber: Int) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            val eps = repository.getEpisodesBySeason(mediaId, seasonNumber)
+            _episodes.value = eps
+            _isLoading.value = false
+        }
+    }
+
+    fun generateWatchOrder(mediaId: String) {
+        viewModelScope.launch {
+            _isAnalyzing.value = true
+            repository.generateWatchOrder(mediaId)
+            // Reload to reflect changes in episode types
+            loadMediaDetail(mediaId)
+            _isAnalyzing.value = false
         }
     }
 
@@ -47,5 +88,9 @@ class MediaDetailViewModel @Inject constructor(
             // Refresh detail to update progress
             loadMediaDetail(mediaId)
         }
+    }
+
+    suspend fun getPersonBiography(personId: Int): String? {
+        return repository.getPersonBiography(personId)
     }
 }

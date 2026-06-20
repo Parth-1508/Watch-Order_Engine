@@ -45,8 +45,8 @@ data class TmdbDetailResponse(
         tmdbId = id,
         title = title ?: name ?: "",
         overview = overview ?: "",
-        posterUrl = posterPath,
-        backdropUrl = backdropPath,
+        posterUrl = com.example.watchorderengine.network.TmdbConfig.buildImageUrl(posterPath),
+        backdropUrl = com.example.watchorderengine.network.TmdbConfig.buildImageUrl(backdropPath, com.example.watchorderengine.network.TmdbConfig.PosterSize.HD),
         releaseDate = releaseDate ?: firstAirDate ?: "",
         runtimeMinutes = runtime ?: episodeRunTime?.firstOrNull() ?: 0,
         episodeCount = numberOfEpisodes ?: 0,
@@ -191,6 +191,7 @@ data class TmdbMediaResult(
     @Json(name = "backdrop_path") val backdropPath: String?,
     @Json(name = "media_type")   val mediaType: String?,
     @Json(name = "vote_average") val voteAverage: Double?,
+    @Json(name = "genre_ids")    val genreIds: List<Int>?
 )
 
 @JsonClass(generateAdapter = true)
@@ -241,6 +242,16 @@ data class TmdbKeywords(
 data class TmdbKeyword(
     @Json(name = "id")   val id: Int,
     @Json(name = "name") val name: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbPersonResponse(
+    @Json(name = "id")           val id: Int,
+    @Json(name = "name")         val name: String,
+    @Json(name = "biography")    val biography: String?,
+    @Json(name = "birthday")     val birthday: String?,
+    @Json(name = "place_of_birth") val placeOfBirth: String?,
+    @Json(name = "profile_path") val profilePath: String?
 )
 
 data class TmdbMediaDetail(

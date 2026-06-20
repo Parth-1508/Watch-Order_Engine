@@ -32,7 +32,10 @@ fun OpeningScreen(
     onEnter: () -> Unit,
     onSkip: () -> Unit
 ) {
-    val theme = LocalAppTheme.current
+    // Lock to default "Engine" colors instead of using theme.accent
+    val engineAccent = Color(0xFFFFBF3C) // WatchOrderColors.AccentGold
+    val engineSurface = Color(0xFF141B2D) // WatchOrderColors.CardSurface
+    
     val infiniteTransition = rememberInfiniteTransition(label = "opening")
     
     val rotation by infiniteTransition.animateFloat(
@@ -50,7 +53,26 @@ fun OpeningScreen(
     ) {
         // Replica DAG Background (Simplified for Compose)
         androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-            // Draw some mock DAG lines and dots with pulse
+            val random = java.util.Random(42)
+            val points = List(15) { Offset(random.nextFloat() * size.width, random.nextFloat() * size.height) }
+            
+            points.forEachIndexed { i, p1 ->
+                points.forEachIndexed { j, p2 ->
+                    if (i < j && (p1 - p2).getDistance() < 400f) {
+                        drawLine(
+                            color = engineAccent.copy(alpha = 0.1f),
+                            start = p1,
+                            end = p2,
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+                }
+                drawCircle(
+                    color = engineAccent.copy(alpha = 0.2f),
+                    radius = 4.dp.toPx(),
+                    center = p1
+                )
+            }
         }
 
         Column(
@@ -66,12 +88,12 @@ fun OpeningScreen(
                     modifier = Modifier
                         .size(140.dp)
                         .rotate(rotation)
-                        .border(2.dp, theme.accent.copy(alpha = 0.4f), CircleShape)
+                        .border(2.dp, engineAccent.copy(alpha = 0.4f), CircleShape)
                 )
                 Surface(
                     modifier = Modifier.size(96.dp),
                     shape = CircleShape,
-                    color = theme.surface,
+                    color = engineSurface,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
                     shadowElevation = 20.dp
                 ) {
@@ -93,7 +115,7 @@ fun OpeningScreen(
                     Text("WATCH", fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = Color.White)
                     Text("ORDER", fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = Color.White)
                 }
-                Text("ENGINE", fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = theme.accent)
+                Text("ENGINE", fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = engineAccent)
                 
                 Text(
                     "The ultimate DAG-powered ecosystem for mapping and tracking your viewing timelines.",
@@ -137,9 +159,9 @@ fun OpeningScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
+                colors = ButtonDefaults.buttonColors(containerColor = engineAccent)
             ) {
-                Text("ENTER THE ENGINE", fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+                Text("ENTER THE ENGINE", fontWeight = FontWeight.Black, letterSpacing = 2.sp, color = Color.Black)
             }
         }
         

@@ -45,11 +45,7 @@ interface TmdbApiService {
 
     /**
      * Fetches full metadata for a single TV show.
-     *
-     * Endpoint: GET /3/tv/{series_id}
-     * Docs: https://developer.themoviedb.org/reference/tv-series-details
-     *
-     * @param tvId The TMDB numeric TV series ID (e.g., 1399 for Game of Thrones).
+     * Uses aggregate_credits for TV (better for multi-season shows than credits).
      */
     @GET("tv/{tvId}")
     suspend fun getTvShow(
@@ -57,6 +53,20 @@ interface TmdbApiService {
         @Query("language")        language: String = "en-US",
         @Query("append_to_response") appendToResponse: String = TmdbConfig.APPEND_TO_RESPONSE_TV
     ): Response<TmdbDetailResponse>
+
+    /**
+     * Fetches full season details including all episodes.
+     * Called per-season to populate the episodes tab in Detail screen.
+     *
+     * Endpoint: GET /3/tv/{series_id}/season/{season_number}
+     * Docs: https://developer.themoviedb.org/reference/tv-season-details
+     */
+    @GET("tv/{tvId}/season/{seasonNumber}")
+    suspend fun getTvSeason(
+        @Path("tvId")           tvId: Int,
+        @Path("seasonNumber")   seasonNumber: Int,
+        @Query("language")      language: String = "en-US"
+    ): Response<com.example.watchorderengine.network.model.TmdbSeasonDetail>
 
     /**
      * Fetches trending media.
@@ -77,6 +87,15 @@ interface TmdbApiService {
         @Query("page") page: Int = 1,
         @Query("include_adult") includeAdult: Boolean = false
     ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
+
+    /**
+     * Fetches person details (for character biographies).
+     */
+    @GET("person/{personId}")
+    suspend fun getPerson(
+        @Path("personId") personId: Int,
+        @Query("language") language: String = "en-US"
+    ): Response<com.example.watchorderengine.network.model.TmdbPersonResponse>
 }
 
 // ─── OkHttp Auth Interceptor ──────────────────────────────────────────────────

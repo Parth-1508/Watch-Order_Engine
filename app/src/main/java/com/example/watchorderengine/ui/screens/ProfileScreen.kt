@@ -22,15 +22,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
+import com.example.watchorderengine.ui.viewmodel.ProfileViewModel
 
 @Composable
 fun ProfileScreen(
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
     val scrollState = rememberScrollState()
+    val stats by viewModel.stats.collectAsState()
 
     Column(
         modifier = Modifier
@@ -47,7 +51,7 @@ fun ProfileScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "PLAYER",
+                "ENGINEER",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black,
                 fontStyle = FontStyle.Italic,
@@ -69,9 +73,6 @@ fun ProfileScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .drawBehind {
-                        // Dot pattern
-                    }
                     .padding(24.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -80,7 +81,7 @@ fun ProfileScreen(
                         modifier = Modifier
                             .size(100.dp)
                             .clip(CircleShape)
-                            .border(4.dp, Brush.sweepGradient(listOf(Color.Magenta, Color.Cyan, Color.Green)), CircleShape)
+                            .border(4.dp, Brush.sweepGradient(listOf(Color.Magenta, theme.accent, Color.Cyan)), CircleShape)
                             .padding(4.dp)
                     ) {
                         AsyncImage(
@@ -95,37 +96,37 @@ fun ProfileScreen(
                     
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("ALEX 99", fontSize = 24.sp, fontWeight = FontWeight.Black, color = theme.textPrimary)
+                            Text("USER_01", fontSize = 24.sp, fontWeight = FontWeight.Black, color = theme.textPrimary)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.Default.Edit, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Verified, null, tint = theme.accent, modifier = Modifier.size(16.dp))
                         }
-                        Text("MASTER TRACKER", fontSize = 12.sp, color = theme.accent, fontWeight = FontWeight.Bold)
+                        Text("LEVEL ${((stats?.totalMinutesWatched ?: 0) / 1000) + 1} TRACKER", fontSize = 12.sp, color = theme.accent, fontWeight = FontWeight.Bold)
                         
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         // XP Bar
+                        val xpProgress = ((stats?.totalMinutesWatched ?: 0) % 1000) / 1000f
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(20.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color.Black.copy(alpha = 0.2f))
-                                .border(1.dp, Color.Black, RoundedCornerShape(10.dp))
+                                .height(12.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(theme.textPrimary.copy(alpha = 0.1f))
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth(0.4f)
+                                    .fillMaxWidth(xpProgress.coerceIn(0.1f, 1f))
                                     .fillMaxHeight()
                                     .background(theme.accent)
                             )
-                            Text(
-                                "0 / 1,000 XP",
-                                modifier = Modifier.align(Alignment.Center),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Black,
-                                color = Color.White
-                            )
                         }
+                        Text(
+                            "${(stats?.totalMinutesWatched ?: 0) % 1000} / 1,000 XP",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = theme.textSecondary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                 }
                 
@@ -133,42 +134,11 @@ fun ProfileScreen(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .background(Color.Magenta, RoundedCornerShape(4.dp))
+                        .background(theme.accent, RoundedCornerShape(4.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
-                    Text("Lv. 1", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                    Text("Lv. ${((stats?.totalMinutesWatched ?: 0) / 1000) + 1}", color = theme.primary, fontSize = 14.sp, fontWeight = FontWeight.Black)
                 }
-            }
-        }
-
-        // Tabs (Profile / Stats)
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .height(48.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.Black)
-                .border(2.dp, Color.Black, RoundedCornerShape(12.dp))
-        ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .background(Color.White)
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("PROFILE", fontWeight = FontWeight.Black, color = Color.Black)
-            }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("STATS", fontWeight = FontWeight.Black, color = Color.White)
             }
         }
 
@@ -180,9 +150,22 @@ fun ProfileScreen(
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.Schedule, value = "0h", label = "WATCH TIME")
-            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.Whatshot, value = "0", label = "EPISODES", tint = Color.Magenta)
-            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.Cancel, value = "0", label = "DROPPED", tint = Color.Red)
+            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.Schedule, value = "${(stats?.totalMinutesWatched ?: 0) / 60}h", label = "WATCH TIME", tint = theme.accent)
+            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.Whatshot, value = "${stats?.totalEpisodesWatched ?: 0}", label = "EPISODES", tint = Color.Magenta)
+            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.Star, value = "${stats?.averageRating ?: 0f}", label = "AVG RATING", tint = Color.Yellow)
+        }
+
+        // Library Section
+        SectionTitle("COLLECTION")
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.Visibility, value = "${stats?.showsWatching ?: 0}", label = "WATCHING", tint = Color.Cyan)
+            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.Bookmark, value = "${stats?.showsPlanned ?: 0}", label = "PLANNED", tint = Color.Green)
+            StatCard(modifier = Modifier.weight(1f), icon = Icons.Default.CheckCircle, value = "${stats?.showsCompleted ?: 0}", label = "DONE", tint = theme.accent)
         }
 
         // Trophy Room Section
@@ -193,15 +176,15 @@ fun ProfileScreen(
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            repeat(3) { i ->
+            repeat(4) { i ->
                 Box(
                     modifier = Modifier
-                        .size(80.dp)
+                        .size(70.dp)
                         .clip(CircleShape)
-                        .background(if (i == 0) Color.Transparent else Color.White.copy(alpha = 0.05f))
+                        .background(if (i == 0) theme.accent.copy(alpha = 0.1f) else theme.textPrimary.copy(alpha = 0.05f))
                         .border(
                             2.dp,
-                            if (i == 0) theme.accent else Color.White.copy(alpha = 0.1f),
+                            if (i == 0) theme.accent else theme.textPrimary.copy(alpha = 0.1f),
                             CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -209,8 +192,8 @@ fun ProfileScreen(
                     Icon(
                         if (i == 0) Icons.Default.EmojiEvents else Icons.Default.Lock,
                         null,
-                        tint = if (i == 0) theme.accent else Color.Gray,
-                        modifier = Modifier.size(32.dp)
+                        tint = if (i == 0) theme.accent else theme.textSecondary,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -225,16 +208,16 @@ fun SectionTitle(title: String) {
     val theme = LocalAppTheme.current
     Text(
         text = title,
-        color = Color.Black,
-        fontSize = 18.sp,
+        color = theme.textPrimary,
+        fontSize = 16.sp,
         fontWeight = FontWeight.Black,
         modifier = Modifier
             .padding(16.dp)
             .drawBehind {
-                drawRect(Color.Cyan)
+                drawRect(theme.accent.copy(alpha = 0.2f))
             }
-            .border(2.dp, Color.Black)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .border(1.dp, theme.accent.copy(alpha = 0.5f))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     )
 }
 

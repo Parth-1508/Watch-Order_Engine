@@ -53,6 +53,6 @@ object TmdbConfig {
     const val MEDIA_TYPE_TV    = "tv"
 
     /** Comma-separated `append_to_response` modules added to each API call. */
-    const val APPEND_TO_RESPONSE_MOVIE = "release_dates"
-    const val APPEND_TO_RESPONSE_TV    = "content_ratings"
+    const val APPEND_TO_RESPONSE_MOVIE = "release_dates,credits,videos,recommendations,external_ids"
+    const val APPEND_TO_RESPONSE_TV    = "content_ratings,aggregate_credits,videos,recommendations,external_ids"
 }

@@ -54,6 +54,32 @@ fun TimelineScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(WatchOrderColors.DeepSpace)
+            .drawBehind {
+                // Ambient Starfield
+                val random = java.util.Random(42)
+                repeat(100) {
+                    val x = random.nextFloat() * size.width
+                    val y = random.nextFloat() * size.height
+                    val alpha = 0.1f + random.nextFloat() * 0.4f
+                    val radius = 0.5.dp.toPx() + random.nextFloat() * 1.5.dp.toPx()
+                    drawCircle(
+                        color = Color.White.copy(alpha = alpha),
+                        radius = radius,
+                        center = Offset(x, y)
+                    )
+                }
+                
+                // Nebula glow
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(WatchOrderColors.AccentGold.copy(alpha = 0.05f), Color.Transparent),
+                        center = Offset(size.width * 0.8f, size.height * 0.2f),
+                        radius = size.width * 0.6f
+                    ),
+                    center = Offset(size.width * 0.8f, size.height * 0.2f),
+                    radius = size.width * 0.6f
+                )
+            }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             TimelineHeader(

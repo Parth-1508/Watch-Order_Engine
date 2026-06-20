@@ -7,6 +7,7 @@ import com.example.watchorderengine.ui.viewmodel.HomeViewModel
 @Composable
 fun HomeScreenWrapper(
     onMediaClick: (String) -> Unit,
+    onSearchClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
@@ -38,7 +39,10 @@ fun HomeScreenWrapper(
         state = state,
         onCategorySelected = { state = state.copy(activeCategory = it) },
         onSearchQueryChanged = { state = state.copy(searchQuery = it) },
-        onSearchToggle = { state = state.copy(isSearchOpen = it) },
+        onSearchToggle = { 
+            if (it) onSearchClick() 
+            else state = state.copy(isSearchOpen = false) 
+        },
         onShowClick = { onMediaClick(it.internalId) },
         onSettingsClick = onSettingsClick
     )
@@ -49,7 +53,7 @@ private fun com.example.watchorderengine.data.model.MediaSummary.toMediaShowItem
     internalId = id,
     title = title,
     imageUrl = posterUrl ?: "",
-    genres = listOf(mediaCategory.name.lowercase().replaceFirstChar { it.uppercase() }),
-    badge = "canon",
+    genres = genres,
+    badge = mediaCategory.name,
     watchlistStatus = status
 )

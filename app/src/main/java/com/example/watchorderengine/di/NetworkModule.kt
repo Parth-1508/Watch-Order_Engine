@@ -4,9 +4,11 @@ import android.content.Context
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.example.watchorderengine.BuildConfig
+import com.example.watchorderengine.network.AnilistApiService
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbAuthInterceptor
 import com.example.watchorderengine.network.TmdbConfig
+import com.example.watchorderengine.network.gemini.GeminiService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -116,4 +118,26 @@ object NetworkModule {
     @Singleton
     fun provideTmdbApiService(retrofit: Retrofit): TmdbApiService =
         retrofit.create(TmdbApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAnilistApiService(moshi: Moshi): AnilistApiService {
+        val loggingInterceptor = HttpLoggingInterceptor().apply {
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
+            else HttpLoggingInterceptor.Level.NONE
+        }
+        val client = OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            .build()
+        return Retrofit.Builder()
+            .baseUrl("https://graphql.anilist.co")
+            .client(client)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(AnilistApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGeminiService(): GeminiService = GeminiService()
 }
