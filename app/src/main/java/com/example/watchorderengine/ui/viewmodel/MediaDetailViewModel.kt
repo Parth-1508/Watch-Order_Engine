@@ -30,6 +30,9 @@ class MediaDetailViewModel @Inject constructor(
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
 
+    private val _generationError = MutableStateFlow<String?>(null)
+    val generationError: StateFlow<String?> = _generationError.asStateFlow()
+
     private val _universe = MutableStateFlow<com.example.watchorderengine.data.model.Universe?>(null)
     val universe: StateFlow<com.example.watchorderengine.data.model.Universe?> = _universe.asStateFlow()
 
@@ -67,11 +70,20 @@ class MediaDetailViewModel @Inject constructor(
     fun generateWatchOrder(mediaId: String) {
         viewModelScope.launch {
             _isAnalyzing.value = true
-            repository.generateWatchOrder(mediaId)
-            // Reload to reflect changes in episode types
-            loadMediaDetail(mediaId)
+            _generationError.value = null
+            val errorMessage = repository.generateWatchOrder(mediaId)
+            if (errorMessage != null) {
+                _generationError.value = errorMessage
+            } else {
+                // Reload to reflect changes in episode types
+                loadMediaDetail(mediaId)
+            }
             _isAnalyzing.value = false
         }
+    }
+
+    fun dismissGenerationError() {
+        _generationError.value = null
     }
 
     fun updateTrackingState(mediaId: String, state: TrackingState) {

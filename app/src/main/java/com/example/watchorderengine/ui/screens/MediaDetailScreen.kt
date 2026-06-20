@@ -50,6 +50,7 @@ fun MediaDetailScreen(
     val universe by viewModel.universe.collectAsState()
     val isAnalyzing by viewModel.isAnalyzing.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val generationError by viewModel.generationError.collectAsState()
 
     LaunchedEffect(mediaId) {
         android.util.Log.d("MediaDetail", "Loading mediaId: $mediaId")
@@ -71,6 +72,8 @@ fun MediaDetailScreen(
                 episodes = episodesBySeason, // Use the collected state here
                 isAnalyzing = isAnalyzing,
                 universe = universe,
+                generationError = generationError,
+                onDismissGenerationError = { viewModel.dismissGenerationError() },
                 onBack = onBack,
                 onUpdateTracking = { viewModel.updateTrackingState(detail.id, it) },
                 onToggleEpisode = { viewModel.toggleEpisodeWatched(it.id, detail.id) },
@@ -101,6 +104,8 @@ private fun DetailContent(
     episodes: List<EpisodeItem>,
     isAnalyzing: Boolean,
     universe: com.example.watchorderengine.data.model.Universe?,
+    generationError: String?,
+    onDismissGenerationError: () -> Unit,
     onBack: () -> Unit,
     onUpdateTracking: (TrackingState) -> Unit,
     onToggleEpisode: (EpisodeItem) -> Unit,
@@ -350,7 +355,7 @@ private fun DetailContent(
                     onToggleEpisode = onToggleEpisode
                 )
                 "characters" -> CharactersTab(detail, viewModel)
-                "chronology" -> ChronologyTab(detail, isAnalyzing, universe, onGenerateOrder, onUniverseClick)
+                "chronology" -> ChronologyTab(detail, isAnalyzing, universe, generationError, onGenerateOrder, onUniverseClick, onDismissGenerationError)
             }
         }
     }
@@ -580,11 +585,31 @@ private fun ChronologyTab(
     detail: MediaDetail,
     isAnalyzing: Boolean,
     universe: com.example.watchorderengine.data.model.Universe?,
+    generationError: String?,
     onGenerate: () -> Unit,
-    onUniverseClick: (String) -> Unit
+    onUniverseClick: (String) -> Unit,
+    onDismissError: () -> Unit
 ) {
     val theme = LocalAppTheme.current
     Column(modifier = Modifier.padding(16.dp)) {
+        if (generationError != null) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                color = Color(0xFFF87171).copy(alpha = 0.15f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color(0xFFF87171).copy(alpha = 0.4f))
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFF87171), modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(generationError, color = Color(0xFFF87171), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismissError, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, null, tint = Color(0xFFF87171))
+                    }
+                }
+            }
+        }
+
         if (universe != null) {
             Surface(
                 modifier = Modifier

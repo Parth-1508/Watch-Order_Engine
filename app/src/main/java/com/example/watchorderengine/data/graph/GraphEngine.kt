@@ -87,6 +87,9 @@ object GraphEngine {
         val sortedIds = mutableListOf<String>()
 
         while (queue.isNotEmpty()) {
+            // Sort queue by chrono_order to ensure deterministic vertical levels
+            queue.sortBy { nodes.find { n -> n.id == it }?.chrono_order ?: 0f }
+
             val current = queue.poll()!!
             sortedIds.add(current)
             val currentLevel = levelMap[current] ?: 0
@@ -138,31 +141,31 @@ object GraphEngine {
         inEdges: Map<String, List<String>>
     ): Map<String, Int> {
         val columnMap = mutableMapOf<String, Int>()
-        var nextColumn = 0 // Monotonically increasing; each branch gets a fresh column
+        val activeColumnsAtLevel = mutableMapOf<Int, MutableSet<Int>>()
+        var nextGlobalColumn = 0
 
         for (nodeId in sortedIds) {
-            // Ensure every node has a column assigned before we process its successors.
-            // If it wasn't pre-assigned by a parent, assign it now.
+            val parents = inEdges[nodeId]
+            
             if (nodeId !in columnMap) {
-                val parents = inEdges[nodeId]
                 if (parents.isNullOrEmpty()) {
-                    // Root node: assign the next available column
-                    columnMap[nodeId] = nextColumn++
+                    columnMap[nodeId] = nextGlobalColumn++
                 } else {
-                    // Non-root: use the minimum column among all assigned parents.
+                    // Try to inherit the most common parent column
                     val parentCols = parents.mapNotNull { columnMap[it] }
-                    columnMap[nodeId] = parentCols.minOrNull() ?: nextColumn++
+                    columnMap[nodeId] = parentCols.minOrNull() ?: nextGlobalColumn++
                 }
             }
 
-            // Pre-assign columns to immediate successors to maintain "straight lines" where possible.
+            val currentCol = columnMap[nodeId]!!
             val successors = outEdges[nodeId] ?: emptyList()
+            
             successors.forEachIndexed { index, successor ->
                 if (successor !in columnMap) {
                     columnMap[successor] = if (index == 0) {
-                        columnMap[nodeId]!!   // First child: straight continuation
+                        currentCol // Continue main branch
                     } else {
-                        nextColumn++          // Subsequent children: new branch column
+                        nextGlobalColumn++ // Start new branch
                     }
                 }
             }

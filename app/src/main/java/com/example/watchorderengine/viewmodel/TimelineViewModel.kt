@@ -362,7 +362,13 @@ class TimelineViewModel @Inject constructor(
     fun onNodeClick(nodeId: String) {
         val state = _uiState.value as? TimelineUiState.Success
         val node = state?.rows?.flatMap { it.nodes }?.find { it.node.id == nodeId }?.node
-        val targetId = if (node != null && node.tmdb_id > 0) "tmdb_${node.tmdb_id}" else nodeId
+        
+        // Ensure strictly formatted tmdb_ prefix for navigation consistency
+        val targetId = if (node != null && node.tmdb_id > 0) {
+            "tmdb_${node.tmdb_id}"
+        } else {
+            nodeId
+        }
         
         viewModelScope.launch {
             _events.send(TimelineEvent.NavigateToDetail(targetId))

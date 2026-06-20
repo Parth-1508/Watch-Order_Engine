@@ -182,4 +182,64 @@ class WatchOrderRepository @Inject constructor(
                 SetOptions.merge()
             ).await()
         }
+
+    // ─── Gemini-Generated Universe Publishing ─────────────────────────────────
+
+    /**
+     * Persists a Gemini-generated watch-order DAG to Firestore as a new
+     * universe, immediately after generation succeeds.
+     */
+    suspend fun publishGeneratedUniverse(
+        universeId: String,
+        universeName: String,
+        coverUrl: String,
+        nodes: List<com.example.watchorderengine.data.model.MediaNode>,
+        edges: List<com.example.watchorderengine.data.model.Edge>
+    ): Result<Unit> = runCatching {
+        check(nodes.isNotEmpty()) { "Cannot publish an empty universe." }
+
+        val batch = firestore.batch()
+
+        batch.set(
+            universeRef(universeId),
+            mapOf(
+                "name" to universeName,
+                "description" to "AI-generated watch order via Gemini.",
+                "posterUrl" to coverUrl,
+                "total_nodes" to nodes.size,
+                "available_routes" to listOf("ALL", "CANON", "ESSENTIAL")
+            ),
+            SetOptions.merge()
+        )
+
+        // Default tags for filtering
+        val defaultTags = listOf(
+            "ALL" to mapOf("label" to "All Content", "order" to 0, "color" to "#888899"),
+            "CANON" to mapOf("label" to "Canon Only", "order" to 1, "color" to "#4ADE80"),
+            "ESSENTIAL" to mapOf("label" to "Essential", "order" to 2, "color" to "#60A5FA")
+        )
+        defaultTags.forEach { (tagId, data) ->
+            batch.set(tagsRef(universeId).document(tagId), data, SetOptions.merge())
+        }
+
+        nodes.forEach { node ->
+            batch.set(nodesRef(universeId).document(node.id), node)
+        }
+        edges.forEachIndexed { index, edge ->
+            val edgeDocId = "${edge.from_node_id}__${edge.to_node_id}__$index"
+            batch.set(edgesRef(universeId).document(edgeDocId), edge)
+        }
+
+        batch.commit().await()
+    }
+
+    suspend fun clearGeneratedUniverse(universeId: String): Result<Unit> = runCatching {
+        val nodeDocs = nodesRef(universeId).get().await()
+        val edgeDocs = edgesRef(universeId).get().await()
+
+        val batch = firestore.batch()
+        nodeDocs.documents.forEach { batch.delete(it.reference) }
+        edgeDocs.documents.forEach { batch.delete(it.reference) }
+        batch.commit().await()
+    }
 }

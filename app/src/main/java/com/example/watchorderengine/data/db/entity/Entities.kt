@@ -23,6 +23,7 @@ data class MediaEntity(
     val numberOfSeasons: Int?,
     val numberOfEpisodes: Int?,
     val releaseDate: String?,
+    val releaseYear: String = "",
     val trailerKey: String?,
     val castJson: String,                // JSON string of List<CastMember>
     val recommendationsJson: String,

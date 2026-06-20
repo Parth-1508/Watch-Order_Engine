@@ -191,7 +191,9 @@ data class TmdbMediaResult(
     @Json(name = "backdrop_path") val backdropPath: String?,
     @Json(name = "media_type")   val mediaType: String?,
     @Json(name = "vote_average") val voteAverage: Double?,
-    @Json(name = "genre_ids")    val genreIds: List<Int>?
+    @Json(name = "genre_ids")    val genreIds: List<Int>?,
+    @Json(name = "release_date") val releaseDate: String? = null,
+    @Json(name = "first_air_date") val firstAirDate: String? = null
 )
 
 @JsonClass(generateAdapter = true)

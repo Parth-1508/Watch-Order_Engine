@@ -163,12 +163,12 @@ private fun TimelineContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(state.availableTags) { tag ->
-                val isSelected = tag.id == state.activeRouteTag
+                val isSelected = tag.tagId == state.activeRouteTag
                 Surface(
                     shape = CircleShape,
                     color = if (isSelected) WatchOrderColors.AccentGold else WatchOrderColors.ElevatedSurface,
                     border = BorderStroke(1.dp, if (isSelected) WatchOrderColors.AccentGold else WatchOrderColors.CardBorder),
-                    onClick = { viewModel.setActiveRoute(tag.id) }
+                    onClick = { viewModel.setActiveRoute(tag.tagId) }
                 ) {
                     Text(
                         tag.label,

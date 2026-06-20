@@ -60,7 +60,8 @@ data class MediaSummary(
     val trackingState: TrackingState?,  // null if not in user's list
     val ageRating: String,
     val priorityTag: PriorityTag = PriorityTag.NONE,
-    val genres: List<String> = emptyList()
+    val genres: List<String> = emptyList(),
+    val releaseDate: String? = null
 )
 
 /** Full rich detail for the Detail Screen. */
@@ -217,7 +218,7 @@ data class Edge(
 
 @Serializable
 data class ContextTag(
-    @DocumentId val id: String = "",
+    @DocumentId val tagId: String = "",
     val label: String = "",
     val color: String = "#FFFFFF",
     val order: Int = 0

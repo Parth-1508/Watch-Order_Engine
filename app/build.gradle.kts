@@ -28,8 +28,16 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        buildConfigField("String", "TMDB_API_KEY", "\"${localProperties.getProperty("TMDB_API_KEY") ?: ""}\"")
         buildConfigField("String", "TMDB_READ_ACCESS_TOKEN", "\"${localProperties.getProperty("TMDB_READ_ACCESS_TOKEN") ?: ""}\"")
         buildConfigField("String", "GEMINI_API_KEY", "\"${localProperties.getProperty("GEMINI_API_KEY") ?: ""}\"")
+        buildConfigField("String", "GEMINI_BURNER_KEY_1", "\"${localProperties.getProperty("GEMINI_BURNER_KEY_1") ?: ""}\"")
+        buildConfigField("String", "GEMINI_BURNER_KEY_2", "\"${localProperties.getProperty("GEMINI_BURNER_KEY_2") ?: ""}\"")
+        buildConfigField("String", "GEMINI_BURNER_KEY_3", "\"${localProperties.getProperty("GEMINI_BURNER_KEY_3") ?: ""}\"")
+        buildConfigField("String", "GEMINI_BURNER_KEY_4", "\"${localProperties.getProperty("GEMINI_BURNER_KEY_4") ?: ""}\"")
+        buildConfigField("String", "GEMINI_BURNER_KEY_5", "\"${localProperties.getProperty("GEMINI_BURNER_KEY_5") ?: ""}\"")
+        buildConfigField("String", "GEMINI_BURNER_KEY_6", "\"${localProperties.getProperty("GEMINI_BURNER_KEY_6") ?: ""}\"")
+        buildConfigField("String", "GEMINI_BURNER_KEY_7", "\"${localProperties.getProperty("GEMINI_BURNER_KEY_7") ?: ""}\"")
     }
 
     buildTypes {

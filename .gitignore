@@ -11,3 +11,4 @@ node_modules/
 **/node_modules/
 *.log
 app/src/main/java/com/example/watchorderengine/temp/
+temp/

@@ -1,9 +1,11 @@
 package com.example.watchorderengine.ui.timeline.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,16 +47,6 @@ private val DASH_INTERVALS = floatArrayOf(10f, 6f)
  * slot, [DisplayNode]s are arranged side-by-side according to their column index.
  * Between consecutive row slots, a [ConnectorStrip] Canvas draws smooth bezier
  * curves representing the DAG edges.
- *
- * VISUAL RESULT:
- *  - Single-path stretches render as a straight vertical line of cards.
- *  - Branch points split the cards left/right with diagonal connector curves.
- *  - Merge points bring the diagonal curves back together.
- *  - Completed connections are solid green; pending ones are dashed grey.
- *
- * @param rows        The ordered list of [TimelineRow]s from the ViewModel.
- * @param onNodeToggle Called when the user taps a node's checkbox.
- * @param onNodeClick  Called when the user taps a node's card body.
  */
 @Composable
 fun BranchingTimelineView(
@@ -63,51 +55,50 @@ fun BranchingTimelineView(
     onNodeClick: (DisplayNode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Resolve density once here; pass as a parameter where needed to avoid
-    // capturing LocalDensity inside Canvas lambda (which runs in DrawScope).
     val density = LocalDensity.current
     val columnWidthPx = with(density) { COLUMN_WIDTH.toPx() }
     val columnGapPx = with(density) { COLUMN_GAP.toPx() }
 
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(
-            start  = 16.dp,
-            end    = 16.dp,
-            top    = 16.dp,
-            bottom = 64.dp  // Extra bottom padding for FAB or tab bar clearance
-        ),
-        verticalArrangement = Arrangement.spacedBy(0.dp) // We control spacing manually
+    Box(
+        modifier = modifier.fillMaxSize()
     ) {
-        itemsIndexed(
-            items = rows,
-            key   = { _, row -> row.level }   // Stable key: prevents recompose on scroll
-        ) { index, row ->
-
-            // ── Timeline Row (the node cards) ─────────────────────────────────
-            TimelineRowView(
-                row          = row,
-                onNodeToggle = onNodeToggle,
-                onNodeClick  = onNodeClick
-            )
-
-            // ── Connector Strip (bezier lines to the next row) ─────────────
-            // Only draw connectors if there IS a next row. The last row has no
-            // outgoing connections to render.
-            if ((index < rows.lastIndex) && row.outgoing.isNotEmpty()) {
-                ConnectorStrip(
-                    connections  = row.outgoing,
-                    totalColumns = row.totalColumns,
-                    columnWidthPx = columnWidthPx,
-                    columnGapPx   = columnGapPx,
-                    modifier     = Modifier
-                        .fillMaxWidth()
-                        .height(CONNECTOR_STRIP_HEIGHT)
-                        .padding(horizontal = 0.dp)
+        val scrollState = rememberScrollState()
+        
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .horizontalScroll(scrollState),
+            contentPadding = PaddingValues(
+                start  = 32.dp,
+                end    = 32.dp,
+                top    = 16.dp,
+                bottom = 64.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            itemsIndexed(
+                items = rows,
+                key   = { _, row -> row.level }
+            ) { index, row ->
+                TimelineRowView(
+                    row          = row,
+                    onNodeToggle = onNodeToggle,
+                    onNodeClick  = onNodeClick
                 )
-            } else if (index < rows.lastIndex) {
-                // Even with no edge data, leave a small gap between rows
-                Spacer(Modifier.height(CONNECTOR_STRIP_HEIGHT / 2))
+
+                if ((index < rows.lastIndex) && row.outgoing.isNotEmpty()) {
+                    ConnectorStrip(
+                        connections  = row.outgoing,
+                        totalColumns = row.totalColumns,
+                        columnWidthPx = columnWidthPx,
+                        columnGapPx   = columnGapPx,
+                        modifier     = Modifier
+                            .fillMaxWidth()
+                            .height(CONNECTOR_STRIP_HEIGHT)
+                    )
+                } else if (index < rows.lastIndex) {
+                    Spacer(Modifier.height(CONNECTOR_STRIP_HEIGHT / 2))
+                }
             }
         }
     }
@@ -115,24 +106,12 @@ fun BranchingTimelineView(
 
 // ─── Row View ─────────────────────────────────────────────────────────────────
 
-/**
- * Renders a single "row" in the timeline — one topological level.
- *
- * If the row has multiple nodes (a branch), they appear side-by-side.
- * Single-node rows are centered within the full column width to maintain
- * visual alignment with branching rows above/below.
- *
- * The "column" index of each node dictates its horizontal position.
- * Empty column slots (gaps between branches) are rendered as transparent
- * spacers to keep card positions consistent across rows.
- */
 @Composable
 private fun TimelineRowView(
     row: TimelineRow,
     onNodeToggle: (DisplayNode) -> Unit,
     onNodeClick: (DisplayNode) -> Unit
 ) {
-    // Build a sparse map of column → DisplayNode for O(1) lookup below
     val nodeByColumn = row.nodes.associateBy { it.column }
     val usedColumns = (0 until row.totalColumns)
 
@@ -147,15 +126,15 @@ private fun TimelineRowView(
                 val displayNode = nodeByColumn[columnIndex]
 
                 if (displayNode != null) {
-                    // ── Populated column: render the node card ─────────────────
-                    TimelineNodeCard(
-                        displayNode = displayNode,
-                        onCheckToggle = { onNodeToggle(displayNode) },
-                        onCardClick = { onNodeClick(displayNode) },
-                        modifier = Modifier.width(COLUMN_WIDTH)
-                    )
+                    key(displayNode.node.id) {
+                        TimelineNodeCard(
+                            displayNode = displayNode,
+                            onCheckToggle = { onNodeToggle(displayNode) },
+                            onCardClick = { onNodeClick(displayNode) },
+                            modifier = Modifier.width(COLUMN_WIDTH)
+                        )
+                    }
                 } else {
-                    // ── Empty column: transparent spacer ──────────────────────
                     Spacer(
                         modifier = Modifier
                             .width(COLUMN_WIDTH)
@@ -169,26 +148,6 @@ private fun TimelineRowView(
 
 // ─── Connector Strip Canvas ───────────────────────────────────────────────────
 
-/**
- * Draws the DAG edge connections between two consecutive timeline rows using Canvas.
- *
- * For each [GraphEngine.OutgoingConnection], draws a cubic Bezier curve from the
- * center of the source column (at y=0, the top of this strip) to the center of
- * the destination column (at y=height, the bottom of this strip).
- *
- * VISUAL DESIGN:
- *   - COMPLETED edges: solid green line, slightly thicker.
- *   - PENDING edges:   dashed grey line, thinner.
- *   - Straight lines (same column): degenerate bezier — renders as a straight line.
- *   - Diagonal lines (different columns): smooth S-curve via bezier control points
- *     at 40% and 60% of the strip height, creating a "branch and merge" look.
- *   - A small filled circle is drawn at both ends of each connection for polish.
- *
- * @param connections    The outgoing connections for the row above this strip.
- * @param totalColumns   Total columns in the graph (used to compute x-centers).
- * @param columnWidthPx  Width of a single node card column in pixels.
- * @param columnGapPx    Gap between columns in pixels.
- */
 @Composable
 private fun ConnectorStrip(
     connections: List<GraphEngine.OutgoingConnection>,
@@ -197,9 +156,6 @@ private fun ConnectorStrip(
     columnGapPx: Float,
     modifier: Modifier = Modifier
 ) {
-    // Pre-resolve color values outside the Canvas lambda.
-    // Canvas's DrawScope does NOT have access to CompositionLocals,
-    // so colors must be captured in the composable's scope.
     val colorCompleted  = WatchOrderColors.ConnectorActive
     val colorPending    = WatchOrderColors.ConnectorIdle
     val colorDotActive  = WatchOrderColors.CompletedGreen
@@ -237,7 +193,6 @@ private fun ConnectorStrip(
             }
 
             if (connection.isFromNodeCompleted) {
-                // Glow effect for active connections
                 drawPath(
                     path = path,
                     color = colorCompleted.copy(alpha = 0.2f),
