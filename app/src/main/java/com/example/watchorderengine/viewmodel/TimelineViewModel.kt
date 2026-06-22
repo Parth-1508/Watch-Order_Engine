@@ -360,14 +360,15 @@ class TimelineViewModel @Inject constructor(
 
     /** Navigates to a node's detail screen (handled by nav host). */
     fun onNodeClick(nodeId: String) {
-        val state = _uiState.value as? TimelineUiState.Success
-        val node = state?.rows?.flatMap { it.nodes }?.find { it.node.id == nodeId }?.node
+        val state = _uiState.value as? TimelineUiState.Success ?: return
+        val node = state.rows.flatMap { it.nodes }.find { it.node.id == nodeId }?.node
         
-        // Ensure strictly formatted tmdb_ prefix for navigation consistency
+        // Ensure strictly formatted tmdb_ prefix for navigation consistency.
+        // If node has no TMDB ID (local arc), fallback to the parent show's ID.
         val targetId = if (node != null && node.tmdb_id > 0) {
             "tmdb_${node.tmdb_id}"
         } else {
-            nodeId
+            currentUniverseId
         }
         
         viewModelScope.launch {

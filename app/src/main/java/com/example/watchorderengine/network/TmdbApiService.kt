@@ -96,6 +96,22 @@ interface TmdbApiService {
         @Path("personId") personId: Int,
         @Query("language") language: String = "en-US"
     ): Response<com.example.watchorderengine.network.model.TmdbPersonResponse>
+
+    /**
+     * Fetches the FULL person profile for the Character Detail screen: biography,
+     * birth/death info, all known profile photos, and the person's combined
+     * movie+TV filmography sorted by popularity — all in one call via
+     * append_to_response, same pattern as getMovie()/getTvShow().
+     *
+     * Endpoint: GET /3/person/{person_id}
+     * Docs: https://developer.themoviedb.org/reference/person-details
+     */
+    @GET("person/{personId}")
+    suspend fun getPersonDetail(
+        @Path("personId") personId: Int,
+        @Query("language") language: String = "en-US",
+        @Query("append_to_response") appendToResponse: String = "combined_credits,images,external_ids"
+    ): Response<com.example.watchorderengine.network.model.TmdbPersonDetail>
 }
 
 // ─── OkHttp Auth Interceptor ──────────────────────────────────────────────────

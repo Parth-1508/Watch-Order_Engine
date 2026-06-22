@@ -44,6 +44,13 @@ sealed class Screen(val route: String) {
     object Detail    : Screen("detail/{mediaId}") {
         fun route(mediaId: String) = "detail/$mediaId"
     }
+    object CharacterDetail : Screen("character/{tmdbPersonId}/{characterName}/{showTitle}/{isAnime}") {
+        fun route(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean): String {
+            val encodedName = java.net.URLEncoder.encode(characterName, "UTF-8")
+            val encodedTitle = java.net.URLEncoder.encode(showTitle, "UTF-8")
+            return "character/$tmdbPersonId/$encodedName/$encodedTitle/$isAnime"
+        }
+    }
 }
 
 @Composable
@@ -148,6 +155,33 @@ fun AppNavigation() {
                     onBack = { navController.popBackStack() },
                     onUniverseClick = { universeId ->
                         navController.navigate("timeline/$universeId")
+                    },
+                    onCharacterClick = { tmdbPersonId, characterName, showTitle, isAnime ->
+                        navController.navigate(
+                            Screen.CharacterDetail.route(tmdbPersonId, characterName, showTitle, isAnime)
+                        )
+                    }
+                )
+            }
+
+            composable(
+                route = Screen.CharacterDetail.route,
+                arguments = listOf(
+                    navArgument("tmdbPersonId") { type = NavType.IntType },
+                    navArgument("characterName") { type = NavType.StringType },
+                    navArgument("showTitle") { type = NavType.StringType },
+                    navArgument("isAnime") { type = NavType.BoolType }
+                )
+            ) { backStackEntry ->
+                val args = backStackEntry.arguments
+                CharacterDetailScreen(
+                    tmdbPersonId = args?.getInt("tmdbPersonId") ?: 0,
+                    characterName = java.net.URLDecoder.decode(args?.getString("characterName") ?: "", "UTF-8"),
+                    showTitle = java.net.URLDecoder.decode(args?.getString("showTitle") ?: "", "UTF-8"),
+                    isAnime = args?.getBoolean("isAnime") ?: false,
+                    onBack = { navController.popBackStack() },
+                    onMediaClick = { mediaId ->
+                        navController.navigate(Screen.Detail.route(safeMediaId(mediaId)))
                     }
                 )
             }

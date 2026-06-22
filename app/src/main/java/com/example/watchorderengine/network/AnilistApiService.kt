@@ -88,22 +88,35 @@ data class AnilistCharacters(
 @JsonClass(generateAdapter = true)
 data class AnilistCharacterEdge(
     val role: String,
-    val node: AnilistCharacterNode?
+    val node: AnilistCharacterNode?,
+    val voiceActors: List<AnilistVoiceActor>? = null
 )
 
 @JsonClass(generateAdapter = true)
 data class AnilistCharacterNode(
     val id: Int,
     val name: AnilistCharacterName?,
-    val image: AnilistCharacterImage?
+    val image: AnilistCharacterImage?,
+    val description: String? = null,
+    val gender: String? = null,
+    val age: String? = null
 )
 
 @JsonClass(generateAdapter = true)
 data class AnilistCharacterName(
-    val full: String?
+    val full: String?,
+    val native: String? = null
 )
 
 @JsonClass(generateAdapter = true)
 data class AnilistCharacterImage(
     val large: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistVoiceActor(
+    val id: Int,
+    val name: AnilistCharacterName?,
+    val language: String?,
+    val image: AnilistCharacterImage?
 )

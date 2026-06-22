@@ -42,15 +42,32 @@ fun MediaDetailScreen(
     mediaId: String,
     onBack: () -> Unit,
     onUniverseClick: (String) -> Unit = {},
+    onCharacterClick: (tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean) -> Unit = { _, _, _, _ -> },
     viewModel: MediaDetailViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
     val media by viewModel.mediaDetail.collectAsState()
-    val episodes by viewModel.episodes.collectAsState()
     val universe by viewModel.universe.collectAsState()
     val isAnalyzing by viewModel.isAnalyzing.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isEpisodesLoading by viewModel.isEpisodesLoading.collectAsState()
     val generationError by viewModel.generationError.collectAsState()
+    val generationSuccess by viewModel.generationSuccess.collectAsState()
+
+    if (generationSuccess) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissGenerationSuccess() },
+            title = { Text("Success", color = theme.textPrimary) },
+            text = { Text("Watch order generated successfully!", color = theme.textSecondary) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissGenerationSuccess() }) {
+                    Text("OK", color = theme.accent)
+                }
+            },
+            containerColor = theme.surface,
+            textContentColor = theme.textPrimary
+        )
+    }
 
     LaunchedEffect(mediaId) {
         android.util.Log.d("MediaDetail", "Loading mediaId: $mediaId")
@@ -67,21 +84,25 @@ fun MediaDetailScreen(
     ) {
         media?.let { detail ->
             android.util.Log.d("MediaDetail", "Rendering DetailContent for: ${detail.title}")
-            DetailContent(
-                detail = detail,
-                episodes = episodesBySeason, // Use the collected state here
-                isAnalyzing = isAnalyzing,
-                universe = universe,
-                generationError = generationError,
-                onDismissGenerationError = { viewModel.dismissGenerationError() },
-                onBack = onBack,
-                onUpdateTracking = { viewModel.updateTrackingState(detail.id, it) },
-                onToggleEpisode = { viewModel.toggleEpisodeWatched(it.id, detail.id) },
-                onSeasonChange = { viewModel.loadEpisodes(detail.id, it) },
-                onGenerateOrder = { viewModel.generateWatchOrder(detail.id) },
-                onUniverseClick = onUniverseClick,
-                viewModel = viewModel
-            )
+            key(detail.id) {
+                DetailContent(
+                    detail = detail,
+                    episodes = episodesBySeason, // Use the collected state here
+                    isAnalyzing = isAnalyzing,
+                    isEpisodesLoading = isEpisodesLoading,
+                    universe = universe,
+                    generationError = generationError,
+                    onDismissGenerationError = { viewModel.dismissGenerationError() },
+                    onBack = onBack,
+                    onUpdateTracking = { viewModel.updateTrackingState(detail.id, it) },
+                    onToggleEpisode = { viewModel.toggleEpisodeWatched(it.id, detail.id) },
+                    onSeasonChange = { viewModel.loadEpisodes(detail.id, it) },
+                    onGenerateOrder = { viewModel.generateWatchOrder(detail.id) },
+                    onUniverseClick = onUniverseClick,
+                    onCharacterClick = onCharacterClick,
+                    viewModel = viewModel
+                )
+            }
         }
         
         if (isLoading && media == null) {
@@ -103,6 +124,7 @@ private fun DetailContent(
     detail: MediaDetail,
     episodes: List<EpisodeItem>,
     isAnalyzing: Boolean,
+    isEpisodesLoading: Boolean,
     universe: com.example.watchorderengine.data.model.Universe?,
     generationError: String?,
     onDismissGenerationError: () -> Unit,
@@ -112,6 +134,7 @@ private fun DetailContent(
     onSeasonChange: (Int) -> Unit,
     onGenerateOrder: () -> Unit,
     onUniverseClick: (String) -> Unit,
+    onCharacterClick: (tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean) -> Unit,
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
@@ -348,13 +371,14 @@ private fun DetailContent(
                     selectedSeason = selectedSeason,
                     episodes = episodes,
                     isAnalyzing = isAnalyzing,
+                    isEpisodesLoading = isEpisodesLoading,
                     onSeasonChange = { 
                         selectedSeason = it
                         onSeasonChange(it)
                     },
                     onToggleEpisode = onToggleEpisode
                 )
-                "characters" -> CharactersTab(detail, viewModel)
+                "characters" -> CharactersTab(detail, viewModel, onCharacterClick)
                 "chronology" -> ChronologyTab(detail, isAnalyzing, universe, generationError, onGenerateOrder, onUniverseClick, onDismissGenerationError)
             }
         }
@@ -367,6 +391,7 @@ private fun EpisodesTab(
     selectedSeason: Int,
     episodes: List<EpisodeItem>,
     isAnalyzing: Boolean,
+    isEpisodesLoading: Boolean,
     onSeasonChange: (Int) -> Unit,
     onToggleEpisode: (EpisodeItem) -> Unit
 ) {
@@ -395,10 +420,15 @@ private fun EpisodesTab(
 
         Spacer(modifier = Modifier.height(16.dp))
         
-        if (isAnalyzing) {
+        if (isAnalyzing || isEpisodesLoading) {
             repeat(3) { EpisodeRowPlaceholder() }
         } else if (episodes.isEmpty()) {
-            repeat(3) { EpisodeRowPlaceholder() }
+            Text(
+                "No episodes found for this season.",
+                color = Color.Gray,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(16.dp)
+            )
         } else {
             episodes.forEach { episode ->
                 EpisodeRow(episode, onToggleEpisode)
@@ -518,16 +548,29 @@ private fun EpisodeRowPlaceholder() {
 }
 
 @Composable
-private fun CharactersTab(detail: MediaDetail, viewModel: MediaDetailViewModel) {
+private fun CharactersTab(
+    detail: MediaDetail,
+    viewModel: MediaDetailViewModel,
+    onCharacterClick: (tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean) -> Unit
+) {
+    val isAnime = detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME
     Column(modifier = Modifier.padding(16.dp)) {
         detail.cast.take(10).forEach { cast ->
-            CharacterRow(cast, viewModel)
+            CharacterRow(
+                cast = cast,
+                viewModel = viewModel,
+                onClick = { onCharacterClick(cast.tmdbId, cast.character, detail.title, isAnime) }
+            )
         }
     }
 }
 
 @Composable
-private fun CharacterRow(cast: com.example.watchorderengine.data.model.CastMember, viewModel: MediaDetailViewModel) {
+private fun CharacterRow(
+    cast: com.example.watchorderengine.data.model.CastMember,
+    viewModel: MediaDetailViewModel,
+    onClick: () -> Unit
+) {
     val theme = LocalAppTheme.current
     var biography by remember { mutableStateOf<String?>(null) }
     
@@ -536,6 +579,7 @@ private fun CharacterRow(cast: com.example.watchorderengine.data.model.CastMembe
     }
 
     Surface(
+        onClick = onClick,
         modifier = Modifier.padding(bottom = 16.dp).fillMaxWidth(),
         color = theme.surface.copy(alpha = 0.3f),
         shape = RoundedCornerShape(16.dp),

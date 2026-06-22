@@ -153,26 +153,46 @@ class GeminiService @Inject constructor() {
             .build()
 
         return@withContext try {
-            android.util.Log.d("GeminiService", "Sending request to Gemini...")
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext GeminiResult.Error(
-                "Empty response from Gemini (HTTP ${response.code})"
-            )
-            android.util.Log.d("GeminiService", "Received response: ${response.code}")
+            var retryCount = 0
+            val maxRetries = 3
+            var lastResponseCode = 0
+            var lastResponseBody: String? = null
 
-            if (!response.isSuccessful) {
-                android.util.Log.e("GeminiService", "Gemini error body: $body")
-                return@withContext GeminiResult.Error("Gemini error HTTP ${response.code}")
+            while (retryCount < maxRetries) {
+                android.util.Log.d("GeminiService", "Sending request to Gemini (Attempt ${retryCount + 1})...")
+                val response = client.newCall(request).execute()
+                lastResponseCode = response.code
+                lastResponseBody = response.body?.string()
+
+                if (response.isSuccessful && lastResponseBody != null) {
+                    android.util.Log.d("GeminiService", "Received successful response.")
+                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(lastResponseBody)
+                    val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                        ?: return@withContext GeminiResult.Error("Gemini returned an empty response body.")
+
+                    val watchOrder = moshi.adapter(GeminiWatchOrder::class.java).fromJson(rawJson)
+                        ?: return@withContext GeminiResult.Error("Failed to parse Gemini response.")
+
+                    return@withContext GeminiResult.Success(watchOrder)
+                }
+
+                if (lastResponseCode == 503 || lastResponseCode == 429 || lastResponseCode == 504) {
+                    val waitTime = 2000L * (retryCount + 1)
+                    android.util.Log.w("GeminiService", "Gemini busy (HTTP $lastResponseCode). Retrying in ${waitTime}ms...")
+                    kotlinx.coroutines.delay(waitTime)
+                    retryCount++
+                } else {
+                    // Non-retryable error
+                    break
+                }
             }
 
-            val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
-            val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: return@withContext GeminiResult.Error("Gemini returned an empty response body.")
-
-            val watchOrder = moshi.adapter(GeminiWatchOrder::class.java).fromJson(rawJson)
-                ?: return@withContext GeminiResult.Error("Failed to parse Gemini response.")
-
-            GeminiResult.Success(watchOrder)
+            android.util.Log.e("GeminiService", "Gemini error (HTTP $lastResponseCode): $lastResponseBody")
+            when (lastResponseCode) {
+                429 -> GeminiResult.Error("Gemini AI limit reached. Please wait a minute and try again.")
+                503 -> GeminiResult.Error("Gemini AI is currently overloaded. Please try again in a few moments.")
+                else -> GeminiResult.Error("Gemini error (HTTP $lastResponseCode).")
+            }
 
         } catch (e: Exception) {
             GeminiResult.Error("Network error calling Gemini: ${e.message}")

@@ -53,7 +53,9 @@ class WatchOrderRepository @Inject constructor(
         val listener = firestore.collection("universes")
             .addSnapshotListener { snap, err ->
                 if (err != null) { close(err); return@addSnapshotListener }
-                val universes = snap?.documents?.mapNotNull { it.toObject<Universe>() } ?: emptyList()
+                val universes = snap?.documents?.mapNotNull { doc ->
+                    doc.toObject<Universe>()?.copy(id = doc.id)
+                } ?: emptyList()
                 trySend(universes)
             }
         awaitClose { listener.remove() }
@@ -66,7 +68,7 @@ class WatchOrderRepository @Inject constructor(
     fun getUniverse(universeId: String): Flow<Universe> = callbackFlow {
         val listener = universeRef(universeId).addSnapshotListener { snap, err ->
             if (err != null) { close(err); return@addSnapshotListener }
-            snap?.toObject<Universe>()?.let { trySend(it) }
+            snap?.toObject<Universe>()?.copy(id = snap.id)?.let { trySend(it) }
         }
         awaitClose { listener.remove() }
     }
@@ -120,20 +122,32 @@ class WatchOrderRepository @Inject constructor(
     }
 
 
-    /** Finds if this media belongs to any universe tree. */
-    fun findUniverseForMedia(tmdbId: Int): Flow<Universe?> = callbackFlow {
+    /** Finds if this media belongs to any universe tree. Checks both TMDB and AniList IDs. */
+    fun findUniverseForMedia(tmdbId: Int, anilistId: Int?): Flow<Universe?> = callbackFlow {
         val listener = firestore.collection("universes")
             .addSnapshotListener { snap, err ->
                 if (err != null) { close(err); return@addSnapshotListener }
                 
-                val universes = snap?.documents?.mapNotNull { it.toObject<Universe>() } ?: emptyList()
+                val universes = snap?.documents?.mapNotNull { doc -> 
+                    doc.toObject<Universe>()?.copy(id = doc.id)
+                } ?: emptyList()
                 
                 this@callbackFlow.launch {
                     for (u in universes) {
-                        val nodesSnap = nodesRef(u.id).whereEqualTo("tmdb_id", tmdbId).get().await()
-                        if (!nodesSnap.isEmpty) {
+                        // Check nodes for TMDB ID match
+                        val tmdbNodesSnap = nodesRef(u.id).whereEqualTo("tmdb_id", tmdbId).get().await()
+                        if (!tmdbNodesSnap.isEmpty) {
                             trySend(u)
                             return@launch
+                        }
+                        
+                        // Check nodes for AniList ID match if provided
+                        if (anilistId != null && anilistId > 0) {
+                            val anilistNodesSnap = nodesRef(u.id).whereEqualTo("anilist_id", anilistId).get().await()
+                            if (!anilistNodesSnap.isEmpty) {
+                                trySend(u)
+                                return@launch
+                            }
                         }
                     }
                     trySend(null)

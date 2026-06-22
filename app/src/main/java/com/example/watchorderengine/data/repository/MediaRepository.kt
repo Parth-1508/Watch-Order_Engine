@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -30,9 +31,11 @@ class MediaRepository @Inject constructor(
     private val geminiService: GeminiService,
     private val watchOrderRepository: WatchOrderRepository
 ) {
-    fun findUniverseForMedia(tmdbId: Int) = watchOrderRepository.findUniverseForMedia(tmdbId)
+    fun findUniverseForMedia(tmdbId: Int, anilistId: Int?) = watchOrderRepository.findUniverseForMedia(tmdbId, anilistId)
     private val castType = Types.newParameterizedType(List::class.java, CastMember::class.java)
     private val castAdapter by lazy { moshi.adapter<List<CastMember>>(castType) }
+    private val arcsType = Types.newParameterizedType(List::class.java, StoryArc::class.java)
+    private val arcsAdapter by lazy { moshi.adapter<List<StoryArc>>(arcsType) }
 
     // ─── Media Detail ─────────────────────────────────────────────────────────
 
@@ -40,11 +43,12 @@ class MediaRepository @Inject constructor(
         val cached = buildMediaDetail(mediaId)
         emit(cached)
 
+        // Force a refresh if there's no cache OR if the cache is just a "Skeleton" from watch order generation.
+        val isSkeleton = db.mediaDao().getById(mediaId)?.status == "Skeleton"
         val refreshed = refreshDetail(mediaId)
-        if (refreshed) {
+        
+        if (refreshed || cached == null || isSkeleton) {
             emit(buildMediaDetail(mediaId))
-        } else if (cached == null) {
-            emit(null)
         }
     }.flowOn(Dispatchers.IO)
 
@@ -52,22 +56,25 @@ class MediaRepository @Inject constructor(
         val tmdbId = mediaId.removePrefix("tmdb_").toIntOrNull() ?: return false
         val cachedEntity = db.mediaDao().getById(mediaId)
 
+        Log.d(TAG, "refreshDetail: Attempting refresh for $mediaId (Category: ${cachedEntity?.mediaCategory}, Status: ${cachedEntity?.status})")
+
         // Robust routing: 
-        // 1. If we know the category, use it.
-        // 2. If it's a new ID (no cached category), try TV then Movie (TV is more complex to fetch).
-        return when (cachedEntity?.mediaCategory) {
-            "MOVIE"  -> fetchAndCacheMovie(tmdbId, mediaId)
-            "TV_SHOW" -> fetchAndCacheTv(tmdbId, mediaId)
-            else -> {
-                // Try to resolve category via TMDB search if unknown
-                val searchMatch = searchMedia(cachedEntity?.title ?: "").firstOrNull { it.tmdbId == tmdbId }
-                if (searchMatch?.mediaCategory == MediaCategory.MOVIE) {
-                    fetchAndCacheMovie(tmdbId, mediaId)
-                } else {
-                    fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
-                }
+        // 1. If we know the category and it's NOT a skeleton, use it.
+        // 2. If it's a skeleton or category unknown, try TV then Movie.
+        if (cachedEntity != null && cachedEntity.status != "Skeleton") {
+            return when (cachedEntity.mediaCategory) {
+                "MOVIE"  -> fetchAndCacheMovie(tmdbId, mediaId)
+                "TV_SHOW" -> fetchAndCacheTv(tmdbId, mediaId)
+                else -> false
             }
         }
+
+        // It's a skeleton or unknown. Try both.
+        Log.d(TAG, "refreshDetail: $mediaId is a skeleton or unknown category. Trying TV then Movie.")
+        val tvSuccess = fetchAndCacheTv(tmdbId, mediaId)
+        if (tvSuccess) return true
+        
+        return fetchAndCacheMovie(tmdbId, mediaId)
     }
 
     private suspend fun fetchAndCacheMovie(tmdbId: Int, mediaId: String): Boolean {
@@ -75,7 +82,16 @@ class MediaRepository @Inject constructor(
             val response = apiService.getMovie(tmdbId)
             if (!response.isSuccessful || response.body() == null) return false
             val body = response.body()!!
-            val entity = body.toMediaEntity(mediaId)
+            // toMediaEntity() builds a brand-new row from TMDB data only and hardcodes
+            // arcsJson/recommendationsJson back to "[]". Without carrying these forward,
+            // every refresh (including the one that fires right after "Generate Watch
+            // Order" via loadMediaDetail(forceRefresh=true)) silently wipes any
+            // locally-generated chronology before the user ever sees it.
+            val existing = db.mediaDao().getById(mediaId)
+            val entity = body.toMediaEntity(mediaId).copy(
+                arcsJson = existing?.arcsJson ?: "[]",
+                recommendationsJson = existing?.recommendationsJson ?: "[]"
+            )
             val castJson = buildCastJson(body, isMovie = true)
             db.mediaDao().upsert(entity.copy(castJson = castJson))
             true
@@ -90,13 +106,17 @@ class MediaRepository @Inject constructor(
             val response = apiService.getTvShow(tmdbId)
             if (!response.isSuccessful || response.body() == null) return false
             val body = response.body()!!
-            val entity = body.toMediaEntity(mediaId)
+            // Same reasoning as fetchAndCacheMovie() above.
+            val existing = db.mediaDao().getById(mediaId)
+            val entity = body.toMediaEntity(mediaId).copy(
+                arcsJson = existing?.arcsJson ?: "[]",
+                recommendationsJson = existing?.recommendationsJson ?: "[]"
+            )
             db.mediaDao().upsert(entity)
 
             if (body.seasons != null) {
                 supervisorScope {
                     body.seasons
-                        .filter { it.seasonNumber > 0 }
                         .map { season ->
                             async { refreshSeasonEpisodes(tmdbId, mediaId, season.seasonNumber, season.episodeCount) }
                         }
@@ -119,9 +139,13 @@ class MediaRepository @Inject constructor(
         seasonNumber: Int,
         episodeCount: Int
     ) {
+        Log.d(TAG, "Refreshing episodes for $mediaId season $seasonNumber")
         try {
             val response = apiService.getTvSeason(tmdbId, seasonNumber)
-            if (!response.isSuccessful || response.body() == null) return
+            if (!response.isSuccessful || response.body() == null) {
+                Log.w(TAG, "Season $seasonNumber response failed: ${response.code()} ${response.errorBody()?.string()}")
+                return
+            }
 
             val seasonBody = response.body()!!
             val seasonId = "${mediaId}_s$seasonNumber"
@@ -156,10 +180,16 @@ class MediaRepository @Inject constructor(
                     episodeType = existing?.episodeType ?: "CANON",
                     arcName = existing?.arcName
                 )
-            } ?: return
-            if (episodeEntities.isNotEmpty()) db.episodeDao().upsertAll(episodeEntities)
+            } ?: run {
+                Log.w(TAG, "No episodes found in response for $mediaId S$seasonNumber")
+                return
+            }
+            if (episodeEntities.isNotEmpty()) {
+                Log.d(TAG, "Upserting ${episodeEntities.size} episodes for $seasonId")
+                db.episodeDao().upsertAll(episodeEntities)
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "Season $seasonNumber fetch failed: ${e.message}")
+            Log.e(TAG, "Season $seasonNumber fetch failed for $mediaId", e)
         }
     }
 
@@ -185,8 +215,6 @@ class MediaRepository @Inject constructor(
         val progress = db.userProgressDao().getProgress(mediaId)
         val cast = runCatching { castAdapter.fromJson(entity.castJson) }.getOrDefault(emptyList())
 
-        val arcsType = Types.newParameterizedType(List::class.java, StoryArc::class.java)
-        val arcsAdapter = moshi.adapter<List<StoryArc>>(arcsType)
         val arcs = runCatching { arcsAdapter.fromJson(entity.arcsJson) }.getOrDefault(emptyList())
 
         return MediaDetail(
@@ -220,9 +248,14 @@ class MediaRepository @Inject constructor(
     }
 
     suspend fun getEpisodesBySeason(mediaId: String, seasonNumber: Int): List<EpisodeItem> = withContext(Dispatchers.IO) {
-        val seasonId = "${mediaId}_s$seasonNumber"
+        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
+        val seasonId = "${sanitizedId}_s$seasonNumber"
+        
+        Log.d(TAG, "Querying episodes for seasonId: $seasonId")
         val episodes = db.episodeDao().getEpisodesBySeason(seasonId)
-        val watchedIds = db.episodeWatchedDao().getWatchedIds(mediaId).toSet()
+        Log.d(TAG, "Found ${episodes.size} episodes in DB for $seasonId")
+        
+        val watchedIds = db.episodeWatchedDao().getWatchedIds(sanitizedId).toSet()
         episodes.map { it.toDomain(watchedIds) }
     }
 
@@ -259,52 +292,80 @@ class MediaRepository @Inject constructor(
             is GeminiResult.Success -> {
                 val watchOrder = result.watchOrder
                 val universeId = mediaId
+                val idMap = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-                // 1. Resolve TMDB IDs for each node. Use direct ID from Gemini if provided.
+                Log.d(TAG, "GENERATION: Gemini returned ${watchOrder.nodes.size} nodes and ${watchOrder.edges.size} edges.")
+
+                // 1. Resolve TMDB IDs for each node.
                 val mediaNodes = supervisorScope {
                     watchOrder.nodes.map { node ->
                         async {
-                            // If Gemini provided a direct TMDB ID, use it. 
-                            // Otherwise, fallback to the parent show's ID (for episode arcs).
-                            var resolvedId = if (node.tmdbId > 0) node.tmdbId else entity.tmdbId
+                            Log.d(TAG, "NODE_RESOLVE: Starting for title='${node.title}', suggested_id=${node.tmdbId}")
+                            
+                            var resolvedId = 0
                             var resolvedType = if (node.contentType == "MOVIE") "movie" else "tv"
 
-                            // Safety check: if Gemini ID is 0 or same as parent, but it's a standalone MOVIE/SERIES, 
-                            // we can still try the title search as a last resort.
-                            if (resolvedId == entity.tmdbId && (node.contentType == "MOVIE" || node.contentType == "SERIES")) {
-                                // If the title is almost exactly the same as the parent, it's likely just an arc
-                                // of the parent show, so we DON'T search to avoid jumping to another movie.
-                                val isSameTitleAsParent = node.title.equals(entity.title, ignoreCase = true) || 
-                                                        (entity.title.length > 5 && node.title.startsWith(entity.title, ignoreCase = true))
-
-                                if (!isSameTitleAsParent || !node.searchQuery.isNullOrBlank()) {
-                                    val query = node.searchQuery ?: node.title
-                                    val searchResults = searchMedia(query)
-                                    
-                                    // Robust matching:
-                                    // 1. Exact title match (best)
-                                    // 2. Result that contains the node title AND vice versa (strong containment)
-                                    // 3. Fallback to first result ONLY if it's not the parent ID we're trying to escape
-                                    
-                                    val bestMatch = searchResults.find { 
-                                        it.title.equals(node.title, ignoreCase = true)
-                                    } ?: searchResults.find {
-                                        it.title.contains(node.title, ignoreCase = true) && 
-                                        node.title.contains(it.title, ignoreCase = true)
-                                    } ?: searchResults.find {
-                                        // If we have a search query, trust the first result that isn't the parent
-                                        !node.searchQuery.isNullOrBlank() && it.tmdbId != entity.tmdbId
+                            // TIER 1: Verify suggested ID if provided
+                            if (node.tmdbId > 0) {
+                                try {
+                                    val response = if (resolvedType == "movie") apiService.getMovie(node.tmdbId) else apiService.getTvShow(node.tmdbId)
+                                    if (response.isSuccessful && response.body() != null) {
+                                        val body = response.body()!!
+                                        val remoteTitle = body.title ?: body.name ?: ""
+                                        if (isTitleMatch(remoteTitle, node.title)) {
+                                            resolvedId = node.tmdbId
+                                            Log.d(TAG, "NODE_RESOLVE: Suggested ID ${node.tmdbId} verified!")
+                                        }
                                     }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "NODE_RESOLVE: Verification failed for suggested ID ${node.tmdbId}")
+                                }
+                            }
 
-                                    if (bestMatch != null) {
-                                        resolvedId = bestMatch.tmdbId
-                                        resolvedType = if (bestMatch.mediaCategory == MediaCategory.MOVIE) "movie" else "tv"
-                                    }
+                            // TIER 2: Search if TIER 1 failed or wasn't applicable
+                            if (resolvedId <= 0 && (node.contentType == "MOVIE" || node.contentType == "SERIES")) {
+                                val query = node.searchQuery ?: node.title
+                                val searchResults = searchMedia(query)
+                                
+                                val bestMatch = searchResults.find { 
+                                    isTitleMatch(it.title, node.title)
+                                } ?: searchResults.find {
+                                    !node.searchQuery.isNullOrBlank() && it.tmdbId != entity.tmdbId && isTitleMatch(it.title, node.title)
+                                }
+
+                                if (bestMatch != null) {
+                                    resolvedId = bestMatch.tmdbId
+                                    resolvedType = if (bestMatch.mediaCategory == MediaCategory.MOVIE) "movie" else "tv"
+                                    Log.d(TAG, "NODE_RESOLVE: Found and validated ID via search! query='$query', id=$resolvedId")
+                                }
+                            }
+
+                            // FINAL RESOLUTION: Map to global tmdb_ ID or keep as local nodeId
+                            val finalId = if (resolvedId > 0) "tmdb_$resolvedId" else node.nodeId
+                            idMap[node.nodeId] = finalId
+
+                            // CRITICAL: Upsert skeleton media if it's a new external movie/show
+                            if (finalId.startsWith("tmdb_") && finalId != mediaId) {
+                                val existing = db.mediaDao().getById(finalId)
+                                if (existing == null || existing.status == "Skeleton") {
+                                    Log.d(TAG, "DB_WRITE: Creating skeleton for $finalId ('${node.title}')")
+                                    db.mediaDao().upsert(MediaEntity(
+                                        id = finalId, tmdbId = resolvedId, 
+                                        anilistId = null, title = node.title, originalTitle = node.title,
+                                        overview = "", tagline = "", status = "Skeleton",
+                                        posterUrl = null, backdropUrl = null,
+                                        mediaCategory = if (resolvedType == "movie") "MOVIE" else "TV_SHOW",
+                                        genres = emptyList(), ageRating = "NR", voteAverage = 0f, voteCount = 0,
+                                        runtime = null, numberOfSeasons = null, numberOfEpisodes = null,
+                                        releaseDate = null, releaseYear = "", trailerKey = null,
+                                        castJson = "[]", recommendationsJson = "[]", arcsJson = "[]",
+                                        lastUpdated = System.currentTimeMillis()
+                                    ))
                                 }
                             }
 
                             com.example.watchorderengine.data.model.MediaNode(
-                                id = node.nodeId,
+                                id = finalId,
                                 title = node.title,
                                 tmdb_id = resolvedId,
                                 tmdb_media_type = resolvedType,
@@ -321,13 +382,81 @@ class MediaRepository @Inject constructor(
 
                 val mediaEdges = watchOrder.edges.map { edge ->
                     com.example.watchorderengine.data.model.Edge(
-                        from_node_id = edge.fromNodeId,
-                        to_node_id = edge.toNodeId,
+                        from_node_id = idMap[edge.fromNodeId] ?: edge.fromNodeId,
+                        to_node_id = idMap[edge.toNodeId] ?: edge.toNodeId,
                         type = edge.type
                     )
                 }
 
-                // 2. Publish to Firestore
+                // 2. Mirror locally FIRST and unconditionally. This is what the
+                //    Chronology tab actually reads (MediaDetail.arcs <- entity.arcsJson),
+                //    so it must not depend on the Firestore publish below succeeding.
+                //
+                //    Only nodes that stayed mapped to THIS show (i.e. the resolver above
+                //    did NOT redirect them to a different tmdb_ entity) belong in its own
+                //    arc list — a node's start/end season+episode only makes sense against
+                //    this show's own episode table. Redirected nodes are a different
+                //    movie/show entirely and are handled by the skeleton-creation +
+                //    refreshDetail() calls below instead.
+                Log.d(TAG, "DB_WRITE: Building local arc list + updating episode types for ${watchOrder.nodes.size} nodes")
+                val ownArcs = watchOrder.nodes
+                    .filter { node -> !(idMap[node.nodeId] ?: node.nodeId).startsWith("tmdb_") }
+                    .map { node ->
+                        StoryArc(
+                            name = node.title,
+                            startSeason = node.startSeason,
+                            startEpisode = node.startEpisode,
+                            endSeason = node.endSeason,
+                            endEpisode = node.endEpisode,
+                            startAbsoluteEpisode = null,
+                            endAbsoluteEpisode = null,
+                            synopsis = node.synopsis
+                        )
+                    }
+                val arcsJson = arcsAdapter.toJson(ownArcs) ?: "[]"
+                // Re-read in case the skeleton-creation step above already touched this row.
+                val latestEntity = db.mediaDao().getById(mediaId) ?: entity
+                db.mediaDao().upsert(latestEntity.copy(arcsJson = arcsJson))
+                Log.d(TAG, "DB_WRITE: Wrote ${ownArcs.size} arc(s) into $mediaId.arcsJson")
+
+                supervisorScope {
+                    watchOrder.nodes.forEach { node ->
+                        val finalNodeId = idMap[node.nodeId] ?: node.nodeId
+                        
+                        // If it's a new movie/show, trigger a full refresh to get its episodes/details
+                        if (finalNodeId.startsWith("tmdb_") && finalNodeId != mediaId) {
+                            launch {
+                                Log.d(TAG, "FETCH: Triggering detail refresh for $finalNodeId")
+                                refreshDetail(finalNodeId)
+                            }
+                        }
+
+                        val classification = when {
+                            "FILLER" in node.tags -> "FILLER"
+                            "MIXED" in node.tags -> "MIXED"
+                            else -> "CANON"
+                        }
+                        val seasonId = "${finalNodeId}_s${node.startSeason}"
+                        val nodeEpisodes = db.episodeDao().getEpisodesBySeason(seasonId).filter { ep ->
+                            ep.episodeNumber in node.startEpisode..node.endEpisode
+                        }
+                        
+                        if (nodeEpisodes.isNotEmpty()) {
+                            Log.d(TAG, "DB_WRITE: Mapping ${nodeEpisodes.size} episodes to arc '${node.title}'")
+                            nodeEpisodes.forEach { ep ->
+                                db.episodeDao().upsertAll(listOf(ep.copy(
+                                    episodeType = classification,
+                                    arcName = node.title
+                                )))
+                            }
+                        }
+                    }
+                }
+
+                // 3. Publish to Firestore as a best-effort sync for the shared/universe
+                //    timeline view. This can fail (auth, rules, network) without the
+                //    Chronology tab being affected at all — it already works locally.
+                Log.d(TAG, "FIRESTORE: Clearing and publishing universe=$universeId")
                 watchOrderRepository.clearGeneratedUniverse(universeId)
                 val publishResult = watchOrderRepository.publishGeneratedUniverse(
                     universeId = universeId,
@@ -338,45 +467,11 @@ class MediaRepository @Inject constructor(
                 )
 
                 if (publishResult.isFailure) {
-                    return@withContext "Saved locally, but Firestore push failed: ${publishResult.exceptionOrNull()?.message}"
+                    Log.w(TAG, "FIRESTORE: Push failed: ${publishResult.exceptionOrNull()?.message}")
+                    "Generated successfully, but syncing to the shared timeline failed: ${publishResult.exceptionOrNull()?.message}"
+                } else {
+                    null
                 }
-
-                // 3. Mirror locally for Instant Detail
-                val arcs = watchOrder.nodes.map { node ->
-                    StoryArc(
-                        name = node.title,
-                        startSeason = node.startSeason,
-                        startEpisode = node.startEpisode,
-                        endSeason = node.endSeason,
-                        endEpisode = node.endEpisode,
-                        startAbsoluteEpisode = null,
-                        endAbsoluteEpisode = null,
-                        synopsis = node.synopsis
-                    )
-                }
-                val arcsType = Types.newParameterizedType(List::class.java, StoryArc::class.java)
-                val arcsJson = moshi.adapter<List<StoryArc>>(arcsType).toJson(arcs) ?: "[]"
-                db.mediaDao().upsert(entity.copy(arcsJson = arcsJson))
-
-                // Update episode types
-                watchOrder.nodes.forEach { node ->
-                    val classification = when {
-                        "FILLER" in node.tags -> "FILLER"
-                        "MIXED" in node.tags -> "MIXED"
-                        else -> "CANON"
-                    }
-                    val seasonId = "${mediaId}_s${node.startSeason}"
-                    val nodeEpisodes = db.episodeDao().getEpisodesBySeason(seasonId).filter { ep ->
-                        ep.episodeNumber in node.startEpisode..node.endEpisode
-                    }
-                    nodeEpisodes.forEach { ep ->
-                        db.episodeDao().upsertAll(listOf(ep.copy(
-                            episodeType = classification,
-                            arcName = node.title
-                        )))
-                    }
-                }
-                null
             }
         }
     }
@@ -482,6 +577,43 @@ class MediaRepository @Inject constructor(
             trackingState = state, ageRating = ageRating, priorityTag = priority,
             releaseDate = releaseDate
         )
+
+    private fun isTitleMatch(searchTitle: String, targetTitle: String): Boolean {
+        // 1. Clean strings: lowercase, remove special chars, remove "part"
+        fun clean(s: String) = s.lowercase()
+            .replace("part", "")
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val s1 = clean(searchTitle)
+        val s2 = clean(targetTitle)
+        
+        // Exact match after cleaning
+        if (s1 == s2) return true
+        
+        // 2. Year Check: If both strings contain a 4-digit year, they MUST match.
+        val year1 = extractYear(searchTitle)
+        val year2 = extractYear(targetTitle)
+        if (year1 != null && year2 != null && year1 != year2) {
+            Log.d(TAG, "TITLE_MATCH: Year mismatch ($year1 vs $year2) for '$searchTitle' vs '$targetTitle'")
+            return false
+        }
+
+        // 3. Token Check: If one is a significant subset of the other
+        val words1 = s1.split(" ").toSet()
+        val words2 = s2.split(" ").toSet()
+        val intersection = words1.intersect(words2)
+        
+        // If they share most of their words, it's a match (e.g. "Krrish 3" vs "Krrish 3: The Game")
+        val minSize = minOf(words1.size, words2.size)
+        return minSize > 0 && intersection.size.toFloat() / minSize >= 0.8f
+    }
+
+    private fun extractYear(s: String): String? {
+        val match = Regex("\\b(19|20)\\d{2}\\b").find(s)
+        return match?.value
+    }
 
     private fun com.example.watchorderengine.network.model.TmdbDetailResponse.toMediaEntity(
         mediaId: String
