@@ -40,6 +40,7 @@ data class TmdbDetailResponse(
     @Json(name = "content_ratings")      val contentRatings: TmdbContentRatings?,    // TV
     @Json(name = "release_dates")        val releaseDates: TmdbReleaseDates?,        // Movies
     @Json(name = "keywords")             val keywords: TmdbKeywords?,
+    @Json(name = "watch/providers")      val watchProviders: TmdbWatchProviderResults?,
 ) {
     fun toDomainModel(): TmdbMediaDetail = TmdbMediaDetail(
         tmdbId = id,
@@ -244,6 +245,30 @@ data class TmdbKeywords(
 data class TmdbKeyword(
     @Json(name = "id")   val id: Int,
     @Json(name = "name") val name: String,
+)
+
+// ─── Watch Providers ──────────────────────────────────────────────────────────
+
+@JsonClass(generateAdapter = true)
+data class TmdbWatchProviderResults(
+    @Json(name = "results") val results: Map<String, TmdbWatchProviderCountry>?
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbWatchProviderCountry(
+    @Json(name = "link")     val link: String?,
+    @Json(name = "flatrate") val flatrate: List<TmdbWatchProvider>? = emptyList(),
+    @Json(name = "rent")     val rent: List<TmdbWatchProvider>? = emptyList(),
+    @Json(name = "buy")      val buy: List<TmdbWatchProvider>? = emptyList(),
+    @Json(name = "free")     val free: List<TmdbWatchProvider>? = emptyList(),
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbWatchProvider(
+    @Json(name = "display_priority") val displayPriority: Int,
+    @Json(name = "logo_path")        val logoPath: String?,
+    @Json(name = "provider_id")      val providerId: Int,
+    @Json(name = "provider_name")    val providerName: String,
 )
 
 @JsonClass(generateAdapter = true)

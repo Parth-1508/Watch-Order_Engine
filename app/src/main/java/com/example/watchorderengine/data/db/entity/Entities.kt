@@ -2,6 +2,15 @@ package com.example.watchorderengine.data.db.entity
 
 import androidx.room.*
 
+/**
+ * Primary cache entity for a movie or TV show.
+ *
+ * Schema version 5 adds [watchProvidersJson] — a JSON-serialised
+ * `List<WatchProviderItem>` written by the repository when it fetches
+ * the TMDB "watch/providers" append module.  The column is TEXT NOT NULL
+ * with a default of `'[]'` so the v4→v5 migration is a single ALTER TABLE
+ * with no data loss.
+ */
 @Entity(tableName = "media")
 data class MediaEntity(
     @PrimaryKey val id: String,          // "tmdb_{tmdbId}"
@@ -15,7 +24,7 @@ data class MediaEntity(
     val posterUrl: String?,
     val backdropUrl: String?,
     val mediaCategory: String,           // "MOVIE" | "TV_SHOW" | "ANIME"
-    val genres: List<String>,            // Stored via Converters
+    val genres: List<String>,            // stored via Converters (||| separator)
     val ageRating: String,
     val voteAverage: Float,
     val voteCount: Int,
@@ -25,6 +34,18 @@ data class MediaEntity(
     val releaseDate: String?,
     val releaseYear: String = "",
     val trailerKey: String?,
+
+    /**
+     * JSON-serialised `List<WatchProviderItem>`.
+     *
+     * Written by [MediaRepository.resolveWatchProviders] at cache time.
+     * Read by [MediaRepository.buildMediaDetail] and exposed via [MediaDetail.watchProviders].
+     *
+     * Default `"[]"` so old rows (pre-v5) and skeleton entries created during
+     * watch-order generation show an empty provider list rather than crashing.
+     */
+    val watchProvidersJson: String = "[]",
+
     val castJson: String,                // JSON string of List<CastMember>
     val recommendationsJson: String,
     val arcsJson: String,
@@ -34,10 +55,10 @@ data class MediaEntity(
 @Entity(
     tableName = "seasons",
     foreignKeys = [ForeignKey(
-        entity = MediaEntity::class,
+        entity        = MediaEntity::class,
         parentColumns = ["id"],
-        childColumns = ["mediaId"],
-        onDelete = ForeignKey.CASCADE
+        childColumns  = ["mediaId"],
+        onDelete      = ForeignKey.CASCADE
     )],
     indices = [Index("mediaId")]
 )
@@ -62,7 +83,7 @@ data class SeasonEntity(
     indices = [Index("mediaId"), Index("seasonId"), Index("absoluteEpisodeNumber")]
 )
 data class EpisodeEntity(
-    @PrimaryKey val id: String,           // "{mediaId}_s{sN}e{eN}"
+    @PrimaryKey val id: String,          // "{mediaId}_s{sN}e{eN}"
     val seasonId: String,
     val mediaId: String,
     val episodeNumber: Int,
@@ -74,7 +95,7 @@ data class EpisodeEntity(
     val runtime: Int?,
     val stillUrl: String?,
     val voteAverage: Float,
-    val episodeType: String,              // "CANON" | "FILLER" | "MIXED"
+    val episodeType: String,             // "CANON" | "FILLER" | "MIXED"
     val arcName: String?,
     val lastUpdated: Long = System.currentTimeMillis()
 )
@@ -82,7 +103,7 @@ data class EpisodeEntity(
 @Entity(tableName = "user_progress", indices = [Index("trackingState")])
 data class UserProgressEntity(
     @PrimaryKey val mediaId: String,
-    val trackingState: String,            // TrackingState.name
+    val trackingState: String,           // TrackingState.name
     val currentSeasonNumber: Int = 0,
     val currentEpisodeNumber: Int = 0,
     val userRating: Float? = null,
@@ -90,13 +111,13 @@ data class UserProgressEntity(
     val completedDate: Long? = null,
     val updatedAt: Long = System.currentTimeMillis(),
     val userNotes: String = "",
-    val priorityTag: String = "NONE"      // PriorityTag.name
+    val priorityTag: String = "NONE"    // PriorityTag.name
 )
 
 @Entity(
     tableName = "episode_watched",
     primaryKeys = ["episodeId"],
-    indices = [Index("mediaId")]
+    indices    = [Index("mediaId")]
 )
 data class EpisodeWatchedEntity(
     val episodeId: String,
@@ -105,13 +126,9 @@ data class EpisodeWatchedEntity(
 )
 
 /**
- * Tracks shows the user swiped LEFT ("skip") on the Discovery deck — a
- * temporary "not now" that's distinct from the 5 real tracking states.
- * Skipped items are excluded from the deck until the user explicitly resets
- * (see DiscoveryViewModel.resetDeck), at which point this table is cleared
- * and they can resurface. Permanent dismissal ("Not Interested") instead
- * writes a real TrackingState.DROPPED via user_progress and is never cleared
- * by a reset.
+ * Tracks shows the user swiped LEFT ("skip") on the Discovery deck.
+ * Distinct from [TrackingState.DROPPED]: skipped items resurface after a deck
+ * reset; dropped items are permanently excluded.
  */
 @Entity(tableName = "discovery_skipped")
 data class DiscoverySkippedEntity(

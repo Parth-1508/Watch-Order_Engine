@@ -19,7 +19,17 @@ data class AnilistRequest(
 
 @JsonClass(generateAdapter = true)
 data class AnilistResponse(
-    val data: AnilistData?
+    val data: AnilistData?,
+    // AniList returns HTTP 200 even for a query that fails GraphQL validation
+    // (e.g. an invalid enum value) — `data` is null and the real reason lives
+    // here. Surfaced via Log.w in CharacterRepository so a bad query shows up
+    // in Logcat instead of silently rendering blank images.
+    val errors: List<AnilistError>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistError(
+    val message: String?
 )
 
 @JsonClass(generateAdapter = true)

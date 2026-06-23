@@ -142,7 +142,9 @@ fun AppNavigation() {
                 CommunityScreen()
             }
             composable(Screen.Profile.route) {
-                ProfileScreen(onSettingsClick = { navController.navigate(Screen.Settings.route) })
+                ProfileScreen(
+                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
+                )
             }
             composable(Screen.Settings.route) {
                 SettingsScreen(onBack = { navController.popBackStack() })

@@ -9,6 +9,8 @@ import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbConfig
 import com.example.watchorderengine.network.gemini.GeminiResult
 import com.example.watchorderengine.network.gemini.GeminiService
+import com.example.watchorderengine.network.model.TmdbWatchProvider
+import com.example.watchorderengine.network.model.TmdbWatchProviderCountry
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import kotlinx.coroutines.Dispatchers
@@ -90,10 +92,13 @@ class MediaRepository @Inject constructor(
         return when (cachedEntity?.mediaCategory) {
             "MOVIE"  -> fetchAndCacheMovie(tmdbId, mediaId)
             "TV_SHOW" -> fetchAndCacheTv(tmdbId, mediaId)
+            "ANIME" -> fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
             else -> {
                 // Try to resolve category via TMDB search if unknown
                 val searchMatch = searchMedia(cachedEntity?.title ?: "").firstOrNull { it.tmdbId == tmdbId }
-                if (searchMatch?.mediaCategory == MediaCategory.MOVIE) {
+                if (searchMatch?.mediaCategory == MediaCategory.ANIME) {
+                    fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
+                } else if (searchMatch?.mediaCategory == MediaCategory.MOVIE) {
                     fetchAndCacheMovie(tmdbId, mediaId)
                 } else {
                     fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
@@ -210,53 +215,64 @@ class MediaRepository @Inject constructor(
     ): String {
         val cast = if (isMovie) {
             body.credits?.cast?.take(15)?.map { c ->
-                CastMember(c.id, c.name, c.character ?: "", TmdbConfig.buildImageUrl(c.profilePath), c.order ?: 99)
+                CastMember(c.id, c.name, c.character ?: "", TmdbConfig.buildProfileUrl(c.profilePath), c.order ?: 99)
             } ?: emptyList()
         } else {
             body.aggregateCredits?.cast?.take(15)?.map { c ->
-                CastMember(c.id, c.name, c.roles?.firstOrNull()?.character ?: "", TmdbConfig.buildImageUrl(c.profilePath), c.order ?: 99)
+                CastMember(c.id, c.name, c.roles?.firstOrNull()?.character ?: "", TmdbConfig.buildProfileUrl(c.profilePath), c.order ?: 99)
             } ?: emptyList()
         }
         return castAdapter.toJson(cast) ?: "[]"
     }
 
     private suspend fun buildMediaDetail(mediaId: String): MediaDetail? {
-        val entity = db.mediaDao().getById(mediaId) ?: return null
-        val seasons = db.seasonDao().getSeasonsByMedia(mediaId)
+        val entity   = db.mediaDao().getById(mediaId) ?: return null
+        val seasons  = db.seasonDao().getSeasonsByMedia(mediaId)
         val progress = db.userProgressDao().getProgress(mediaId)
-        val cast = runCatching { castAdapter.fromJson(entity.castJson) }.getOrDefault(emptyList())
 
-        val arcsType = Types.newParameterizedType(List::class.java, StoryArc::class.java)
+        val castType    = Types.newParameterizedType(List::class.java, CastMember::class.java)
+        val castAdapter = moshi.adapter<List<CastMember>>(castType)
+        val cast        = runCatching { castAdapter.fromJson(entity.castJson) }.getOrDefault(emptyList())
+
+        val arcsType    = Types.newParameterizedType(List::class.java, StoryArc::class.java)
         val arcsAdapter = moshi.adapter<List<StoryArc>>(arcsType)
-        val arcs = runCatching { arcsAdapter.fromJson(entity.arcsJson) }.getOrDefault(emptyList())
+        val arcs        = runCatching { arcsAdapter.fromJson(entity.arcsJson) }.getOrDefault(emptyList())
+
+        // ERROR #5 — deserialise watch providers from the cached JSON column
+        val wpType      = Types.newParameterizedType(List::class.java, WatchProviderItem::class.java)
+        val wpAdapter   = moshi.adapter<List<WatchProviderItem>>(wpType)
+        val providers   = runCatching {
+            wpAdapter.fromJson(entity.watchProvidersJson)
+        }.getOrDefault(emptyList())
 
         return MediaDetail(
-            id              = entity.id,
-            tmdbId          = entity.tmdbId,
-            anilistId       = entity.anilistId,
-            title           = entity.title,
-            originalTitle   = entity.originalTitle,
-            overview        = entity.overview,
-            tagline         = entity.tagline,
-            status          = entity.status,
-            posterUrl       = entity.posterUrl,
-            backdropUrl     = entity.backdropUrl,
-            mediaCategory   = MediaCategory.valueOf(entity.mediaCategory),
-            genres          = entity.genres,
-            ageRating       = entity.ageRating.ifBlank { "NR" },
-            voteAverage     = entity.voteAverage,
-            voteCount       = entity.voteCount,
-            runtime         = entity.runtime,
-            numberOfSeasons = entity.numberOfSeasons,
+            id               = entity.id,
+            tmdbId           = entity.tmdbId,
+            anilistId        = entity.anilistId,
+            title            = entity.title,
+            originalTitle    = entity.originalTitle,
+            overview         = entity.overview,
+            tagline          = entity.tagline,
+            status           = entity.status,
+            posterUrl        = entity.posterUrl,
+            backdropUrl      = entity.backdropUrl,
+            mediaCategory    = MediaCategory.valueOf(entity.mediaCategory),
+            genres           = entity.genres,
+            ageRating        = entity.ageRating.ifBlank { "NR" },
+            voteAverage      = entity.voteAverage,
+            voteCount        = entity.voteCount,
+            runtime          = entity.runtime,
+            numberOfSeasons  = entity.numberOfSeasons,
             numberOfEpisodes = entity.numberOfEpisodes,
-            releaseDate     = entity.releaseDate,
-            releaseYear     = entity.releaseDate?.take(4) ?: "",
-            trailerKey      = entity.trailerKey,
-            cast            = cast ?: emptyList(),
-            recommendations = emptyList(),
-            seasons         = seasons.map { it.toDomain() },
-            arcs            = arcs ?: emptyList(),
-            userProgress    = progress?.toDomain()
+            releaseDate      = entity.releaseDate,
+            releaseYear      = entity.releaseDate?.take(4) ?: "",
+            trailerKey       = entity.trailerKey,
+            watchProviders   = providers ?: emptyList(),
+            cast             = cast ?: emptyList(),
+            recommendations  = emptyList(),
+            seasons          = seasons.map { it.toDomain() },
+            arcs             = arcs ?: emptyList(),
+            userProgress     = progress?.toDomain()
         )
     }
 
@@ -270,6 +286,16 @@ class MediaRepository @Inject constructor(
         
         val watchedIds = db.episodeWatchedDao().getWatchedIds(sanitizedId).toSet()
         episodes.map { it.toDomain(watchedIds) }
+    }
+
+    fun observeEpisodesBySeason(mediaId: String, seasonNumber: Int): Flow<List<EpisodeItem>> {
+        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
+        val seasonId = "${sanitizedId}_s$seasonNumber"
+
+        return db.episodeDao().observeEpisodesBySeason(seasonId).map { episodes ->
+            val watchedIds = db.episodeWatchedDao().getWatchedIds(sanitizedId).toSet()
+            episodes.map { it.toDomain(watchedIds) }
+        }.flowOn(Dispatchers.IO)
     }
 
     suspend fun searchMedia(query: String): List<MediaSummary> = withContext(Dispatchers.IO) {
@@ -625,6 +651,12 @@ class MediaRepository @Inject constructor(
             ?.filter { it.site == "YouTube" && it.type == "Trailer" && it.official }
             ?.maxByOrNull { it.publishedAt ?: "" }?.key
 
+        // Resolve providers at write-time so reads are instant.
+        val providers    = resolveWatchProviders(watchProviders?.results)
+        val wpType       = Types.newParameterizedType(List::class.java, WatchProviderItem::class.java)
+        val wpAdapter    = moshi.adapter<List<WatchProviderItem>>(wpType)
+        val providersJson = runCatching { wpAdapter.toJson(providers) }.getOrDefault("[]")
+
         return MediaEntity(
             id = mediaId, tmdbId = this.id,
             anilistId = null,
@@ -646,10 +678,106 @@ class MediaRepository @Inject constructor(
             releaseDate = releaseDate ?: firstAirDate,
             releaseYear = (releaseDate ?: firstAirDate)?.take(4) ?: "",
             trailerKey = trailerKey,
+            watchProvidersJson = providersJson,
             castJson = "[]",
             recommendationsJson = "[]",
             arcsJson = "[]"
         )
+    }
+
+    private fun resolveWatchProviders(
+        results: Map<String, TmdbWatchProviderCountry>?
+    ): List<WatchProviderItem> {
+        if (results.isNullOrEmpty()) return emptyList()
+
+        val countryCode = TmdbConfig.PROVIDER_COUNTRY_PRIORITY
+            .firstOrNull { results.containsKey(it) }
+            ?: results.keys.firstOrNull()
+            ?: return emptyList()
+
+        val country      = results[countryCode] ?: return emptyList()
+        val justWatchUrl = country.link
+
+        fun List<TmdbWatchProvider>?.toItems(type: String) =
+            this?.sortedBy { it.displayPriority }?.map { p ->
+                WatchProviderItem(
+                    providerId   = p.providerId,
+                    providerName = TmdbConfig.PROVIDER_SHORT_NAMES[p.providerId] ?: p.providerName,
+                    logoUrl      = TmdbConfig.buildImageUrl(p.logoPath, TmdbConfig.PosterSize.THUMBNAIL),
+                    offerType    = type,
+                    justWatchUrl = justWatchUrl
+                )
+            } ?: emptyList()
+
+        return (country.flatrate.toItems("stream") +
+                country.free.toItems("free") +
+                country.rent.toItems("rent") +
+                country.buy.toItems("buy"))
+            .distinctBy { it.providerId }
+    }
+
+    suspend fun countWatchedEpisodes(): Int = withContext(Dispatchers.IO) {
+        try { db.episodeWatchedDao().countAllWatched() } catch (e: Exception) { 0 }
+    }
+
+    suspend fun getAllRatedMedia(): List<Pair<String, Float>> = withContext(Dispatchers.IO) {
+        try {
+            db.userProgressDao().getAll()
+                .mapNotNull { p -> p.userRating?.let { Pair(p.mediaId, it) } }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    suspend fun updateRating(mediaId: String, rating: Float) = withContext(Dispatchers.IO) {
+        val now     = System.currentTimeMillis()
+        val updated = db.userProgressDao().updateRating(mediaId, rating, now)
+        if (updated == 0) {
+            db.userProgressDao().upsert(
+                UserProgressEntity(
+                    mediaId       = mediaId,
+                    trackingState = "PLANNED",
+                    userRating    = rating
+                )
+            )
+        }
+    }
+
+    suspend fun computeWatchStreak(): Int = withContext(Dispatchers.IO) {
+        try {
+            val timestamps = db.episodeWatchedDao().getAllWatchedTimestamps()
+            if (timestamps.isEmpty()) return@withContext 0
+
+            // Midnight-align each timestamp to a calendar day.
+            val days = timestamps.map { ts ->
+                val cal = java.util.Calendar.getInstance().apply {
+                    timeInMillis = ts
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                cal.timeInMillis
+            }.toSortedSet(reverseOrder())   // descending, unique days
+
+            val oneDayMs = 24L * 60L * 60L * 1000L
+            val todayMidnight = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0);       set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            // Walk backwards from today; stop at the first missing day.
+            var streak   = 0
+            var expected = todayMidnight
+            for (day in days) {
+                if (day == expected) { streak++; expected -= oneDayMs }
+                else if (day < expected) break
+                // day > expected means today's entries appeared but yesterday was missing
+                // — don't count a partial day at the head
+            }
+            streak
+        } catch (e: Exception) {
+            Log.w(TAG, "computeWatchStreak failed: ${e.message}")
+            0
+        }
     }
 
     private fun com.example.watchorderengine.network.model.TmdbMediaResult.toMinimalEntity(

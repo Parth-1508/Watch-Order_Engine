@@ -19,26 +19,6 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Merges three data sources into one [CharacterDetail]:
- *   - TMDB `/person/{id}` (append_to_response=combined_credits,images,external_ids)
- *     → real actor bio, photos, filmography.
- *   - AniList GraphQL `Media` → fictional character description, art, role,
- *     age/gender, the Japanese voice actor (anime only), AND — via the
- *     media's `relations` graph — every other movie/special in the same
- *     franchise, which lets us tell whether this *character* (not the actor)
- *     also appears in those entries (e.g. every "One Piece" movie Luffy is in).
- *   - Wikipedia REST `/page/summary/{title}` → fictional character LORE for
- *     everything AniList doesn't cover — live-action and Western-animation
- *     characters (Tony Stark, Walter White, etc.), where AniList has no entry
- *     at all and TMDB has no backstory field whatsoever.
- *
- * Both AniList and Wikipedia enrichment are strictly best-effort: any failure
- * (network, no match, disambiguation page, non-anime title) just means the
- * character-specific fields fall back gracefully, never a hard error for the
- * whole screen — only a failed TMDB person fetch fails the screen, since
- * that's the one source every character actually has.
- */
 @Singleton
 class CharacterRepository @Inject constructor(
     private val tmdbApi: TmdbApiService,
@@ -47,21 +27,8 @@ class CharacterRepository @Inject constructor(
 ) {
     companion object { private const val TAG = "CharacterRepository" }
 
-    // In-memory cache so the Characters list (one batch lookup per show) and
-    // the Character Detail screen (one lookup per character tapped) don't
-    // each fire their own AniList request for the same show. Best-effort —
-    // never persisted, just avoids redundant network calls within a session.
     private val mediaCache = ConcurrentHashMap<String, AnilistMedia>()
 
-    /**
-     * @param tmdbPersonId   The TMDB person ID (from CastMember.tmdbId).
-     * @param characterName  The fictional character name (e.g., "Naruto Uzumaki").
-     * @param showTitle      The parent show's title — used as a fallback AniList search.
-     * @param isAnime        Whether to attempt AniList character enrichment at all.
-     * @param anilistId      The parent show's AniList media ID, if known (MediaDetail.anilistId).
-     *                       Looking it up by ID is far more reliable than a title search and is
-     *                       always preferred when available.
-     */
     suspend fun getCharacterDetail(
         tmdbPersonId: Int,
         characterName: String,
@@ -70,19 +37,24 @@ class CharacterRepository @Inject constructor(
         anilistId: Int? = null
     ): Result<CharacterDetail> = withContext(Dispatchers.IO) {
         runCatching {
-            // Clean character name from common TMDB suffixes like "(voice)"
-            val cleanName = characterName
+            val cleanCharName = characterName
                 .replace(Regex("\\s*\\(voice\\)\\s*", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("\\s*\\(uncredited\\)\\s*", RegexOption.IGNORE_CASE), "")
                 .trim()
 
-            // Fetch TMDB person + AniList media (character + relations) + Wikipedia
-            // lore all in parallel — none of them depend on each other's result.
+            val cleanShowTitle = showTitle
+                .replace(Regex("\\(\\d{4}\\)"), "")
+                .replace(Regex("\\s*\\(TV Series\\)\\s*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("\\s*\\(Movie\\)\\s*", RegexOption.IGNORE_CASE), "")
+                .trim()
+
+            Log.d(TAG, "getCharacterDetail: id=$tmdbPersonId, name='$cleanCharName', show='$cleanShowTitle'")
+
             val tmdbDeferred = async { tmdbApi.getPersonDetail(tmdbPersonId) }
             val aniListDeferred = async {
-                if (isAnime) fetchAniListMedia(anilistId, showTitle) else null
+                if (isAnime) fetchAniListMedia(anilistId, cleanShowTitle) else null
             }
-            val wikiDeferred = async { getCharacterLore(cleanName, showTitle) }
+            val wikiDeferred = async { getCharacterLore(cleanCharName, cleanShowTitle) }
 
             val tmdbResp = tmdbDeferred.await()
             val media = aniListDeferred.await()
@@ -94,76 +66,59 @@ class CharacterRepository @Inject constructor(
             val person = tmdbResp.body() ?: error("Empty TMDB person response")
 
             val aniListEdges = media?.characters?.edges ?: emptyList()
-            Log.d(TAG, "AniList matching: Searching for '$cleanName' among ${aniListEdges.size} characters")
-
-            // Fuzzy-match the AniList character by name. 
-            // Priority 1: Exact/Contains match on full name
+            
             var aniEdge = aniListEdges.find { edge -> 
-                val match = nameMatches(edge.node?.name?.full, cleanName)
-                if (match) Log.d(TAG, "AniList Match Found (Full): '${edge.node?.name?.full}'")
-                match
+                nameMatches(edge.node?.name?.full, cleanCharName) || nameMatches(edge.node?.name?.native, cleanCharName)
             }
             
-            // Priority 2: Part-of-name match (handles "Luffy" matching "Monkey D. Luffy")
             if (aniEdge == null) {
-                val nameParts = cleanName.split(" ").filter { it.length > 2 }
+                val nameParts = cleanCharName.split(" ").filter { it.length > 2 }
                 aniEdge = aniListEdges.find { edge ->
                     val fullName = edge.node?.name?.full?.lowercase() ?: return@find false
-                    val match = nameParts.any { part -> fullName.contains(part.lowercase()) }
-                    if (match) Log.d(TAG, "AniList Match Found (Partial): '${edge.node?.name?.full}' matched via one of $nameParts")
-                    match
+                    val nativeName = edge.node.name?.native?.lowercase() ?: ""
+                    nameParts.any { part -> fullName.contains(part.lowercase()) || nativeName.contains(part.lowercase()) }
                 }
-            }
-            
-            if (aniEdge == null) {
-                Log.d(TAG, "AniList Match NOT Found for '$cleanName'")
             }
 
             val aniChar = aniEdge?.node
             val voiceActor = aniEdge?.voiceActors?.firstOrNull()
 
-            // Collect all available fictional character photos (Gallery)
-            // 1. Main AniList character art
-            // 2. Wikipedia character art (if any)
-            // 3. Covers of related movies where the character appears
             val fictionalArt = mutableListOf<String>()
-            aniChar?.image?.large?.let { fictionalArt.add(it) }
-            wikiImageUrl?.let { if (!fictionalArt.contains(it)) fictionalArt.add(it) }
+            aniChar?.image?.large?.takeIf { it.isNotBlank() }?.let { fictionalArt.add(it) }
+            wikiImageUrl?.takeIf { it.isNotBlank() }?.let { if (!fictionalArt.contains(it)) fictionalArt.add(it) }
             
-            // Add covers of related media that feature this character
-            media?.relations?.edges?.orEmpty()
-                ?.filter { edge -> 
+            media?.relations?.edges.orEmpty()
+                .filter { edge -> 
                     edge.node?.characters?.edges?.any { charEdge -> 
-                        nameMatches(charEdge.node?.name?.full, cleanName)
+                        nameMatches(charEdge.node?.name?.full, cleanCharName)
                     } == true 
                 }
-                ?.mapNotNull { it.node?.coverImage?.extraLarge ?: it.node?.coverImage?.large }
-                ?.forEach { url -> if (!fictionalArt.contains(url)) fictionalArt.add(url) }
+                .mapNotNull { it.node?.coverImage?.extraLarge ?: it.node?.coverImage?.large }
+                .filter { it.isNotBlank() }
+                .forEach { url -> if (!fictionalArt.contains(url)) fictionalArt.add(url) }
 
             val actorGenderStr = when (person.gender) {
                 1 -> "Female"; 2 -> "Male"; 3 -> "Non-binary"; else -> null
             }
 
-            val mainProfile = TmdbConfig.buildImageUrl(person.profilePath, TmdbConfig.PosterSize.HD)
+            val mainProfile = TmdbConfig.buildProfileUrl(person.profilePath, TmdbConfig.ProfileSize.LARGE)
             val extraPhotos = person.images?.profiles
                 ?.sortedByDescending { it.voteAverage ?: 0.0 }
                 ?.take(8)
-                ?.mapNotNull { TmdbConfig.buildImageUrl(it.filePath, TmdbConfig.PosterSize.LARGE) }
+                ?.mapNotNull { TmdbConfig.buildProfileUrl(it.filePath, TmdbConfig.ProfileSize.LARGE) }
+                ?.filter { it.isNotBlank() }
                 ?: emptyList()
-            val allPhotos = listOfNotNull(mainProfile) + extraPhotos
+            val allPhotos = (listOfNotNull(mainProfile) + extraPhotos).distinct()
 
-            // Top credits by popularity, excluding the show we navigated from.
             val castCredits = person.combinedCredits?.cast
                 ?.filter { it.mediaType == "movie" || it.mediaType == "tv" }
-                ?.filter { (it.title ?: it.name)?.lowercase() != showTitle.lowercase() }
+                ?.filter { (it.title ?: it.name)?.lowercase() != cleanShowTitle.lowercase() }
                 ?.sortedByDescending { it.popularity ?: 0.0 }
                 ?: emptyList()
 
             fun toCreditItem(credit: com.example.watchorderengine.network.model.TmdbPersonCastCredit) = CreditItem(
                 tmdbId = credit.id,
                 creditId = credit.creditId,
-                // Matches the rest of the app's id scheme (safeMediaId() in AppNavigation
-                // expects a "tmdb_" prefix, not "movie_"/"tv_").
                 mediaId = "tmdb_${credit.id}",
                 title = credit.title ?: credit.name ?: "Unknown",
                 character = credit.character ?: "",
@@ -174,19 +129,20 @@ class CharacterRepository @Inject constructor(
                 episodeCount = credit.episodeCount
             )
 
-            // AniList's character description (anime) wins when present —
-            // it's purpose-written about the fictional character. Wikipedia
-            // lore is the fallback for everything AniList doesn't cover:
-            // live-action characters, Western animation, or an anime title
-            // AniList just didn't have this character listed for.
             val aniListDescription = cleanAniListText(aniChar?.description)
             val characterLore = aniListDescription ?: wikiLore ?: ""
+
+            // Primary Character Image Strategy:
+            // 1. Wikipedia Image (usually an actual character drawing/render for non-anime)
+            // 2. AniList Image (for anime)
+            // 3. Fallback to TMDB Actor headshot
+            val primaryCharImg = wikiImageUrl ?: aniChar?.image?.large ?: mainProfile
 
             CharacterDetail(
                 characterName        = characterName,
                 characterDescription = characterLore,
-                characterImageUrl    = fictionalArt.firstOrNull() ?: mainProfile,
-                characterPhotos      = fictionalArt,
+                characterImageUrl    = primaryCharImg,
+                characterPhotos      = fictionalArt.filter { it.isNotBlank() },
                 characterRole        = aniEdge?.role ?: "MAIN",
                 characterGender      = aniChar?.gender,
                 characterAge         = aniChar?.age,
@@ -212,24 +168,11 @@ class CharacterRepository @Inject constructor(
                 knownForCredits = castCredits.distinctBy { it.id }.take(6).map(::toCreditItem),
                 allCastCredits  = castCredits.take(30).map(::toCreditItem),
 
-                characterAppearances = if (isAnime) computeCharacterAppearances(media, characterName) else emptyList()
+                characterAppearances = if (isAnime) computeCharacterAppearances(media, cleanCharName) else emptyList()
             )
-        }.also { result ->
-            if (result.isFailure) {
-                Log.w(TAG, "getCharacterDetail($tmdbPersonId, $characterName) failed: ${result.exceptionOrNull()?.message}")
-            }
         }
     }
 
-    /**
-     * Batch lookup for the Characters list on the media detail screen: maps every
-     * AniList character name (lowercased) in [showTitle]/[anilistId] to its AniList
-     * art URL, in a single request, so the list can show character art next to (or
-     * instead of) the voice actor's TMDB headshot without firing one AniList query
-     * per cast row.
-     *
-     * Empty map for non-anime titles or on any failure — purely additive enrichment.
-     */
     suspend fun getCharacterArtMap(
         anilistId: Int?,
         showTitle: String,
@@ -241,35 +184,19 @@ class CharacterRepository @Inject constructor(
             ?.mapNotNull { edge ->
                 val name = edge.node?.name?.full?.lowercase() ?: return@mapNotNull null
                 val img = edge.node.image?.large ?: return@mapNotNull null
+                if (img.isBlank()) return@mapNotNull null
                 name to img
             }
             ?.toMap()
             ?: emptyMap()
     }
 
-    /**
-     * Looks up the best AniList art URL for [characterName] out of [artMap] (as
-     * returned by [getCharacterArtMap]), using the same fuzzy either-contains
-     * match used everywhere else in this repository.
-     */
     fun matchCharacterArt(artMap: Map<String, String>, characterName: String): String? {
         val lower = characterName.lowercase()
         artMap[lower]?.let { return it }
         return artMap.entries.firstOrNull { (name, _) -> nameMatches(name, characterName) }?.value
     }
 
-    /**
-     * Walks a media's `relations` edges for entries with format "MOVIE" (or
-     * "SPECIAL"/"OVA") and checks each one's own character list for [characterName],
-     * plus the media itself if it's already a movie/special. This is how we build
-     * "every One Piece movie Luffy appears in" from a single AniList response,
-     * without any extra network round-trips — the relations' character edges are
-     * already embedded in the one query fetchAniListMedia() makes.
-     *
-     * Best-effort and necessarily limited to AniList's *direct* relations graph for
-     * the matched media — a movie linked only to another movie (not the main show)
-     * won't surface here. Good enough to catch the vast majority of franchise films.
-     */
     private fun computeCharacterAppearances(media: AnilistMedia?, characterName: String): List<CharacterAppearance> {
         if (media == null) return emptyList()
         val standaloneFormats = setOf("MOVIE", "SPECIAL", "OVA", "ONA")
@@ -299,7 +226,6 @@ class CharacterRepository @Inject constructor(
             .sortedWith(compareBy(nullsLast<String>()) { it.year })
     }
 
-    /** Case-insensitive, either-direction substring match — shared by every name lookup in this class. */
     private fun nameMatches(candidate: String?, characterName: String): Boolean {
         if (candidate.isNullOrBlank()) return false
         val a = candidate.lowercase()
@@ -307,115 +233,140 @@ class CharacterRepository @Inject constructor(
         return a.contains(b) || b.contains(a)
     }
 
-    /**
-     * Fetches a fictional character's lore/backstory from Wikipedia — the
-     * fallback source for everything AniList doesn't cover (live-action,
-     * Western animation). Returns null (never throws) if:
-     *   - Wikipedia has no page for this character at all (404)
-     *   - the page found is a disambiguation page (the [WikipediaSummaryResponse.type]
-     *     check below) — e.g. "Tony Stark" colliding with an unrelated real
-     *     person of the same name
-     *   - the page has no usable extract ("no-extract" type, or blank text)
-     *   - any network/parsing error
-     *
-     * Tries a franchise-qualified query first ("Tony Stark (Marvel Cinematic
-     * Universe)" / "Tony Stark Marvel"), since a bare character name alone is
-     * exactly the case most likely to hit a disambiguation page or the wrong
-     * person entirely. Falls back to the bare character name only if the
-     * qualified query comes back empty.
-     */
     suspend fun getCharacterLore(characterName: String, mediaTitle: String): Pair<String?, String?> {
-        // Handle names like "Peter Parker / Spider-Man" by trying both parts separately.
         val nameParts = characterName.split("/").map { it.trim() }.filter { it.isNotBlank() }
-        
         for (part in nameParts) {
-            // Wikipedia article titles commonly use the "(context)" disambiguator
-            // pattern for fictional characters, e.g. "Tony Stark (Marvel Cinematic
-            // Universe)" or "Walter White (Breaking Bad)" — try that shape first.
-            val qualifiedQuery = "$part ($mediaTitle)"
-            val plainQualifiedQuery = "$part $mediaTitle"
-
-            val result = fetchWikipediaSummary(qualifiedQuery)
-                ?: fetchWikipediaSummary(plainQualifiedQuery)
-                ?: fetchWikipediaSummary(part)
+            // Wikipedia is very sensitive to the exact title. Fictional characters 
+            // almost always have a suffix in parentheses if they are popular.
+            val contexts = listOf(
+                "Marvel Cinematic Universe",
+                "Marvel Comics",
+                "DC Extended Universe",
+                "DC Comics",
+                "comics",
+                "film",
+                "character",
+                "video game",
+                mediaTitle
+            )
             
-            if (result != null) return result
+            // Try specific contexts first
+            for (ctx in contexts) {
+                val qualifiedQuery = "$part ($ctx)"
+                val result = fetchWikipediaSummary(qualifiedQuery)
+                if (result != null) return result
+            }
+            
+            // Try "CharacterName Marvel" etc.
+            val simpleContexts = listOf("Marvel", "DC", "Disney", mediaTitle)
+            for (ctx in simpleContexts) {
+                val result = fetchWikipediaSummary("$part $ctx")
+                if (result != null) return result
+            }
+
+            // Finally try the bare name
+            val plainResult = fetchWikipediaSummary(part)
+            if (plainResult != null) return plainResult
         }
-        
         return null to null
     }
 
-    /** Single Wikipedia lookup attempt. Returns Pair(extract, imageUrl) or null on any failure. */
     private suspend fun fetchWikipediaSummary(query: String): Pair<String?, String?>? {
         return try {
-            // Wikipedia's REST API treats the title as a path segment where
-            // spaces must be underscores; Retrofit's @Path percent-encodes
-            // everything else (parens, unicode, etc.) for us.
             val pathTitle = query.trim().replace(" ", "_")
             if (pathTitle.isBlank()) return null
-
             val response = wikipediaApi.getPageSummary(pathTitle)
-
-            if (response.code() == 404) {
-                // Expected, common outcome — most characters simply don't have
-                // a dedicated Wikipedia page. Not a warning-worthy failure.
-                return null
-            }
-            if (!response.isSuccessful) {
-                Log.w(TAG, "Wikipedia returned HTTP ${response.code()} for '$query'")
-                return null
-            }
-
+            if (!response.isSuccessful) return null
             val body = response.body() ?: return null
-
-            // Disambiguation/no-extract pages return 200 OK but carry no
-            // usable lore — trusting `extract` here without this check is
-            // exactly how an unrelated person's bio would end up shown.
-            if (body.type == "disambiguation" || body.type == "no-extract") {
-                return null
+            if (body.type == "disambiguation" || body.type == "no-extract") return null
+            val extract = body.extract?.trim()?.takeIf { it.isNotBlank() }
+            var imageUrl = body.thumbnail?.source ?: body.originalImage?.source
+            
+            // Handle protocol-relative URLs (//upload.wikimedia.org/...)
+            if (imageUrl?.startsWith("//") == true) {
+                imageUrl = "https:$imageUrl"
             }
 
-            val extract = body.extract?.trim()?.takeIf { it.isNotBlank() }
-            // Prefer the original high-res image, fallback to thumbnail.
-            val imageUrl = body.originalImage?.source ?: body.thumbnail?.source
-            
-            if (extract == null && imageUrl == null) return null
-            
-            extract to imageUrl
+            if (extract == null && imageUrl == null) null else extract to imageUrl
         } catch (e: Exception) {
-            Log.w(TAG, "Wikipedia lookup failed for '$query': ${e.message}")
             null
         }
     }
 
-    /**
-     * Fetches the AniList [AnilistMedia] for a show — by [anilistId] when available
-     * (far more reliable than a title search; this is how MediaDetail.anilistId gets
-     * used), falling back to a fuzzy title search otherwise. The single response
-     * includes both the show's own character list AND the `relations` graph (with
-     * each related movie/special's own character list embedded), so this one
-     * request feeds both [getCharacterDetail]'s character tab and the franchise
-     * "appearances" list — no extra round-trips needed.
-     *
-     * Cached in-memory per session, keyed by id (preferred) or title, since both the
-     * Characters list and every character tapped on the same show would otherwise
-     * each re-fetch this identical response.
-     */
     private suspend fun fetchAniListMedia(anilistId: Int?, showTitle: String): AnilistMedia? {
         val cacheKey = anilistId?.let { "id:$it" } ?: "title:${showTitle.lowercase()}"
         mediaCache[cacheKey]?.let { return it }
 
-        // Clean show title to remove common parenthetical fluff from TMDB
-        // that often confuses AniList's search (e.g., "One Piece (TV Series)")
         val cleanTitle = showTitle
+            .replace(Regex("\\(\\d{4}\\)"), "")
             .replace(Regex("\\s*\\(TV Series\\)\\s*", RegexOption.IGNORE_CASE), "")
             .replace(Regex("\\s*\\(Movie\\)\\s*", RegexOption.IGNORE_CASE), "")
             .trim()
 
-        val query = """
-            query (${'$'}id: Int, ${'$'}search: String) {
-              Page(page: 1, perPage: 5) {
-                media(id: ${'$'}id, search: ${'$'}search, type: ANIME, sort: SEARCH_MATCH) {
+        if (anilistId != null) {
+            val query = """
+                query (${'$'}id: Int) {
+                  Media(id: ${'$'}id, type: ANIME) {
+                    id
+                    format
+                    title { romaji english }
+                    startDate { year }
+                    characters(sort: [ROLE, RELEVANCE], perPage: 25) {
+                      edges {
+                        role
+                        node {
+                          id
+                          name { full native }
+                          description(asHtml: false)
+                          image { large }
+                          gender
+                          age
+                        }
+                        voiceActors(language: JAPANESE, sort: [FAVOURITES_DESC]) {
+                          id
+                          name { full }
+                          language
+                          image { large }
+                        }
+                      }
+                    }
+                    relations {
+                      edges {
+                        relationType
+                        node {
+                          id
+                          format
+                          title { romaji english }
+                          coverImage { large extraLarge }
+                          startDate { year }
+                          characters(perPage: 30) {
+                            edges {
+                              role
+                              node { id name { full } }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+            """.trimIndent()
+
+            val media = try {
+                val response = anilistApi.query(AnilistRequest(query, mapOf("id" to anilistId)))
+                if (response.isSuccessful) response.body()?.data?.media else null
+            } catch (e: Exception) { null }
+            
+            if (media != null) {
+                mediaCache[cacheKey] = media
+                return media
+            }
+        }
+
+        val searchQuery = """
+            query (${'$'}search: String) {
+              Page(page: 1, perPage: 3) {
+                media(search: ${'$'}search, type: ANIME) {
                   id
                   format
                   title { romaji english }
@@ -431,7 +382,7 @@ class CharacterRepository @Inject constructor(
                         gender
                         age
                       }
-                      voiceActors(language: JAPANESE, sort: RELEVANCE) {
+                      voiceActors(language: JAPANESE, sort: [FAVOURITES_DESC]) {
                         id
                         name { full }
                         language
@@ -463,46 +414,32 @@ class CharacterRepository @Inject constructor(
         """.trimIndent()
 
         val media = try {
-            val response = anilistApi.query(
-                AnilistRequest(
-                    query = query,
-                    variables = mapOf("id" to anilistId, "search" to if (anilistId == null) cleanTitle else null)
-                )
-            )
-            if (!response.isSuccessful) {
-                Log.w(TAG, "AniList returned HTTP ${response.code()} for '$showTitle' (id=$anilistId)")
-                null
-            } else {
-                val data = response.body()?.data
-                // Title or ID search: merge results into one "super-media" so
-                // we find the character even if we hit the "wrong" show first.
-                val results = data?.page?.media ?: emptyList()
-                if (results.isEmpty()) {
-                    Log.d(TAG, "AniList returned zero media for '$cleanTitle' (id=$anilistId)")
-                    null
-                } else {
-                    Log.d(TAG, "AniList found ${results.size} media matches for '$cleanTitle'")
+            val response = anilistApi.query(AnilistRequest(searchQuery, mapOf("search" to cleanTitle)))
+            if (!response.isSuccessful) null
+            else {
+                val results = response.body()?.data?.page?.media ?: emptyList()
+                if (results.isEmpty()) null
+                else {
+                    val first = results.first()
                     AnilistMedia(
-                        id = results.first().id,
-                        idMal = results.first().idMal,
-                        title = results.first().title,
-                        description = results.first().description,
-                        bannerImage = results.first().bannerImage,
-                        coverImage = results.first().coverImage,
-                        episodes = results.first().episodes,
-                        averageScore = results.first().averageScore,
-                        genres = results.first().genres,
-                        tags = results.first().tags,
-                        // MERGED CHARACTERS AND RELATIONS
+                        id = first.id,
+                        idMal = first.idMal,
+                        title = first.title,
+                        description = first.description,
+                        bannerImage = first.bannerImage,
+                        coverImage = first.coverImage,
+                        episodes = first.episodes,
+                        averageScore = first.averageScore,
+                        genres = first.genres,
+                        tags = first.tags,
                         characters = AnilistCharacters(edges = results.flatMap { it.characters?.edges ?: emptyList() }.distinctBy { it.node?.id }),
                         relations = AnilistRelations(edges = results.flatMap { it.relations?.edges ?: emptyList() }.distinctBy { it.node?.id }),
-                        format = results.first().format,
-                        startDate = results.first().startDate
+                        format = first.format,
+                        startDate = first.startDate
                     )
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "AniList media fetch failed for '$showTitle' (id=$anilistId): ${e.message}")
             null
         }
 
@@ -513,7 +450,6 @@ class CharacterRepository @Inject constructor(
     private val htmlTagRegex = Regex("<[^>]+>")
     private val spoilerRegex = Regex("~!.*?!~", RegexOption.DOT_MATCHES_ALL)
 
-    /** Strips HTML tags and AniList's `~! spoiler !~` markers from a description. */
     private fun cleanAniListText(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
         return raw

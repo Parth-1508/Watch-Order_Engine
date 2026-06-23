@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Star
@@ -155,32 +156,33 @@ private fun CharacterDetailBody(
     var activeTab by remember { mutableStateOf(0) }
 
     // Build the hero image list:
-    // 1. All fictional character art (Gallery from AniList/Wikipedia)
-    // 2. All actor photos (Gallery from TMDB)
     val heroImages = remember(detail) {
         buildList {
-            // First, add all character-specific art (Naruto, Luffy, Spider-Man art, etc.)
-            addAll(detail.characterPhotos)
+            // First, add all character-specific art
+            addAll(detail.characterPhotos.filter { it.isNotBlank() })
             
-            // Then, add the real actor's photos as fallback/extra
-            detail.actorProfileUrl?.let { if (!contains(it)) add(it) }
-            detail.actorPhotos.forEach { if (!contains(it)) add(it) }
+            // Then, add the real actor's photos
+            detail.actorProfileUrl?.takeIf { it.isNotBlank() }?.let { if (!contains(it)) add(it) }
+            detail.actorPhotos.filter { it.isNotBlank() }.forEach { if (!contains(it)) add(it) }
             
-            // Absolute fallback if everything else is missing
-            if (isEmpty() && detail.characterImageUrl != null) add(detail.characterImageUrl)
-        }
+            // Fallback
+            if (isEmpty() && !detail.characterImageUrl.isNullOrBlank()) add(detail.characterImageUrl)
+        }.distinct()
     }
-    val heroUrl = heroImages.getOrNull(photoIndex) ?: detail.characterImageUrl ?: detail.actorProfileUrl
+    
+    val safeHeroImages = heroImages.ifEmpty { listOfNotNull(detail.actorProfileUrl).filter { it.isNotBlank() } }
+    val heroUrl = safeHeroImages.getOrNull(photoIndex) ?: safeHeroImages.firstOrNull() ?: detail.characterImageUrl ?: detail.actorProfileUrl
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
 
-        // ── Hero — same backdrop/gradient/back-button pattern as MediaDetailScreen ──
+        // ── Hero ──
         Box(modifier = Modifier.fillMaxWidth().height(320.dp)) {
             AsyncImage(
                 model = heroUrl,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
             )
             Box(
                 modifier = Modifier.fillMaxSize().background(
@@ -192,7 +194,7 @@ private fun CharacterDetailBody(
             )
             BackButton(onBack, modifier = Modifier.align(Alignment.TopStart).padding(12.dp))
 
-            // Floating avatar, overlapping the bottom edge of the hero
+            // Floating avatar
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -206,7 +208,8 @@ private fun CharacterDetailBody(
                         .clip(CircleShape)
                         .background(theme.surface)
                         .border(3.dp, theme.accent, CircleShape),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                 )
                 Surface(
                     modifier = Modifier.align(Alignment.BottomEnd).offset((-2).dp, (-2).dp),
@@ -226,7 +229,7 @@ private fun CharacterDetailBody(
 
         Spacer(Modifier.height(60.dp))
 
-        // ── Name block ────────────────────────────────────────────────────────────
+        // ── Name block ──
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -274,14 +277,14 @@ private fun CharacterDetailBody(
             }
         }
 
-        // ── Photo strip ───────────────────────────────────────────────────────────
-        if (heroImages.size > 1) {
+        // ── Photo strip ──
+        if (safeHeroImages.size > 1) {
             Spacer(Modifier.height(20.dp))
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                itemsIndexed(heroImages) { idx, url ->
+                itemsIndexed(safeHeroImages) { idx, url ->
                     val isSelected = idx == photoIndex
                     Box(
                         modifier = Modifier
@@ -296,14 +299,15 @@ private fun CharacterDetailBody(
                     ) {
                         AsyncImage(
                             model = url, contentDescription = null,
-                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                            error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                         )
                     }
                 }
             }
         }
 
-        // ── Tab bar ───────────────────────────────────────────────────────────────
+        // ── Tab bar ──
         val tabs = buildList {
             add("Character")
             add("Actor")
@@ -399,7 +403,7 @@ private fun CharacterTab(detail: CharacterDetail) {
             }
         }
 
-        // ── Wikipedia lore block (distinct supplement) ────────────────────────
+        // ── Wikipedia lore block ──
         val showWikiSupplementBlock = !detail.wikiLore.isNullOrBlank() &&
             detail.characterDescription != detail.wikiLore &&
             detail.characterDescription.length > 150
@@ -409,7 +413,7 @@ private fun CharacterTab(detail: CharacterDetail) {
             WikiLoreCard(lore = detail.wikiLore!!)
         }
 
-        // ── Wikipedia attribution ─────────────────────────────────────────────
+        // ── Wikipedia attribution ──
         if (!detail.wikiLore.isNullOrBlank() && detail.characterDescription == detail.wikiLore) {
             WikiAttributionFooter()
         }
@@ -422,7 +426,8 @@ private fun CharacterTab(detail: CharacterDetail) {
                         model = detail.voiceActorImageUrl,
                         contentDescription = detail.voiceActorName,
                         modifier = Modifier.size(48.dp).clip(CircleShape).background(theme.surfaceHover),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                     )
                     Spacer(Modifier.width(12.dp))
                     Column {
@@ -446,9 +451,14 @@ private fun CharacterTab(detail: CharacterDetail) {
             }
         }
 
-        // ── Character Gallery (Fictional Art) ─────────────────────────────────
+        // ── Character Gallery (Fictional Art) ──
         val displayArt = remember(detail) {
-            detail.characterPhotos.ifEmpty { listOfNotNull(detail.characterImageUrl) }
+            val fictional = detail.characterPhotos.filter { it.isNotBlank() }
+            if (fictional.isEmpty() && !detail.characterImageUrl.isNullOrBlank()) {
+                listOf(detail.characterImageUrl).filter { it.isNotBlank() }
+            } else {
+                fictional
+            }
         }
 
         if (displayArt.isNotEmpty()) {
@@ -465,7 +475,8 @@ private fun CharacterTab(detail: CharacterDetail) {
                             .size(width = 100.dp, height = 140.dp)
                             .clip(RoundedCornerShape(chipRadius(theme.appRadius)))
                             .background(theme.surfaceHover),
-                        contentScale       = ContentScale.Crop
+                        contentScale       = ContentScale.Crop,
+                        error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                     )
                 }
             }
@@ -505,14 +516,15 @@ private fun ActorTab(detail: CharacterDetail) {
         if (detail.actorPhotos.size > 1) {
             SectionHeader("Photos")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(detail.actorPhotos) { url ->
+                items(detail.actorPhotos.filter { it.isNotBlank() }) { url ->
                     AsyncImage(
                         model = url, contentDescription = null,
                         modifier = Modifier
                             .size(width = 90.dp, height = 120.dp)
                             .clip(RoundedCornerShape(chipRadius(theme.appRadius)))
                             .background(theme.surfaceHover),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                     )
                 }
             }
@@ -520,7 +532,7 @@ private fun ActorTab(detail: CharacterDetail) {
     }
 }
 
-// ─── Tab: Appearances (character's own franchise movies, via AniList) ───────────
+// ─── Tab: Appearances ───
 
 @Composable
 private fun AppearancesTab(detail: CharacterDetail) {
@@ -545,7 +557,6 @@ private fun AppearancesTab(detail: CharacterDetail) {
                     row.forEach { appearance ->
                         AppearanceCard(appearance, modifier = Modifier.weight(1f))
                     }
-                    // Keeps the last odd-numbered row from stretching to full width.
                     if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
@@ -568,7 +579,8 @@ private fun AppearanceCard(appearance: com.example.watchorderengine.data.model.C
                 model = appearance.imageUrl,
                 contentDescription = appearance.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
             )
             Box(
                 modifier = Modifier.fillMaxSize().background(
@@ -632,7 +644,6 @@ private fun FilmographyTab(detail: CharacterDetail, onMediaClick: (String) -> Un
     }
 }
 
-/** Mirrors MediaGridItem's poster-card convention exactly (same shape/elevation/gradient/rating pill). */
 @Composable
 private fun KnownForCard(credit: CreditItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Card(
@@ -645,7 +656,8 @@ private fun KnownForCard(credit: CreditItem, onClick: () -> Unit, modifier: Modi
                 model = credit.posterUrl,
                 contentDescription = credit.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
             )
             Box(
                 modifier = Modifier.fillMaxSize().background(
@@ -677,10 +689,6 @@ private fun KnownForCard(credit: CreditItem, onClick: () -> Unit, modifier: Modi
     }
 }
 
-/**
- * Dedicated card for Wikipedia lore — styled slightly differently (italicised
- * text, attribution label) to distinguish it from AniList / TMDB data.
- */
 @Composable
 private fun WikiLoreCard(lore: String) {
     val theme    = LocalAppTheme.current
@@ -721,9 +729,6 @@ private fun WikiLoreCard(lore: String) {
     }
 }
 
-/**
- * Small attribution row shown under any content sourced from Wikipedia.
- */
 @Composable
 private fun WikiAttributionFooter() {
     val theme = LocalAppTheme.current
@@ -755,7 +760,8 @@ private fun CreditListRow(credit: CreditItem, onClick: () -> Unit) {
                 modifier = Modifier.size(width = 48.dp, height = 68.dp)
                     .clip(RoundedCornerShape(chipRadius(theme.appRadius)))
                     .background(theme.surfaceHover),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -783,7 +789,7 @@ private fun CreditListRow(credit: CreditItem, onClick: () -> Unit) {
     }
 }
 
-// ─── Shared small pieces ────────────────────────────────────────────────────────
+// ─── Shared ───
 
 @Composable
 private fun SectionHeader(title: String, modifier: Modifier = Modifier) {

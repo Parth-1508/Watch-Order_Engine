@@ -53,7 +53,8 @@ class MediaDetailViewModel @Inject constructor(
     private var characterArtJob: Job? = null
 
     fun loadMediaDetail(mediaId: String, forceRefresh: Boolean = false) {
-        if (!forceRefresh && _mediaDetail.value?.id == mediaId) return 
+        val sanitizedMediaId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
+        if (!forceRefresh && _mediaDetail.value?.id == sanitizedMediaId) return 
         
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -68,22 +69,23 @@ class MediaDetailViewModel @Inject constructor(
                     _isEpisodesLoading.value = false
                 }
 
-                repository.getMediaDetailFlow(mediaId).collect { detail ->
+                repository.getMediaDetailFlow(sanitizedMediaId).collect { detail ->
                     _mediaDetail.value = detail
                     if (detail != null) {
                         _isLoading.value = false
                         
                         // Only trigger episode load if the list is currently empty or for a new show
-                        if (_episodes.value.isEmpty() || _episodes.value.firstOrNull()?.mediaId != mediaId || forceRefresh) {
+                        val currentEps = _episodes.value
+                        val needsLoad = currentEps.isEmpty() || currentEps.firstOrNull()?.mediaId != sanitizedMediaId || forceRefresh
+
+                        if (needsLoad) {
                             val initialSeason = detail.seasons.find { it.seasonNumber > 0 }?.seasonNumber 
                                                 ?: detail.seasons.firstOrNull()?.seasonNumber 
                                                 ?: 1
-                            loadEpisodes(mediaId, initialSeason)
+                            loadEpisodes(sanitizedMediaId, initialSeason)
                         }
                         
-                        // Look for ALL universes containing this media — a
-                        // show can legitimately belong to more than one
-                        // generated universe (e.g. a crossover entry)
+                        // Look for ALL universes containing this media
                         launch {
                             repository.findUniversesForMedia(detail.tmdbId).collect {
                                 _universes.value = it
@@ -97,6 +99,14 @@ class MediaDetailViewModel @Inject constructor(
                         )
                     }
                 }
+                // Once the detail flow is finished, if we are still "loading episodes" 
+                // but have none, we should stop the shimmer so the user sees the "No episodes" message.
+                if (_episodes.value.isEmpty()) {
+                    _isEpisodesLoading.value = false
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MediaDetailVM", "loadMediaDetail error", e)
+                _isEpisodesLoading.value = false
             } finally {
                 _isLoading.value = false
             }
@@ -104,15 +114,18 @@ class MediaDetailViewModel @Inject constructor(
     }
 
     fun loadEpisodes(mediaId: String, seasonNumber: Int) {
+        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
         episodesJob?.cancel()
         episodesJob = viewModelScope.launch {
+            _isEpisodesLoading.value = true
             try {
-                _isEpisodesLoading.value = true
-                android.util.Log.d("MediaDetailVM", "Requesting episodes for $mediaId S$seasonNumber")
-                val eps = repository.getEpisodesBySeason(mediaId, seasonNumber)
-                android.util.Log.d("MediaDetailVM", "Received ${eps.size} episodes")
-                _episodes.value = eps
-            } finally {
+                repository.observeEpisodesBySeason(sanitizedId, seasonNumber).collect { eps ->
+                    _episodes.value = eps
+                    if (eps.isNotEmpty()) {
+                        _isEpisodesLoading.value = false
+                    }
+                }
+            } catch (e: Exception) {
                 _isEpisodesLoading.value = false
             }
         }

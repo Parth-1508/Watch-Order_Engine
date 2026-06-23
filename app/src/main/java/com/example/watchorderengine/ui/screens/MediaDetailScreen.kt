@@ -28,6 +28,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.watchorderengine.data.model.WatchProviderItem
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.EpisodeItem
@@ -58,7 +62,6 @@ fun MediaDetailScreen(
         viewModel.loadMediaDetail(mediaId)
     }
     
-    // Explicitly watch episodes list for transition from loading to success
     val episodesBySeason by viewModel.episodes.collectAsState()
 
     Box(
@@ -67,11 +70,10 @@ fun MediaDetailScreen(
             .background(theme.background)
     ) {
         media?.let { detail ->
-            android.util.Log.d("MediaDetail", "Rendering DetailContent for: ${detail.title}")
             key(detail.id) {
                 DetailContent(
                     detail = detail,
-                    episodes = episodesBySeason, // Use the collected state here
+                    episodes = episodesBySeason,
                     isAnalyzing = isAnalyzing,
                     isEpisodesLoading = isEpisodesLoading,
                     universe = universes,
@@ -142,7 +144,8 @@ private fun DetailContent(
                 model = detail.backdropUrl ?: detail.posterUrl,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.Movie)
             )
             Box(
                 modifier = Modifier
@@ -256,6 +259,16 @@ private fun DetailContent(
                 )
             }
 
+            // Watch Providers
+            if (detail.watchProviders.isNotEmpty()) {
+                WatchProvidersCard(detail.watchProviders)
+            }
+
+            // Trailer
+            if (!detail.trailerKey.isNullOrBlank()) {
+                TrailerCard(detail.trailerKey)
+            }
+
             // Watchlist Selector
             var expanded by remember { mutableStateOf(false) }
             Box(modifier = Modifier.fillMaxWidth()) {
@@ -340,7 +353,7 @@ private fun DetailContent(
                         Box(
                             modifier = Modifier
                                 .height(2.dp)
-                                .width(40.dp) // Fixed width for tab indicator
+                                .width(40.dp)
                                 .background(theme.accent)
                         )
                     }
@@ -381,7 +394,6 @@ private fun EpisodesTab(
 ) {
     val theme = LocalAppTheme.current
     Column(modifier = Modifier.padding(16.dp)) {
-        // Season Selector
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             items(seasons) { season ->
                 val isSelected = season.seasonNumber == selectedSeason
@@ -532,14 +544,164 @@ private fun EpisodeRowPlaceholder() {
 }
 
 @Composable
+private fun WatchProvidersCard(providers: List<WatchProviderItem>) {
+    val theme = LocalAppTheme.current
+    val uriHandler = LocalUriHandler.current
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp)
+            .then(ThemeBorderModifier()),
+        color = theme.surface.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "WHERE TO WATCH",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = theme.textSecondary,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp
+                )
+                providers.firstOrNull()?.justWatchUrl?.let { url ->
+                    Text(
+                        "See all ↗",
+                        color = theme.accent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { uriHandler.openUri(url) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            val grouped = providers.groupBy { it.offerType }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                listOf("stream", "free", "rent", "buy").forEach { type ->
+                    val list = grouped[type] ?: emptyList()
+                    if (list.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = when(type) {
+                                    "stream", "free" -> Color(0xFF4ADE80).copy(alpha = 0.1f)
+                                    "rent" -> Color(0xFFF59E0B).copy(alpha = 0.1f)
+                                    else -> Color(0xFF3B82F6).copy(alpha = 0.1f)
+                                },
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = Modifier.width(52.dp)
+                            ) {
+                                Text(
+                                    type.uppercase(),
+                                    color = when(type) {
+                                        "stream", "free" -> Color(0xFF4ADE80)
+                                        "rent" -> Color(0xFFF59E0B)
+                                        else -> Color(0xFF3B82F6)
+                                    },
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Black,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(list) { provider ->
+                                    AsyncImage(
+                                        model = provider.logoUrl,
+                                        contentDescription = provider.providerName,
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable { provider.justWatchUrl?.let { uriHandler.openUri(it) } },
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrailerCard(trailerKey: String) {
+    val theme = LocalAppTheme.current
+    val uriHandler = LocalUriHandler.current
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .padding(vertical = 12.dp)
+            .clickable { uriHandler.openUri("vnd.youtube:$trailerKey") }
+            .then(ThemeBorderModifier()),
+        color = Color.Black,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = "https://img.youtube.com/vi/$trailerKey/maxresdefault.jpg",
+                contentDescription = "Trailer Thumbnail",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.7f
+            )
+            
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(Color.White.copy(alpha = 0.2f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "WATCH ON YOUTUBE",
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Default.OpenInNew,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+                    .size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun CharactersTab(
     detail: MediaDetail,
     onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit,
     viewModel: MediaDetailViewModel
 ) {
     val isAnime = detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME
-    // Batched AniList lookup (one request for the whole show) — already triggered
-    // by the ViewModel when the media loaded; this just observes the result.
     val characterArt by viewModel.characterArt.collectAsState()
 
     Column(modifier = Modifier.padding(16.dp)) {
@@ -576,9 +738,6 @@ private fun CharacterRow(
         biography = viewModel.getPersonBiography(cast.tmdbId)
     }
 
-    // Primary avatar is the AniList character art when we found one (Luffy's own
-    // illustration, not the voice actor's headshot) — falls back to the TMDB
-    // profile photo for non-anime titles or characters AniList didn't match.
     val primaryImage = characterArtUrl ?: cast.profileUrl
     val showVoiceBadge = characterArtUrl != null && characterArtUrl != cast.profileUrl
 
@@ -596,7 +755,8 @@ private fun CharacterRow(
                         model = primaryImage,
                         contentDescription = cast.character,
                         modifier = Modifier.size(56.dp).clip(CircleShape).background(Color.DarkGray).border(2.dp, theme.accent, CircleShape),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                     )
                     if (showVoiceBadge) {
                         AsyncImage(
@@ -609,7 +769,8 @@ private fun CharacterRow(
                                 .clip(CircleShape)
                                 .background(Color.DarkGray)
                                 .border(1.5.dp, theme.background, CircleShape),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Crop,
+                            error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                         )
                     }
                 }
@@ -638,7 +799,6 @@ private fun CharacterRow(
             )
 
             Spacer(modifier = Modifier.height(12.dp))
-            // Simulated Fan Chat (simplified)
             Box(modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(8.dp)).padding(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("FAN VIBE:", color = theme.accent, fontSize = 8.sp, fontWeight = FontWeight.Black)
@@ -680,9 +840,6 @@ private fun ChronologyTab(
             }
         }
 
-        // One card per universe this media belongs to — previously only the
-        // first match was ever shown, so a crossover title that's part of
-        // two generated universes silently dropped the second.
         universe.forEach { u ->
             Surface(
                 modifier = Modifier

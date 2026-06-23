@@ -31,17 +31,30 @@ object TmdbConfig {
     }
 
     /**
+     * TMDB Profile image sizes. Person profile images use a different set of 
+     * allowed widths than posters/backdrops. Using an unsupported size string 
+     * can lead to 404s or blank images in some regions.
+     */
+    enum class ProfileSize(val key: String) {
+        SMALL("w45"),
+        MEDIUM("w185"),
+        LARGE("h632"),
+        ORIGINAL("original")
+    }
+
+    /**
      * Constructs a fully-qualified TMDB image URL from a raw path.
-     *
-     * @param rawPath  The `poster_path` or `backdrop_path` from the TMDB response,
-     *                 e.g., "/7WsyChQLEftFiDOVTGkv3hFpyyt.jpg". May be null if
-     *                 TMDB has no image for this entry.
-     * @param size     The desired image resolution. Defaults to [PosterSize.CARD].
-     * @return A complete URL string, or null if [rawPath] was null or blank.
      */
     fun buildImageUrl(rawPath: String?, size: PosterSize = PosterSize.CARD): String? {
         if (rawPath.isNullOrBlank()) return null
-        // rawPath already starts with '/', so no separator is needed.
+        return "$IMAGE_BASE_URL${size.key}$rawPath"
+    }
+
+    /**
+     * Constructs a fully-qualified TMDB image URL for a PERSON profile.
+     */
+    fun buildProfileUrl(rawPath: String?, size: ProfileSize = ProfileSize.MEDIUM): String? {
+        if (rawPath.isNullOrBlank()) return null
         return "$IMAGE_BASE_URL${size.key}$rawPath"
     }
 
@@ -53,8 +66,35 @@ object TmdbConfig {
     const val MEDIA_TYPE_TV    = "tv"
 
     /** Comma-separated `append_to_response` modules added to each API call. */
-    const val APPEND_TO_RESPONSE_MOVIE = "release_dates,credits,videos,recommendations,external_ids"
-    const val APPEND_TO_RESPONSE_TV    = "content_ratings,aggregate_credits,videos,recommendations,external_ids"
+    const val APPEND_TO_RESPONSE_MOVIE = "release_dates,credits,videos,recommendations,external_ids,watch/providers"
+    const val APPEND_TO_RESPONSE_TV    = "content_ratings,aggregate_credits,videos,recommendations,external_ids,watch/providers"
+
+    /**
+     * Country priority for watch providers.
+     * We try to show Indian providers first, falling back to US/GB if unavailable.
+     */
+    val PROVIDER_COUNTRY_PRIORITY = listOf("IN", "US", "GB", "AU", "CA")
+
+    /**
+     * Short names for common streaming providers to keep the UI compact.
+     */
+    val PROVIDER_SHORT_NAMES = mapOf(
+        8 to "Netflix",
+        119 to "Prime Video",
+        337 to "Disney+",
+        350 to "Apple TV+",
+        122 to "Hotstar",
+        232 to "Zee5",
+        121 to "Voot",
+        307 to "SonyLiv",
+        1899 to "HBO Max",
+        15 to "Hulu",
+        384 to "HBO",
+        2 to "Apple TV",
+        3 to "Google Play",
+        10 to "Amazon Video",
+        192 to "YouTube"
+    )
 
     /**
      * Official TMDB genre ID → name maps. List endpoints (search, trending,

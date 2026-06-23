@@ -8,6 +8,7 @@
     <application
         android:name=".WatchOrderApplication"
         android:allowBackup="true"
+        android:hardwareAccelerated="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -19,6 +20,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:hardwareAccelerated="true"
             android:theme="@style/Theme.WatchOrderEngine"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

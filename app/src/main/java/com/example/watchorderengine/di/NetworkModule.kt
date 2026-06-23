@@ -131,7 +131,7 @@ object NetworkModule {
             .addInterceptor(loggingInterceptor)
             .build()
         return Retrofit.Builder()
-            .baseUrl("https://graphql.anilist.co")
+            .baseUrl("https://graphql.anilist.co/")
             .client(client)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
