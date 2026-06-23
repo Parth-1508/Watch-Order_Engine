@@ -42,32 +42,16 @@ fun MediaDetailScreen(
     mediaId: String,
     onBack: () -> Unit,
     onUniverseClick: (String) -> Unit = {},
-    onCharacterClick: (tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean) -> Unit = { _, _, _, _ -> },
+    onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit = { _, _, _, _, _ -> },
     viewModel: MediaDetailViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
     val media by viewModel.mediaDetail.collectAsState()
-    val universe by viewModel.universe.collectAsState()
+    val universes by viewModel.universes.collectAsState()
     val isAnalyzing by viewModel.isAnalyzing.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isEpisodesLoading by viewModel.isEpisodesLoading.collectAsState()
     val generationError by viewModel.generationError.collectAsState()
-    val generationSuccess by viewModel.generationSuccess.collectAsState()
-
-    if (generationSuccess) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissGenerationSuccess() },
-            title = { Text("Success", color = theme.textPrimary) },
-            text = { Text("Watch order generated successfully!", color = theme.textSecondary) },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissGenerationSuccess() }) {
-                    Text("OK", color = theme.accent)
-                }
-            },
-            containerColor = theme.surface,
-            textContentColor = theme.textPrimary
-        )
-    }
 
     LaunchedEffect(mediaId) {
         android.util.Log.d("MediaDetail", "Loading mediaId: $mediaId")
@@ -90,7 +74,7 @@ fun MediaDetailScreen(
                     episodes = episodesBySeason, // Use the collected state here
                     isAnalyzing = isAnalyzing,
                     isEpisodesLoading = isEpisodesLoading,
-                    universe = universe,
+                    universe = universes,
                     generationError = generationError,
                     onDismissGenerationError = { viewModel.dismissGenerationError() },
                     onBack = onBack,
@@ -125,7 +109,7 @@ private fun DetailContent(
     episodes: List<EpisodeItem>,
     isAnalyzing: Boolean,
     isEpisodesLoading: Boolean,
-    universe: com.example.watchorderengine.data.model.Universe?,
+    universe: List<com.example.watchorderengine.data.model.Universe>,
     generationError: String?,
     onDismissGenerationError: () -> Unit,
     onBack: () -> Unit,
@@ -134,7 +118,7 @@ private fun DetailContent(
     onSeasonChange: (Int) -> Unit,
     onGenerateOrder: () -> Unit,
     onUniverseClick: (String) -> Unit,
-    onCharacterClick: (tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean) -> Unit,
+    onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit,
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
@@ -378,7 +362,7 @@ private fun DetailContent(
                     },
                     onToggleEpisode = onToggleEpisode
                 )
-                "characters" -> CharactersTab(detail, viewModel, onCharacterClick)
+                "characters" -> CharactersTab(detail, onCharacterClick, viewModel)
                 "chronology" -> ChronologyTab(detail, isAnalyzing, universe, generationError, onGenerateOrder, onUniverseClick, onDismissGenerationError)
             }
         }
@@ -550,16 +534,29 @@ private fun EpisodeRowPlaceholder() {
 @Composable
 private fun CharactersTab(
     detail: MediaDetail,
-    viewModel: MediaDetailViewModel,
-    onCharacterClick: (tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean) -> Unit
+    onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit,
+    viewModel: MediaDetailViewModel
 ) {
     val isAnime = detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME
+    // Batched AniList lookup (one request for the whole show) — already triggered
+    // by the ViewModel when the media loaded; this just observes the result.
+    val characterArt by viewModel.characterArt.collectAsState()
+
     Column(modifier = Modifier.padding(16.dp)) {
         detail.cast.take(10).forEach { cast ->
             CharacterRow(
                 cast = cast,
                 viewModel = viewModel,
-                onClick = { onCharacterClick(cast.tmdbId, cast.character, detail.title, isAnime) }
+                characterArtUrl = if (isAnime) viewModel.characterArtFor(cast.character) else null,
+                onClick = { onCharacterClick(cast.tmdbId, cast.character, detail.title, isAnime, detail.anilistId) }
+            )
+        }
+        if (isAnime && characterArt.isEmpty()) {
+            Text(
+                "Looking up character art on AniList…",
+                color = Color.Gray,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
     }
@@ -569,6 +566,7 @@ private fun CharactersTab(
 private fun CharacterRow(
     cast: com.example.watchorderengine.data.model.CastMember,
     viewModel: MediaDetailViewModel,
+    characterArtUrl: String?,
     onClick: () -> Unit
 ) {
     val theme = LocalAppTheme.current
@@ -577,6 +575,12 @@ private fun CharacterRow(
     LaunchedEffect(cast.tmdbId) {
         biography = viewModel.getPersonBiography(cast.tmdbId)
     }
+
+    // Primary avatar is the AniList character art when we found one (Luffy's own
+    // illustration, not the voice actor's headshot) — falls back to the TMDB
+    // profile photo for non-anime titles or characters AniList didn't match.
+    val primaryImage = characterArtUrl ?: cast.profileUrl
+    val showVoiceBadge = characterArtUrl != null && characterArtUrl != cast.profileUrl
 
     Surface(
         onClick = onClick,
@@ -587,16 +591,38 @@ private fun CharacterRow(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = cast.profileUrl,
-                    contentDescription = null,
-                    modifier = Modifier.size(56.dp).clip(CircleShape).background(Color.DarkGray).border(2.dp, theme.accent, CircleShape),
-                    contentScale = ContentScale.Crop
-                )
+                Box {
+                    AsyncImage(
+                        model = primaryImage,
+                        contentDescription = cast.character,
+                        modifier = Modifier.size(56.dp).clip(CircleShape).background(Color.DarkGray).border(2.dp, theme.accent, CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                    if (showVoiceBadge) {
+                        AsyncImage(
+                            model = cast.profileUrl,
+                            contentDescription = cast.name,
+                            modifier = Modifier
+                                .size(22.dp)
+                                .align(Alignment.BottomEnd)
+                                .offset(x = 2.dp, y = 2.dp)
+                                .clip(CircleShape)
+                                .background(Color.DarkGray)
+                                .border(1.5.dp, theme.background, CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(cast.character, color = Color.White, fontWeight = FontWeight.Bold)
-                    Text(cast.name, color = Color.Gray, fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (showVoiceBadge) {
+                            Icon(Icons.Filled.Mic, contentDescription = null, tint = theme.accent, modifier = Modifier.size(11.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                        }
+                        Text(cast.name, color = Color.Gray, fontSize = 12.sp)
+                    }
                 }
             }
             
@@ -628,7 +654,7 @@ private fun CharacterRow(
 private fun ChronologyTab(
     detail: MediaDetail,
     isAnalyzing: Boolean,
-    universe: com.example.watchorderengine.data.model.Universe?,
+    universe: List<com.example.watchorderengine.data.model.Universe>,
     generationError: String?,
     onGenerate: () -> Unit,
     onUniverseClick: (String) -> Unit,
@@ -654,12 +680,15 @@ private fun ChronologyTab(
             }
         }
 
-        if (universe != null) {
+        // One card per universe this media belongs to — previously only the
+        // first match was ever shown, so a crossover title that's part of
+        // two generated universes silently dropped the second.
+        universe.forEach { u ->
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp)
-                    .clickable { onUniverseClick(universe.id) },
+                    .clickable { onUniverseClick(u.id) },
                 color = theme.accent.copy(alpha = 0.1f),
                 shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.5f))
@@ -671,7 +700,7 @@ private fun ChronologyTab(
                     Icon(Icons.Default.AccountTree, null, tint = theme.accent)
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
-                        Text("Part of ${universe.name}", color = theme.textPrimary, fontWeight = FontWeight.Bold)
+                        Text("Part of ${u.name}", color = theme.textPrimary, fontWeight = FontWeight.Bold)
                         Text("View full interactive skill tree", color = theme.textSecondary, fontSize = 11.sp)
                     }
                 }

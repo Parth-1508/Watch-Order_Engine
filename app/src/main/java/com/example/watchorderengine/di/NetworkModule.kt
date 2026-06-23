@@ -8,6 +8,7 @@ import com.example.watchorderengine.network.AnilistApiService
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbAuthInterceptor
 import com.example.watchorderengine.network.TmdbConfig
+import com.example.watchorderengine.network.WikipediaApiService
 import com.example.watchorderengine.network.gemini.GeminiService
 import dagger.Module
 import dagger.Provides
@@ -135,6 +136,40 @@ object NetworkModule {
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(AnilistApiService::class.java)
+    }
+
+    /**
+     * Wikipedia REQUIRES a descriptive User-Agent header — requests with a
+     * missing or generic one are rejected with HTTP 403
+     * (https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy).
+     * This is its own OkHttpClient/Retrofit instance (not the TMDB one) since
+     * the base URL and this header requirement are both specific to Wikipedia.
+     */
+    @Provides
+    @Singleton
+    fun provideWikipediaApiService(moshi: Moshi): WikipediaApiService {
+        val userAgentInterceptor = okhttp3.Interceptor { chain ->
+            val requestWithUserAgent = chain.request().newBuilder()
+                .header("User-Agent", "WatchOrderEngine/1.0 (Android app; contact: app-support@example.com)")
+                .build()
+            chain.proceed(requestWithUserAgent)
+        }
+        val loggingInterceptor = HttpLoggingInterceptor().apply {
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
+            else HttpLoggingInterceptor.Level.NONE
+        }
+        val client = OkHttpClient.Builder()
+            .addInterceptor(userAgentInterceptor)
+            .addInterceptor(loggingInterceptor)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+        return Retrofit.Builder()
+            .baseUrl("https://en.wikipedia.org/api/rest_v1/")
+            .client(client)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(WikipediaApiService::class.java)
     }
 
     @Provides

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.EpisodeItem
 import com.example.watchorderengine.data.model.MediaDetail
 import com.example.watchorderengine.data.model.TrackingState
+import com.example.watchorderengine.data.repository.CharacterRepository
 import com.example.watchorderengine.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -16,7 +17,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MediaDetailViewModel @Inject constructor(
-    private val repository: MediaRepository
+    private val repository: MediaRepository,
+    private val characterRepository: CharacterRepository
 ) : ViewModel() {
 
     private val _mediaDetail = MutableStateFlow<MediaDetail?>(null)
@@ -37,23 +39,21 @@ class MediaDetailViewModel @Inject constructor(
     private val _generationError = MutableStateFlow<String?>(null)
     val generationError: StateFlow<String?> = _generationError.asStateFlow()
 
-    private val _generationSuccess = MutableStateFlow(false)
-    val generationSuccess: StateFlow<Boolean> = _generationSuccess.asStateFlow()
+    private val _universes = MutableStateFlow<List<com.example.watchorderengine.data.model.Universe>>(emptyList())
+    val universes: StateFlow<List<com.example.watchorderengine.data.model.Universe>> = _universes.asStateFlow()
 
-    private val _universe = MutableStateFlow<com.example.watchorderengine.data.model.Universe?>(null)
-    val universe: StateFlow<com.example.watchorderengine.data.model.Universe?> = _universe.asStateFlow()
+    // character name (any case) -> AniList character art URL, for the whole show in one
+    // batched lookup — lets the Characters tab show fictional-character art (Luffy, Zoro,
+    // Naruto, ...) next to/instead of the voice actor's real-life TMDB headshot.
+    private val _characterArt = MutableStateFlow<Map<String, String>>(emptyMap())
+    val characterArt: StateFlow<Map<String, String>> = _characterArt.asStateFlow()
 
     private var loadJob: Job? = null
     private var episodesJob: Job? = null
+    private var characterArtJob: Job? = null
 
     fun loadMediaDetail(mediaId: String, forceRefresh: Boolean = false) {
-        val sanitizedId = when {
-            mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_") -> mediaId
-            mediaId.all { it.isDigit() } -> "tmdb_$mediaId"
-            else -> mediaId // Pass through arc_... or other internal IDs
-        }
-
-        if (!forceRefresh && _mediaDetail.value?.id == sanitizedId) return 
+        if (!forceRefresh && _mediaDetail.value?.id == mediaId) return 
         
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -68,7 +68,7 @@ class MediaDetailViewModel @Inject constructor(
                     _isEpisodesLoading.value = false
                 }
 
-                repository.getMediaDetailFlow(sanitizedId).collect { detail ->
+                repository.getMediaDetailFlow(mediaId).collect { detail ->
                     _mediaDetail.value = detail
                     if (detail != null) {
                         _isLoading.value = false
@@ -81,12 +81,20 @@ class MediaDetailViewModel @Inject constructor(
                             loadEpisodes(mediaId, initialSeason)
                         }
                         
-                        // Look for universe
+                        // Look for ALL universes containing this media — a
+                        // show can legitimately belong to more than one
+                        // generated universe (e.g. a crossover entry)
                         launch {
-                            repository.findUniverseForMedia(detail.tmdbId, detail.anilistId).collect {
-                                _universe.value = it
+                            repository.findUniversesForMedia(detail.tmdbId).collect {
+                                _universes.value = it
                             }
                         }
+
+                        loadCharacterArt(
+                            anilistId = detail.anilistId,
+                            showTitle = detail.title,
+                            isAnime = detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME
+                        )
                     }
                 }
             } finally {
@@ -115,23 +123,17 @@ class MediaDetailViewModel @Inject constructor(
             try {
                 _isAnalyzing.value = true
                 _generationError.value = null
-                _generationSuccess.value = false
                 val errorMessage = repository.generateWatchOrder(mediaId)
                 if (errorMessage != null) {
                     _generationError.value = errorMessage
                 } else {
-                    _generationSuccess.value = true
-                    // Reload to reflect changes in episode types and universe banner
+                    // Reload to reflect changes in episode types
                     loadMediaDetail(mediaId, forceRefresh = true)
                 }
             } finally {
                 _isAnalyzing.value = false
             }
         }
-    }
-
-    fun dismissGenerationSuccess() {
-        _generationSuccess.value = false
     }
 
     fun dismissGenerationError() {
@@ -157,4 +159,20 @@ class MediaDetailViewModel @Inject constructor(
     suspend fun getPersonBiography(personId: Int): String? {
         return repository.getPersonBiography(personId)
     }
+
+    /** Batched, one-shot AniList lookup of every character's art for the current show. */
+    private fun loadCharacterArt(anilistId: Int?, showTitle: String, isAnime: Boolean) {
+        characterArtJob?.cancel()
+        if (!isAnime) {
+            _characterArt.value = emptyMap()
+            return
+        }
+        characterArtJob = viewModelScope.launch {
+            _characterArt.value = characterRepository.getCharacterArtMap(anilistId, showTitle, isAnime)
+        }
+    }
+
+    /** Fuzzy-matches a TMDB cast member's character name against the batched AniList art map. */
+    fun characterArtFor(characterName: String): String? =
+        characterRepository.matchCharacterArt(characterArt.value, characterName)
 }

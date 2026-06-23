@@ -75,20 +75,9 @@ class TmdbRepository @Inject constructor(
                         throw HttpException(response)
                     }
                 }
-                else -> {
-                    // Try movie, then TV as a fallback if the type is unknown or generic
-                    val movieResponse = apiService.getMovie(tmdbId)
-                    if (movieResponse.isSuccessful && movieResponse.body() != null) {
-                        movieResponse.body()!!.toDomainModel()
-                    } else {
-                        val tvResponse = apiService.getTvShow(tmdbId)
-                        if (tvResponse.isSuccessful && tvResponse.body() != null) {
-                            tvResponse.body()!!.toDomainModel()
-                        } else {
-                            throw IOException("Could not resolve metadata for tmdbId=$tmdbId as Movie or TV")
-                        }
-                    }
-                }
+                else -> throw IllegalArgumentException(
+                    "Unknown tmdbMediaType '$tmdbMediaType' for tmdbId=$tmdbId."
+                )
             }
             TmdbFetchState.Success(detail)
 

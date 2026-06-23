@@ -103,3 +103,18 @@ data class EpisodeWatchedEntity(
     val mediaId: String,
     val watchedAt: Long = System.currentTimeMillis()
 )
+
+/**
+ * Tracks shows the user swiped LEFT ("skip") on the Discovery deck — a
+ * temporary "not now" that's distinct from the 5 real tracking states.
+ * Skipped items are excluded from the deck until the user explicitly resets
+ * (see DiscoveryViewModel.resetDeck), at which point this table is cleared
+ * and they can resurface. Permanent dismissal ("Not Interested") instead
+ * writes a real TrackingState.DROPPED via user_progress and is never cleared
+ * by a reset.
+ */
+@Entity(tableName = "discovery_skipped")
+data class DiscoverySkippedEntity(
+    @PrimaryKey val mediaId: String,
+    val skippedAt: Long = System.currentTimeMillis()
+)

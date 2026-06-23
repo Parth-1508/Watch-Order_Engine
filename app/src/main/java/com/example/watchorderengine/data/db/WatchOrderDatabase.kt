@@ -17,9 +17,10 @@ class Converters {
         SeasonEntity::class,
         EpisodeEntity::class,
         UserProgressEntity::class,
-        EpisodeWatchedEntity::class
+        EpisodeWatchedEntity::class,
+        DiscoverySkippedEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -29,6 +30,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
     abstract fun episodeDao(): EpisodeDao
     abstract fun userProgressDao(): UserProgressDao
     abstract fun episodeWatchedDao(): EpisodeWatchedDao
+    abstract fun discoverySkippedDao(): DiscoverySkippedDao
 
     companion object {
         @Volatile private var INSTANCE: WatchOrderDatabase? = null

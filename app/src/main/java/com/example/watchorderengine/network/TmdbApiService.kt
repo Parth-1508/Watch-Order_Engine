@@ -89,19 +89,8 @@ interface TmdbApiService {
     ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
 
     /**
-     * Fetches person details (for character biographies).
-     */
-    @GET("person/{personId}")
-    suspend fun getPerson(
-        @Path("personId") personId: Int,
-        @Query("language") language: String = "en-US"
-    ): Response<com.example.watchorderengine.network.model.TmdbPersonResponse>
-
-    /**
-     * Fetches the FULL person profile for the Character Detail screen: biography,
-     * birth/death info, all known profile photos, and the person's combined
-     * movie+TV filmography sorted by popularity — all in one call via
-     * append_to_response, same pattern as getMovie()/getTvShow().
+     * Fetches full person details (biography, filmography, images).
+     * Used by Character screen.
      *
      * Endpoint: GET /3/person/{person_id}
      * Docs: https://developer.themoviedb.org/reference/person-details
@@ -112,6 +101,47 @@ interface TmdbApiService {
         @Query("language") language: String = "en-US",
         @Query("append_to_response") appendToResponse: String = "combined_credits,images,external_ids"
     ): Response<com.example.watchorderengine.network.model.TmdbPersonDetail>
+
+    /**
+     * Fetches person details (for character biographies).
+     */
+    @GET("person/{personId}")
+    suspend fun getPerson(
+        @Path("personId") personId: Int,
+        @Query("language") language: String = "en-US"
+    ): Response<com.example.watchorderengine.network.model.TmdbPersonResponse>
+
+    /**
+     * Discovers movies matching a genre, sorted by popularity. Used by the
+     * Discovery screen's category chips (Horror, Comedy, etc.) — list/search/
+     * trending endpoints don't support genre filtering server-side, only
+     * `/discover` does.
+     *
+     * Endpoint: GET /3/discover/movie
+     * Docs: https://developer.themoviedb.org/reference/discover-movie
+     */
+    @GET("discover/movie")
+    suspend fun discoverMovies(
+        @Query("with_genres") genreId: Int,
+        @Query("language") language: String = "en-US",
+        @Query("sort_by") sortBy: String = "popularity.desc",
+        @Query("page") page: Int = 1,
+        @Query("include_adult") includeAdult: Boolean = false
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
+
+    /**
+     * Discovers TV shows matching a genre, sorted by popularity.
+     *
+     * Endpoint: GET /3/discover/tv
+     * Docs: https://developer.themoviedb.org/reference/discover-tv
+     */
+    @GET("discover/tv")
+    suspend fun discoverTvShows(
+        @Query("with_genres") genreId: Int,
+        @Query("language") language: String = "en-US",
+        @Query("sort_by") sortBy: String = "popularity.desc",
+        @Query("page") page: Int = 1
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
 }
 
 // ─── OkHttp Auth Interceptor ──────────────────────────────────────────────────

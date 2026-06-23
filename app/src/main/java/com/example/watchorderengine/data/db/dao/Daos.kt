@@ -95,3 +95,18 @@ interface EpisodeWatchedDao {
     @Query("DELETE FROM episode_watched WHERE episodeId = :episodeId")
     fun unmarkWatched(episodeId: String)
 }
+
+@Dao
+interface DiscoverySkippedDao {
+    @Query("SELECT mediaId FROM discovery_skipped")
+    fun getAllSkippedIds(): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun markSkipped(entity: DiscoverySkippedEntity)
+
+    @Query("DELETE FROM discovery_skipped WHERE mediaId = :mediaId")
+    fun removeSkipped(mediaId: String)
+
+    @Query("DELETE FROM discovery_skipped")
+    fun clearAllSkipped()
+}

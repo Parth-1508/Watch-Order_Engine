@@ -44,11 +44,13 @@ sealed class Screen(val route: String) {
     object Detail    : Screen("detail/{mediaId}") {
         fun route(mediaId: String) = "detail/$mediaId"
     }
-    object CharacterDetail : Screen("character/{tmdbPersonId}/{characterName}/{showTitle}/{isAnime}") {
-        fun route(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean): String {
+    object CharacterDetail : Screen("character/{tmdbPersonId}/{characterName}/{showTitle}/{isAnime}/{anilistId}") {
+        // anilistId uses -1 as the "unknown/not available" sentinel since NavType.IntType
+        // doesn't support a nullable Int route argument.
+        fun route(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean, anilistId: Int? = null): String {
             val encodedName = java.net.URLEncoder.encode(characterName, "UTF-8")
             val encodedTitle = java.net.URLEncoder.encode(showTitle, "UTF-8")
-            return "character/$tmdbPersonId/$encodedName/$encodedTitle/$isAnime"
+            return "character/$tmdbPersonId/$encodedName/$encodedTitle/$isAnime/${anilistId ?: -1}"
         }
     }
 }
@@ -156,9 +158,9 @@ fun AppNavigation() {
                     onUniverseClick = { universeId ->
                         navController.navigate("timeline/$universeId")
                     },
-                    onCharacterClick = { tmdbPersonId, characterName, showTitle, isAnime ->
+                    onCharacterClick = { tmdbPersonId, characterName, showTitle, isAnime, anilistId ->
                         navController.navigate(
-                            Screen.CharacterDetail.route(tmdbPersonId, characterName, showTitle, isAnime)
+                            Screen.CharacterDetail.route(tmdbPersonId, characterName, showTitle, isAnime, anilistId)
                         )
                     }
                 )
@@ -170,7 +172,8 @@ fun AppNavigation() {
                     navArgument("tmdbPersonId") { type = NavType.IntType },
                     navArgument("characterName") { type = NavType.StringType },
                     navArgument("showTitle") { type = NavType.StringType },
-                    navArgument("isAnime") { type = NavType.BoolType }
+                    navArgument("isAnime") { type = NavType.BoolType },
+                    navArgument("anilistId") { type = NavType.IntType; defaultValue = -1 }
                 )
             ) { backStackEntry ->
                 val args = backStackEntry.arguments
@@ -179,6 +182,7 @@ fun AppNavigation() {
                     characterName = java.net.URLDecoder.decode(args?.getString("characterName") ?: "", "UTF-8"),
                     showTitle = java.net.URLDecoder.decode(args?.getString("showTitle") ?: "", "UTF-8"),
                     isAnime = args?.getBoolean("isAnime") ?: false,
+                    anilistId = args?.getInt("anilistId")?.takeIf { it > 0 },
                     onBack = { navController.popBackStack() },
                     onMediaClick = { mediaId ->
                         navController.navigate(Screen.Detail.route(safeMediaId(mediaId)))

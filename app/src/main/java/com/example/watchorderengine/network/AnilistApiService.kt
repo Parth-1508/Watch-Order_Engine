@@ -46,7 +46,18 @@ data class AnilistMedia(
     val genres: List<String>?,
     val tags: List<AnilistTag>?,
     val relations: AnilistRelations?,
-    val characters: AnilistCharacters?
+    val characters: AnilistCharacters?,
+    // "TV" | "TV_SHORT" | "MOVIE" | "SPECIAL" | "OVA" | "ONA" | "MUSIC" — used to
+    // pick out franchise movies/specials from a media's relations list.
+    val format: String? = null,
+    val startDate: AnilistFuzzyDate? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistFuzzyDate(
+    val year: Int?,
+    val month: Int? = null,
+    val day: Int? = null
 )
 
 @JsonClass(generateAdapter = true)

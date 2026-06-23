@@ -32,7 +32,8 @@ class CharacterDetailViewModel @Inject constructor(
         tmdbPersonId: Int,
         characterName: String,
         showTitle: String,
-        isAnime: Boolean
+        isAnime: Boolean,
+        anilistId: Int? = null
     ) {
         viewModelScope.launch {
             _state.value = CharacterDetailState.Loading
@@ -40,7 +41,8 @@ class CharacterDetailViewModel @Inject constructor(
                 tmdbPersonId  = tmdbPersonId,
                 characterName = characterName,
                 showTitle     = showTitle,
-                isAnime       = isAnime
+                isAnime       = isAnime,
+                anilistId     = anilistId
             )
             _state.value = result.fold(
                 onSuccess = { CharacterDetailState.Success(it) },
@@ -51,6 +53,6 @@ class CharacterDetailViewModel @Inject constructor(
 
     fun setPhotoIndex(index: Int) { activePhotoIndex.value = index }
 
-    fun retry(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean) =
-        load(tmdbPersonId, characterName, showTitle, isAnime)
+    fun retry(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean, anilistId: Int? = null) =
+        load(tmdbPersonId, characterName, showTitle, isAnime, anilistId)
 }

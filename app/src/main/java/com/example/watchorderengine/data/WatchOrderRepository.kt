@@ -53,9 +53,7 @@ class WatchOrderRepository @Inject constructor(
         val listener = firestore.collection("universes")
             .addSnapshotListener { snap, err ->
                 if (err != null) { close(err); return@addSnapshotListener }
-                val universes = snap?.documents?.mapNotNull { doc ->
-                    doc.toObject<Universe>()?.copy(id = doc.id)
-                } ?: emptyList()
+                val universes = snap?.documents?.mapNotNull { it.toObject<Universe>() } ?: emptyList()
                 trySend(universes)
             }
         awaitClose { listener.remove() }
@@ -68,7 +66,7 @@ class WatchOrderRepository @Inject constructor(
     fun getUniverse(universeId: String): Flow<Universe> = callbackFlow {
         val listener = universeRef(universeId).addSnapshotListener { snap, err ->
             if (err != null) { close(err); return@addSnapshotListener }
-            snap?.toObject<Universe>()?.copy(id = snap.id)?.let { trySend(it) }
+            snap?.toObject<Universe>()?.let { trySend(it) }
         }
         awaitClose { listener.remove() }
     }
@@ -122,35 +120,29 @@ class WatchOrderRepository @Inject constructor(
     }
 
 
-    /** Finds if this media belongs to any universe tree. Checks both TMDB and AniList IDs. */
-    fun findUniverseForMedia(tmdbId: Int, anilistId: Int?): Flow<Universe?> = callbackFlow {
+    /**
+     * Finds every universe this piece of media appears in — not just the
+     * first match. A movie/show can legitimately be a node in more than one
+     * generated universe (e.g. a crossover movie that's both "part of MCU"
+     * and "part of its own franchise"), so Detail's "Part of X" card needs
+     * the full list, not a single Universe?.
+     */
+    fun findUniversesForMedia(tmdbId: Int): Flow<List<Universe>> = callbackFlow {
         val listener = firestore.collection("universes")
             .addSnapshotListener { snap, err ->
                 if (err != null) { close(err); return@addSnapshotListener }
-                
-                val universes = snap?.documents?.mapNotNull { doc -> 
-                    doc.toObject<Universe>()?.copy(id = doc.id)
-                } ?: emptyList()
-                
+
+                val universes = snap?.documents?.mapNotNull { it.toObject<Universe>() } ?: emptyList()
+
                 this@callbackFlow.launch {
+                    val matches = mutableListOf<Universe>()
                     for (u in universes) {
-                        // Check nodes for TMDB ID match
-                        val tmdbNodesSnap = nodesRef(u.id).whereEqualTo("tmdb_id", tmdbId).get().await()
-                        if (!tmdbNodesSnap.isEmpty) {
-                            trySend(u)
-                            return@launch
-                        }
-                        
-                        // Check nodes for AniList ID match if provided
-                        if (anilistId != null && anilistId > 0) {
-                            val anilistNodesSnap = nodesRef(u.id).whereEqualTo("anilist_id", anilistId).get().await()
-                            if (!anilistNodesSnap.isEmpty) {
-                                trySend(u)
-                                return@launch
-                            }
+                        val nodesSnap = nodesRef(u.id).whereEqualTo("tmdb_id", tmdbId).get().await()
+                        if (!nodesSnap.isEmpty) {
+                            matches.add(u)
                         }
                     }
-                    trySend(null)
+                    trySend(matches)
                 }
             }
         awaitClose { listener.remove() }
@@ -188,6 +180,21 @@ class WatchOrderRepository @Inject constructor(
             ).await()
         }
 
+
+    /**
+     * Writes a resolved poster URL back onto a universe document. Used by
+     * MediaRepository's one-time backfill for legacy universes that were
+     * seeded (via the old Node.js scripts) with no poster/cover field at
+     * all — those docs render as blank rectangular tabs in the Graph list
+     * until this runs once and fills them in.
+     */
+    suspend fun updateUniversePoster(universeId: String, posterUrl: String): Result<Unit> =
+        runCatching {
+            universeRef(universeId).set(
+                mapOf("posterUrl" to posterUrl),
+                SetOptions.merge()
+            ).await()
+        }
 
     suspend fun setSpoilerShieldEnabled(universeId: String, enabled: Boolean): Result<Unit> =
         runCatching {

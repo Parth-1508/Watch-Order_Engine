@@ -43,6 +43,7 @@ fun CharacterDetailScreen(
     isAnime: Boolean,
     onBack: () -> Unit,
     onMediaClick: (String) -> Unit,
+    anilistId: Int? = null,
     viewModel: CharacterDetailViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -50,7 +51,7 @@ fun CharacterDetailScreen(
     val photoIndex by viewModel.photoIndex.collectAsState()
 
     LaunchedEffect(tmdbPersonId, characterName) {
-        viewModel.load(tmdbPersonId, characterName, showTitle, isAnime)
+        viewModel.load(tmdbPersonId, characterName, showTitle, isAnime, anilistId)
     }
 
     Box(modifier = Modifier.fillMaxSize().background(theme.background)) {
@@ -58,7 +59,7 @@ fun CharacterDetailScreen(
             is CharacterDetailState.Loading -> CharacterDetailLoading(onBack)
             is CharacterDetailState.Error -> CharacterDetailError(
                 message = s.message,
-                onRetry = { viewModel.retry(tmdbPersonId, characterName, showTitle, isAnime) },
+                onRetry = { viewModel.retry(tmdbPersonId, characterName, showTitle, isAnime, anilistId) },
                 onBack = onBack
             )
             is CharacterDetailState.Success -> CharacterDetailBody(
@@ -153,13 +154,23 @@ private fun CharacterDetailBody(
     val scrollState = rememberScrollState()
     var activeTab by remember { mutableStateOf(0) }
 
+    // Build the hero image list:
+    // 1. All fictional character art (Gallery from AniList/Wikipedia)
+    // 2. All actor photos (Gallery from TMDB)
     val heroImages = remember(detail) {
         buildList {
-            detail.characterImageUrl?.let { add(it) }
-            detail.actorPhotos.filter { it != detail.characterImageUrl }.take(7).forEach { add(it) }
+            // First, add all character-specific art (Naruto, Luffy, Spider-Man art, etc.)
+            addAll(detail.characterPhotos)
+            
+            // Then, add the real actor's photos as fallback/extra
+            detail.actorProfileUrl?.let { if (!contains(it)) add(it) }
+            detail.actorPhotos.forEach { if (!contains(it)) add(it) }
+            
+            // Absolute fallback if everything else is missing
+            if (isEmpty() && detail.characterImageUrl != null) add(detail.characterImageUrl)
         }
     }
-    val heroUrl = heroImages.getOrNull(photoIndex) ?: detail.actorProfileUrl
+    val heroUrl = heroImages.getOrNull(photoIndex) ?: detail.characterImageUrl ?: detail.actorProfileUrl
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
 
@@ -296,6 +307,7 @@ private fun CharacterDetailBody(
         val tabs = buildList {
             add("Character")
             add("Actor")
+            if (detail.characterAppearances.isNotEmpty()) add("Appearances")
             if (detail.knownForCredits.isNotEmpty()) add("Filmography")
         }
 
@@ -329,10 +341,12 @@ private fun CharacterDetailBody(
         }
 
         Crossfade(targetState = activeTab, label = "character_tab") { tab ->
-            when (tab) {
-                0 -> CharacterTab(detail)
-                1 -> ActorTab(detail)
-                2 -> FilmographyTab(detail, onMediaClick)
+            when (tabs.getOrNull(tab)) {
+                "Character" -> CharacterTab(detail)
+                "Actor" -> ActorTab(detail)
+                "Appearances" -> AppearancesTab(detail)
+                "Filmography" -> FilmographyTab(detail, onMediaClick)
+                else -> Unit
             }
         }
 
@@ -379,10 +393,25 @@ private fun CharacterTab(detail: CharacterDetail) {
         } else {
             InfoCard {
                 Text(
-                    "No character-specific bio available — showing actor details instead.",
+                    "No character-specific bio found — showing actor details instead.",
                     color = theme.textSecondary, fontSize = 13.sp, lineHeight = 19.sp
                 )
             }
+        }
+
+        // ── Wikipedia lore block (distinct supplement) ────────────────────────
+        val showWikiSupplementBlock = !detail.wikiLore.isNullOrBlank() &&
+            detail.characterDescription != detail.wikiLore &&
+            detail.characterDescription.length > 150
+
+        if (showWikiSupplementBlock) {
+            SectionHeader("Lore — Wikipedia")
+            WikiLoreCard(lore = detail.wikiLore!!)
+        }
+
+        // ── Wikipedia attribution ─────────────────────────────────────────────
+        if (!detail.wikiLore.isNullOrBlank() && detail.characterDescription == detail.wikiLore) {
+            WikiAttributionFooter()
         }
 
         if (detail.voiceActorName != null) {
@@ -414,9 +443,30 @@ private fun CharacterTab(detail: CharacterDetail) {
                 detail.characterRole.let { FactRow("Role", it) }
                 detail.characterGender?.let { FactRow("Gender", it) }
                 detail.characterAge?.let { FactRow("Age", it) }
-                if (detail.characterDescription.isBlank() && detail.characterGender == null && detail.characterAge == null) {
-                    Text("This title isn't tagged as anime, so AniList enrichment was skipped.",
-                        color = theme.textSecondary, fontSize = 12.sp)
+            }
+        }
+
+        // ── Character Gallery (Fictional Art) ─────────────────────────────────
+        val displayArt = remember(detail) {
+            detail.characterPhotos.ifEmpty { listOfNotNull(detail.characterImageUrl) }
+        }
+
+        if (displayArt.isNotEmpty()) {
+            SectionHeader("Fictional Art")
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(displayArt) { url ->
+                    AsyncImage(
+                        model              = url,
+                        contentDescription = "Character Art",
+                        modifier           = Modifier
+                            .size(width = 100.dp, height = 140.dp)
+                            .clip(RoundedCornerShape(chipRadius(theme.appRadius)))
+                            .background(theme.surfaceHover),
+                        contentScale       = ContentScale.Crop
+                    )
                 }
             }
         }
@@ -466,6 +516,85 @@ private fun ActorTab(detail: CharacterDetail) {
                     )
                 }
             }
+        }
+    }
+}
+
+// ─── Tab: Appearances (character's own franchise movies, via AniList) ───────────
+
+@Composable
+private fun AppearancesTab(detail: CharacterDetail) {
+    val theme = LocalAppTheme.current
+    Column(modifier = Modifier.padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(
+            "Every movie/special in this franchise where ${detail.characterName} appears as a character — " +
+                "not the voice actor's other roles.",
+            color = theme.textSecondary,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+
+        val rows = detail.characterAppearances.chunked(2)
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            rows.forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { appearance ->
+                        AppearanceCard(appearance, modifier = Modifier.weight(1f))
+                    }
+                    // Keeps the last odd-numbered row from stretching to full width.
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppearanceCard(appearance: com.example.watchorderengine.data.model.CharacterAppearance, modifier: Modifier = Modifier) {
+    val theme = LocalAppTheme.current
+    Column(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.7f)
+                .clip(RoundedCornerShape(chipRadius(theme.appRadius)))
+                .background(theme.surfaceHover)
+        ) {
+            AsyncImage(
+                model = appearance.imageUrl,
+                contentDescription = appearance.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)), startY = 180f)
+                )
+            )
+            appearance.role?.let { role ->
+                Surface(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    color = roleColor(role, theme)
+                ) {
+                    Text(
+                        role, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                        fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.Black
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            appearance.title, color = theme.textPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+            maxLines = 2, overflow = TextOverflow.Ellipsis
+        )
+        if (!appearance.year.isNullOrBlank()) {
+            Text(appearance.year, color = theme.textSecondary, fontSize = 10.sp)
         }
     }
 }
@@ -546,6 +675,67 @@ private fun KnownForCard(credit: CreditItem, onClick: () -> Unit, modifier: Modi
             }
         }
     }
+}
+
+/**
+ * Dedicated card for Wikipedia lore — styled slightly differently (italicised
+ * text, attribution label) to distinguish it from AniList / TMDB data.
+ */
+@Composable
+private fun WikiLoreCard(lore: String) {
+    val theme    = LocalAppTheme.current
+    var expanded by remember { mutableStateOf(false) }
+    var overflows by remember { mutableStateOf(false) }
+
+    InfoCard {
+        Column {
+            Text(
+                text       = lore,
+                color      = theme.textSecondary,
+                fontSize   = 13.sp,
+                lineHeight = 19.sp,
+                fontStyle  = androidx.compose.ui.text.font.FontStyle.Italic,
+                maxLines   = if (expanded) Int.MAX_VALUE else 4,
+                overflow   = TextOverflow.Ellipsis,
+                onTextLayout = { result ->
+                    if (!overflows) overflows = result.hasVisualOverflow
+                }
+            )
+
+            if (overflows || expanded) {
+                TextButton(
+                    onClick  = { expanded = !expanded },
+                    modifier = Modifier.align(Alignment.End),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        if (expanded) "Show less" else "Show more",
+                        color    = theme.accent,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            WikiAttributionFooter()
+        }
+    }
+}
+
+/**
+ * Small attribution row shown under any content sourced from Wikipedia.
+ */
+@Composable
+private fun WikiAttributionFooter() {
+    val theme = LocalAppTheme.current
+    Spacer(Modifier.height(8.dp))
+    HorizontalDivider(color = theme.border, thickness = 0.5.dp)
+    Spacer(Modifier.height(6.dp))
+    Text(
+        "Source: Wikipedia (CC BY-SA 4.0)",
+        color      = theme.textSecondary.copy(alpha = 0.6f),
+        fontSize   = 10.sp,
+        fontStyle  = androidx.compose.ui.text.font.FontStyle.Italic
+    )
 }
 
 @Composable
