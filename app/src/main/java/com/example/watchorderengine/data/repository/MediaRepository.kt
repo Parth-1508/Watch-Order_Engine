@@ -226,9 +226,38 @@ class MediaRepository @Inject constructor(
     }
 
     private suspend fun buildMediaDetail(mediaId: String): MediaDetail? {
-        val entity   = db.mediaDao().getById(mediaId) ?: return null
-        val seasons  = db.seasonDao().getSeasonsByMedia(mediaId)
-        val progress = db.userProgressDao().getProgress(mediaId)
+        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
+        val rawId = sanitizedId.removePrefix("tmdb_").removePrefix("anilist_")
+        
+        android.util.Log.d("BorutoDebug", "buildMediaDetail: input=$mediaId, sanitized=$sanitizedId, raw=$rawId")
+        
+        val entity = db.mediaDao().getById(sanitizedId) ?: db.mediaDao().getById(rawId)
+        if (entity == null) {
+            android.util.Log.e("BorutoDebug", "Entity NOT FOUND in DB for $sanitizedId or $rawId")
+            return null
+        }
+        
+        android.util.Log.d("BorutoDebug", "Entity found: id=${entity.id}, title=${entity.title}")
+
+        val seasons  = db.seasonDao().getSeasonsByMedia(entity.id)
+        val progress = db.userProgressDao().getProgress(sanitizedId) ?: db.userProgressDao().getProgress(rawId)
+        
+        val countPrefixed = db.episodeWatchedDao().countWatchedForMedia(sanitizedId)
+        val countRaw = db.episodeWatchedDao().countWatchedForMedia(rawId)
+        
+        // Extra debug: check if any episodes exist at all for this media in watched table
+        val allWatchedForPrefixed = db.episodeWatchedDao().getWatchedIds(sanitizedId)
+        val allWatchedForRaw = db.episodeWatchedDao().getWatchedIds(rawId)
+        
+        android.util.Log.d("BorutoDebug", "DB Check: sanitizedId=$sanitizedId, countPrefixed=$countPrefixed, samples=${allWatchedForPrefixed.take(3)}")
+        android.util.Log.d("BorutoDebug", "DB Check: rawId=$rawId, countRaw=$countRaw, samples=${allWatchedForRaw.take(3)}")
+        
+        val watchedCount = if (sanitizedId != rawId) countPrefixed + countRaw else countPrefixed
+        
+        android.util.Log.d("BorutoDebug", "Progress calculation: total=$watchedCount")
+        
+        val totalEps = entity.numberOfEpisodes ?: 0
+        android.util.Log.d("BorutoDebug", "Series Total Episodes: $totalEps")
 
         val castType    = Types.newParameterizedType(List::class.java, CastMember::class.java)
         val castAdapter = moshi.adapter<List<CastMember>>(castType)
@@ -272,7 +301,14 @@ class MediaRepository @Inject constructor(
             recommendations  = emptyList(),
             seasons          = seasons.map { it.toDomain() },
             arcs             = arcs ?: emptyList(),
-            userProgress     = progress?.toDomain()
+            userProgress     = progress?.toDomain(watchedCount) ?: if (watchedCount > 0) {
+                // Return a synthetic progress object if we have watched episodes but no explicit tracking state
+                UserProgress(
+                    mediaId = entity.id,
+                    trackingState = TrackingState.WATCHING,
+                    totalEpisodesWatched = watchedCount
+                )
+            } else null
         )
     }
 
@@ -290,10 +326,12 @@ class MediaRepository @Inject constructor(
 
     fun observeEpisodesBySeason(mediaId: String, seasonNumber: Int): Flow<List<EpisodeItem>> {
         val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
+        val rawId = sanitizedId.removePrefix("tmdb_").removePrefix("anilist_")
         val seasonId = "${sanitizedId}_s$seasonNumber"
 
         return db.episodeDao().observeEpisodesBySeason(seasonId).map { episodes ->
-            val watchedIds = db.episodeWatchedDao().getWatchedIds(sanitizedId).toSet()
+            val watchedIds = (db.episodeWatchedDao().getWatchedIds(sanitizedId) + 
+                            db.episodeWatchedDao().getWatchedIds(rawId)).toSet()
             episodes.map { it.toDomain(watchedIds) }
         }.flowOn(Dispatchers.IO)
     }
@@ -556,10 +594,80 @@ class MediaRepository @Inject constructor(
     }
 
     suspend fun toggleEpisodeWatched(episodeId: String, mediaId: String): Boolean = withContext(Dispatchers.IO) {
-        val isWatched = db.episodeWatchedDao().isWatched(episodeId)
-        if (isWatched) db.episodeWatchedDao().unmarkWatched(episodeId)
-        else db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(episodeId, mediaId))
+        val rawEpisodeId = episodeId.removePrefix("tmdb_").removePrefix("anilist_")
+        val isWatchedPrefixed = db.episodeWatchedDao().isWatched(episodeId)
+        val isWatchedRaw = if (episodeId != rawEpisodeId) db.episodeWatchedDao().isWatched(rawEpisodeId) else false
+        
+        val isWatched = isWatchedPrefixed || isWatchedRaw
+        
+        if (isWatched) {
+            db.episodeWatchedDao().unmarkWatched(episodeId)
+            if (episodeId != rawEpisodeId) db.episodeWatchedDao().unmarkWatched(rawEpisodeId)
+        } else {
+            db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(episodeId, mediaId))
+        }
         !isWatched
+    }
+
+    suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int) = withContext(Dispatchers.IO) {
+        val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+        val toMark = episodes.filter { it.absoluteEpisodeNumber < upToAbsoluteNumber }
+        val entities = toMark.map { EpisodeWatchedEntity(it.id, mediaId) }
+        entities.forEach { db.episodeWatchedDao().markWatched(it) }
+    }
+
+    suspend fun markPreviousEpisodesAsWatchedSequentially(
+        mediaId: String, 
+        targetSeason: Int, 
+        targetEpisode: Int
+    ) = withContext(Dispatchers.IO) {
+        val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+        val entities = episodes.filter { 
+            it.seasonNumber < targetSeason || (it.seasonNumber == targetSeason && it.episodeNumber < targetEpisode)
+        }.map { EpisodeWatchedEntity(it.id, mediaId) }
+        
+        entities.forEach { db.episodeWatchedDao().markWatched(it) }
+    }
+
+    suspend fun markAllAsWatched(mediaId: String) = withContext(Dispatchers.IO) {
+        val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+        val entities = episodes.map { EpisodeWatchedEntity(it.id, mediaId) }
+        entities.forEach { db.episodeWatchedDao().markWatched(it) }
+    }
+
+    suspend fun markSeasonAsWatched(mediaId: String, seasonNumber: Int) = withContext(Dispatchers.IO) {
+        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
+        val seasonId = "${sanitizedId}_s$seasonNumber"
+        val episodes = db.episodeDao().getEpisodesBySeason(seasonId)
+        val entities = episodes.map { EpisodeWatchedEntity(it.id, sanitizedId) }
+        entities.forEach { db.episodeWatchedDao().markWatched(it) }
+    }
+
+    suspend fun unmarkSeasonAsWatched(mediaId: String, seasonNumber: Int) = withContext(Dispatchers.IO) {
+        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
+        val rawId = sanitizedId.removePrefix("tmdb_").removePrefix("anilist_")
+        
+        val seasonPrefixPrefixed = "${sanitizedId}_s${seasonNumber}e%"
+        val seasonPrefixRaw = "${rawId}_s${seasonNumber}e%"
+        
+        db.episodeWatchedDao().unmarkSeasonWatched(sanitizedId, seasonPrefixPrefixed)
+        if (sanitizedId != rawId) {
+            db.episodeWatchedDao().unmarkSeasonWatched(rawId, seasonPrefixRaw)
+        }
+    }
+
+    suspend fun hasUnwatchedEpisodesBefore(
+        mediaId: String, 
+        targetSeason: Int, 
+        targetEpisode: Int
+    ): Boolean = withContext(Dispatchers.IO) {
+        val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+        val watchedIds = db.episodeWatchedDao().getWatchedIds(mediaId).toSet()
+        
+        episodes.any { 
+            (it.seasonNumber < targetSeason || (it.seasonNumber == targetSeason && it.episodeNumber < targetEpisode)) &&
+            it.id !in watchedIds
+        }
     }
 
     /**
@@ -607,20 +715,24 @@ class MediaRepository @Inject constructor(
         overview = overview, posterUrl = posterUrl, airDate = airDate, episodeCount = episodeCount
     )
 
-    private fun EpisodeEntity.toDomain(watchedIds: Set<String>) = EpisodeItem(
-        id = id, seasonId = seasonId, mediaId = mediaId,
-        episodeNumber = episodeNumber, seasonNumber = seasonNumber,
-        absoluteEpisodeNumber = absoluteEpisodeNumber,
-        title = title, overview = overview, airDate = airDate,
-        runtime = runtime, stillUrl = stillUrl, voteAverage = voteAverage,
-        episodeType = EpisodeType.entries.find { it.name == episodeType } ?: EpisodeType.CANON,
-        arcName = arcName, isWatched = id in watchedIds
-    )
+    private fun EpisodeEntity.toDomain(watchedIds: Set<String>): EpisodeItem {
+        val rawEpisodeId = id.removePrefix("tmdb_").removePrefix("anilist_")
+        return EpisodeItem(
+            id = id, seasonId = seasonId, mediaId = mediaId,
+            episodeNumber = episodeNumber, seasonNumber = seasonNumber,
+            absoluteEpisodeNumber = absoluteEpisodeNumber,
+            title = title, overview = overview, airDate = airDate,
+            runtime = runtime, stillUrl = stillUrl, voteAverage = voteAverage,
+            episodeType = EpisodeType.entries.find { it.name == episodeType } ?: EpisodeType.CANON,
+            arcName = arcName, 
+            isWatched = id in watchedIds || rawEpisodeId in watchedIds
+        )
+    }
 
-    private fun UserProgressEntity.toDomain() = UserProgress(
+    private fun UserProgressEntity.toDomain(watchedCount: Int = 0) = UserProgress(
         mediaId = mediaId, trackingState = TrackingState.valueOf(trackingState),
         currentSeasonNumber = currentSeasonNumber, currentEpisodeNumber = currentEpisodeNumber,
-        totalEpisodesWatched = 0, userRating = userRating,
+        totalEpisodesWatched = watchedCount, userRating = userRating,
         startedDate = startedDate, completedDate = completedDate, updatedAt = updatedAt,
         userNotes = userNotes, priorityTag = PriorityTag.valueOf(priorityTag)
     )
@@ -647,6 +759,10 @@ class MediaRepository @Inject constructor(
             else -> "TV_SHOW"
         }
 
+        // Error #6: Boruto Progress Fix - ensure ID consistency by using "tmdb_" 
+        // prefix for both mediaId and its child episode/season links.
+        val sanitizedMediaId = if (mediaId.startsWith("tmdb_")) mediaId else "tmdb_${this.id}"
+
         val trailerKey = videos?.results
             ?.filter { it.site == "YouTube" && it.type == "Trailer" && it.official }
             ?.maxByOrNull { it.publishedAt ?: "" }?.key
@@ -658,7 +774,7 @@ class MediaRepository @Inject constructor(
         val providersJson = runCatching { wpAdapter.toJson(providers) }.getOrDefault("[]")
 
         return MediaEntity(
-            id = mediaId, tmdbId = this.id,
+            id = sanitizedMediaId, tmdbId = this.id,
             anilistId = null,
             title = title ?: name ?: "",
             originalTitle = originalTitle ?: originalName ?: "",

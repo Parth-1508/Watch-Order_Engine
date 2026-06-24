@@ -87,6 +87,9 @@ interface EpisodeDao {
 
     @Upsert
     suspend fun upsertAll(entities: List<EpisodeEntity>)
+
+    @Query("SELECT * FROM episodes WHERE mediaId = :mediaId ORDER BY absoluteEpisodeNumber ASC")
+    suspend fun getAllEpisodesByMedia(mediaId: String): List<EpisodeEntity>
 }
 
 // ─── UserProgressDao ─────────────────────────────────────────────────────────
@@ -153,6 +156,9 @@ interface EpisodeWatchedDao {
 
     @Query("DELETE FROM episode_watched WHERE episodeId = :episodeId")
     suspend fun unmarkWatched(episodeId: String)
+
+    @Query("DELETE FROM episode_watched WHERE mediaId = :mediaId AND episodeId LIKE :seasonPrefix")
+    suspend fun unmarkSeasonWatched(mediaId: String, seasonPrefix: String)
 
     /**
      * Returns all watchedAt timestamps, used by [MediaRepository.computeWatchStreak]

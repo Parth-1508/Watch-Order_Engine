@@ -2,9 +2,12 @@ package com.example.watchorderengine.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.launch
 import com.example.watchorderengine.data.model.WatchProviderItem
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -63,6 +67,8 @@ fun MediaDetailScreen(
     }
     
     val episodesBySeason by viewModel.episodes.collectAsState()
+    val bulkMarkPrompt by viewModel.bulkMarkPrompt.collectAsState()
+    val showWelcomeTip by viewModel.showWelcomeTip.collectAsState()
 
     Box(
         modifier = Modifier
@@ -78,10 +84,12 @@ fun MediaDetailScreen(
                     isEpisodesLoading = isEpisodesLoading,
                     universe = universes,
                     generationError = generationError,
+                    bulkMarkPrompt = bulkMarkPrompt,
+                    showWelcomeTip = showWelcomeTip,
                     onDismissGenerationError = { viewModel.dismissGenerationError() },
                     onBack = onBack,
                     onUpdateTracking = { viewModel.updateTrackingState(detail.id, it) },
-                    onToggleEpisode = { viewModel.toggleEpisodeWatched(it.id, detail.id) },
+                    onToggleEpisode = { viewModel.toggleEpisodeWatched(it, detail.id) },
                     onSeasonChange = { viewModel.loadEpisodes(detail.id, it) },
                     onGenerateOrder = { viewModel.generateWatchOrder(detail.id) },
                     onUniverseClick = onUniverseClick,
@@ -105,6 +113,7 @@ fun MediaDetailScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DetailContent(
     detail: MediaDetail,
@@ -113,6 +122,8 @@ private fun DetailContent(
     isEpisodesLoading: Boolean,
     universe: List<com.example.watchorderengine.data.model.Universe>,
     generationError: String?,
+    bulkMarkPrompt: EpisodeItem?,
+    showWelcomeTip: Boolean,
     onDismissGenerationError: () -> Unit,
     onBack: () -> Unit,
     onUpdateTracking: (TrackingState) -> Unit,
@@ -124,310 +135,409 @@ private fun DetailContent(
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
-    val scrollState = rememberScrollState()
     val initialTab = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) "chronology" else "episodes"
     var activeTab by remember { mutableStateOf(initialTab) }
     var selectedSeason by remember { mutableIntStateOf(detail.seasons.firstOrNull()?.seasonNumber ?: 1) }
 
-    val watchedCount = episodes.count { it.isWatched }
-    val totalEps = detail.numberOfEpisodes ?: episodes.size
+    val watchedCount = detail.userProgress?.totalEpisodesWatched ?: 0
+    val totalEps = detail.numberOfEpisodes ?: 0
     val progress = if (totalEps > 0) watchedCount.toFloat() / totalEps else 0f
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-    ) {
-        // Backdrop & Hero Section
-        Box(modifier = Modifier.height(350.dp).fillMaxWidth()) {
-            AsyncImage(
-                model = detail.backdropUrl ?: detail.posterUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.Movie)
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, theme.background),
-                            startY = 400f
-                        )
-                    )
-            )
-            
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
-                }
-                val context = androidx.compose.ui.platform.LocalContext.current
-                IconButton(
-                    onClick = {
-                        val sendIntent = android.content.Intent().apply {
-                            action = android.content.Intent.ACTION_SEND
-                            putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${detail.title} on Watch Order Engine!")
-                            type = "text/plain"
-                        }
-                        val shareIntent = android.content.Intent.createChooser(sendIntent, null)
-                        context.startActivity(shareIntent)
-                    },
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                ) {
-                    Icon(Icons.Default.Share, null, tint = Color.White)
-                }
-            }
+    val tabs = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) {
+        listOf("chronology", "characters")
+    } else {
+        listOf("episodes", "characters", "chronology")
+    }
 
-            // Progress Ring
-            if (progress > 0) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 24.dp, end = 16.dp)
-                        .size(56.dp)
-                ) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        drawCircle(color = Color.White.copy(alpha = 0.15f), style = Stroke(width = 4.dp.toPx()))
-                        drawArc(
-                            color = theme.accent,
-                            startAngle = -90f,
-                            sweepAngle = 360f * progress,
-                            useCenter = false,
-                            style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
-                        )
-                    }
-                    Text(
-                        text = "${(progress * 100).toInt()}%",
-                        modifier = Modifier.align(Alignment.Center),
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                }
-            }
-        }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
-        // Title & Stats
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            Text(
-                text = detail.title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = theme.textPrimary,
-                fontWeight = FontWeight.Black
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.padding(vertical = 8.dp)
-            ) {
-                Text(detail.releaseYear, color = Color.LightGray, fontSize = 14.sp)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Default.Star, null, tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp))
-                    Text(String.format("%.1f", detail.voteAverage), color = Color(0xFFFFD700), fontSize = 14.sp)
-                }
-                Box(modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                    Text(detail.ageRating, color = Color.White, fontSize = 10.sp)
-                }
-                Text("${watchedCount}/${totalEps} eps", color = Color.Gray, fontSize = 10.sp)
-            }
-            
-            // Overview Section
-            if (detail.overview.isNotBlank()) {
-                Text(
-                    text = detail.overview,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = theme.textSecondary,
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    lineHeight = 20.sp,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // Watch Providers
-            if (detail.watchProviders.isNotEmpty()) {
-                WatchProvidersCard(detail.watchProviders)
-            }
-
-            // Trailer
-            if (!detail.trailerKey.isNullOrBlank()) {
-                TrailerCard(detail.trailerKey)
-            }
-
-            // Watchlist Selector
-            var expanded by remember { mutableStateOf(false) }
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = !expanded }
-                        .then(ThemeBorderModifier()),
-                    color = theme.surface
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            detail.userProgress?.trackingState?.displayName ?: "Add to Watchlist",
-                            fontWeight = FontWeight.Bold,
-                            color = theme.textPrimary
-                        )
-                        Icon(
-                            if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                            null,
-                            tint = theme.textSecondary
-                        )
-                    }
-                }
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.fillMaxWidth(0.9f).background(theme.surface)
-                ) {
-                    TrackingState.entries.forEach { state ->
-                        DropdownMenuItem(
-                            text = { Text(state.displayName, color = theme.textPrimary) },
-                            onClick = {
-                                onUpdateTracking(state)
-                                expanded = false
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // Tabs
-        val tabs = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) {
-            listOf("chronology", "characters")
-        } else {
-            listOf("episodes", "characters", "chronology")
-        }
-        
-        Row(
-            modifier = Modifier
-                .padding(top = 24.dp)
-                .fillMaxWidth()
-                .drawBehind {
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.1f),
-                        start = androidx.compose.ui.geometry.Offset(0f, size.height),
-                        end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                }
-                .padding(horizontal = 16.dp)
+    Scaffold(
+        containerColor = theme.background
+    ) { padding ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
-            tabs.forEach { tab ->
-                val isSelected = activeTab == tab
-                Column(
-                    modifier = Modifier
-                        .padding(end = 24.dp)
-                        .clickable { activeTab = tab }
-                ) {
-                    Text(
-                        text = tab.uppercase(),
-                        color = if (isSelected) Color.White else Color.Gray,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(vertical = 12.dp)
+            // Bulk Mark Prompt Dialog
+            item {
+                if (bulkMarkPrompt != null) {
+                    AlertDialog(
+                        onDismissRequest = { viewModel.dismissBulkMark() },
+                        containerColor = theme.surface,
+                        titleContentColor = theme.textPrimary,
+                        textContentColor = theme.textSecondary,
+                        title = { Text("Mark previous episodes?") },
+                        text = { Text("You haven't marked episodes before ${bulkMarkPrompt.episodeNumber}. Do you want to mark all previous episodes as watched?") },
+                        confirmButton = {
+                            TextButton(onClick = { viewModel.confirmBulkMark(detail.id) }) {
+                                Text("Mark Episodes", color = theme.accent)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { viewModel.dismissBulkMark() }) {
+                                Text("Cancel", color = Color.Gray)
+                            }
+                        }
                     )
-                    if (isSelected) {
+                }
+            }
+
+            // Backdrop & Hero Section
+            item {
+                Box(modifier = Modifier.height(350.dp).fillMaxWidth()) {
+                    AsyncImage(
+                        model = detail.backdropUrl ?: detail.posterUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.Movie)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, theme.background),
+                                    startY = 400f
+                                )
+                            )
+                    )
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
+                        }
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        IconButton(
+                            onClick = {
+                                val sendIntent = android.content.Intent().apply {
+                                    action = android.content.Intent.ACTION_SEND
+                                    putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${detail.title} on Watch Order Engine!")
+                                    type = "text/plain"
+                                }
+                                val shareIntent = android.content.Intent.createChooser(sendIntent, null)
+                                context.startActivity(shareIntent)
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                        ) {
+                            Icon(Icons.Default.Share, null, tint = Color.White)
+                        }
+                    }
+
+                    // Progress Ring
+                    if (progress > 0) {
                         Box(
                             modifier = Modifier
-                                .height(2.dp)
-                                .width(40.dp)
-                                .background(theme.accent)
-                        )
+                                .align(Alignment.BottomEnd)
+                                .padding(bottom = 24.dp, end = 16.dp)
+                                .size(56.dp)
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                drawCircle(color = Color.White.copy(alpha = 0.15f), style = Stroke(width = 4.dp.toPx()))
+                                drawArc(
+                                    color = theme.accent,
+                                    startAngle = -90f,
+                                    sweepAngle = 360f * progress,
+                                    useCenter = false,
+                                    style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                            }
+                            Text(
+                                text = "${(progress * 100).toInt()}%",
+                                modifier = Modifier.align(Alignment.Center),
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        Crossfade(targetState = activeTab, label = "tab_content") { tab ->
-            when (tab) {
-                "episodes" -> EpisodesTab(
-                    seasons = detail.seasons,
-                    selectedSeason = selectedSeason,
-                    episodes = episodes,
-                    isAnalyzing = isAnalyzing,
-                    isEpisodesLoading = isEpisodesLoading,
-                    onSeasonChange = { 
-                        selectedSeason = it
-                        onSeasonChange(it)
-                    },
-                    onToggleEpisode = onToggleEpisode
-                )
-                "characters" -> CharactersTab(detail, onCharacterClick, viewModel)
-                "chronology" -> ChronologyTab(detail, isAnalyzing, universe, generationError, onGenerateOrder, onUniverseClick, onDismissGenerationError)
-            }
-        }
-    }
-}
-
-@Composable
-private fun EpisodesTab(
-    seasons: List<com.example.watchorderengine.data.model.SeasonSummary>,
-    selectedSeason: Int,
-    episodes: List<EpisodeItem>,
-    isAnalyzing: Boolean,
-    isEpisodesLoading: Boolean,
-    onSeasonChange: (Int) -> Unit,
-    onToggleEpisode: (EpisodeItem) -> Unit
-) {
-    val theme = LocalAppTheme.current
-    Column(modifier = Modifier.padding(16.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            items(seasons) { season ->
-                val isSelected = season.seasonNumber == selectedSeason
-                Surface(
-                    modifier = Modifier.clickable { onSeasonChange(season.seasonNumber) },
-                    shape = CircleShape,
-                    color = if (isSelected) Color.White else theme.surface,
-                    border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
-                ) {
+            // Title & Stats
+            item {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Text(
-                        "S${season.seasonNumber}",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                        color = if (isSelected) Color.Black else Color.Gray,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
+                        text = detail.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = theme.textPrimary,
+                        fontWeight = FontWeight.Black
                     )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    ) {
+                        Text(detail.releaseYear, color = Color.LightGray, fontSize = 14.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.Star, null, tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp))
+                            Text(String.format("%.1f", detail.voteAverage), color = Color(0xFFFFD700), fontSize = 14.sp)
+                        }
+                        Box(modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                            Text(detail.ageRating, color = Color.White, fontSize = 10.sp)
+                        }
+                        Text("${watchedCount}/${totalEps} eps", color = Color.Gray, fontSize = 10.sp)
+                    }
+                    
+                    // Overview Section
+                    if (detail.overview.isNotBlank()) {
+                        var isExpanded by remember { mutableStateOf(false) }
+                        Text(
+                            text = detail.overview,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = theme.textSecondary,
+                            modifier = Modifier
+                                .padding(vertical = 8.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null // Remove ripple for cleaner feel on text
+                                ) { isExpanded = !isExpanded }
+                                .animateContentSize(),
+                            lineHeight = 20.sp,
+                            maxLines = if (isExpanded) Int.MAX_VALUE else 4,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Watch Providers
+                    if (detail.watchProviders.isNotEmpty()) {
+                        WatchProvidersCard(detail.watchProviders)
+                    }
+
+                    // Trailer
+                    if (!detail.trailerKey.isNullOrBlank()) {
+                        TrailerCard(detail.trailerKey)
+                    }
+
+                    // Watchlist Selector
+                    var expanded by remember { mutableStateOf(false) }
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { expanded = !expanded }
+                                .then(ThemeBorderModifier()),
+                            color = theme.surface
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    detail.userProgress?.trackingState?.displayName ?: "Add to Watchlist",
+                                    fontWeight = FontWeight.Bold,
+                                    color = theme.textPrimary
+                                )
+                                Icon(
+                                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    null,
+                                    tint = theme.textSecondary
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                            modifier = Modifier.fillMaxWidth(0.9f).background(theme.surface)
+                        ) {
+                            TrackingState.entries.forEach { state ->
+                                DropdownMenuItem(
+                                    text = { Text(state.displayName, color = theme.textPrimary) },
+                                    onClick = {
+                                        onUpdateTracking(state)
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        if (isAnalyzing || isEpisodesLoading) {
-            repeat(3) { EpisodeRowPlaceholder() }
-        } else if (episodes.isEmpty()) {
-            Text(
-                "No episodes found for this season.",
-                color = Color.Gray,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(16.dp)
-            )
-        } else {
-            episodes.forEach { episode ->
-                EpisodeRow(episode, onToggleEpisode)
+            // Tabs (Sticky)
+            stickyHeader {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(theme.background)
+                        .drawBehind {
+                            drawLine(
+                                color = Color.White.copy(alpha = 0.1f),
+                                start = androidx.compose.ui.geometry.Offset(0f, size.height),
+                                end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+                                strokeWidth = 1.dp.toPx()
+                            )
+                        }
+                        .padding(horizontal = 16.dp)
+                ) {
+                    tabs.forEach { tab ->
+                        val isSelected = activeTab == tab
+                        Column(
+                            modifier = Modifier
+                                .padding(end = 24.dp)
+                                .clickable { 
+                                    activeTab = tab
+                                    // Smoothly scroll back to the top of the tab content 
+                                    // if we've scrolled past the header.
+                                    scope.launch {
+                                        if (listState.firstVisibleItemIndex >= 3) {
+                                            listState.animateScrollToItem(3)
+                                        }
+                                    }
+                                }
+                        ) {
+                            Text(
+                                text = tab.uppercase(),
+                                color = if (isSelected) Color.White else Color.Gray,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(2.dp)
+                                        .width(40.dp)
+                                        .background(theme.accent)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Content based on active tab
+            when (activeTab) {
+                "episodes" -> {
+                    // Tip Card
+                    if (showWelcomeTip && episodes.isNotEmpty()) {
+                        item {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                color = theme.accent.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.2f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Lightbulb, null, tint = theme.accent, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "Tip: Mark the episode you just watched, and you'll be able to mark all previous episodes at once!",
+                                        color = theme.textSecondary,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.weight(1f),
+                                        lineHeight = 16.sp
+                                    )
+                                    IconButton(onClick = { viewModel.dismissWelcomeTip() }, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Close, null, tint = Color.Gray)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Season Selector
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                items(detail.seasons) { season ->
+                                    val isSelected = season.seasonNumber == selectedSeason
+                                    Surface(
+                                        modifier = Modifier.clickable { 
+                                            selectedSeason = season.seasonNumber
+                                            onSeasonChange(season.seasonNumber) 
+                                        },
+                                        shape = CircleShape,
+                                        color = if (isSelected) Color.White else theme.surface,
+                                        border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                    ) {
+                                        Text(
+                                            "S${season.seasonNumber}",
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                            color = if (isSelected) Color.Black else Color.Gray,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                            
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(onClick = { viewModel.markSeasonAsWatched(detail.id, selectedSeason) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Checklist, "Mark Season", tint = theme.accent, modifier = Modifier.size(20.dp))
+                                }
+                                IconButton(onClick = { viewModel.unmarkSeasonAsWatched(detail.id, selectedSeason) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.RemoveDone, "Unmark Season", tint = Color.Gray, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    // Episodes
+                    if (isAnalyzing || isEpisodesLoading) {
+                        items(3) { EpisodeRowPlaceholder() }
+                    } else if (episodes.isEmpty()) {
+                        item {
+                            Text(
+                                "No episodes found for this season.",
+                                color = Color.Gray,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    } else {
+                        items(episodes, key = { it.id }) { episode ->
+                            EpisodeRow(episode, onToggleEpisode)
+                        }
+                    }
+                }
+                "characters" -> {
+                    item {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            detail.cast.take(10).forEach { cast ->
+                                CharacterRow(
+                                    cast = cast,
+                                    viewModel = viewModel,
+                                    characterArtUrl = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME) viewModel.characterArtFor(cast.character) else null,
+                                    onClick = { onCharacterClick(cast.tmdbId, cast.character, detail.title, detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME, detail.anilistId) }
+                                )
+                            }
+                        }
+                    }
+                }
+                "chronology" -> {
+                    item {
+                        ChronologyTab(detail, isAnalyzing, universe, generationError, onGenerateOrder, onUniverseClick, onDismissGenerationError)
+                    }
+                }
             }
         }
     }
@@ -441,7 +551,7 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable { expanded = !expanded },
         color = theme.surface.copy(alpha = 0.5f),
         shape = RoundedCornerShape(12.dp),
@@ -518,7 +628,7 @@ private fun EpisodeRowPlaceholder() {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         color = theme.surface.copy(alpha = 0.3f),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))

@@ -48,6 +48,12 @@ class MediaDetailViewModel @Inject constructor(
     private val _characterArt = MutableStateFlow<Map<String, String>>(emptyMap())
     val characterArt: StateFlow<Map<String, String>> = _characterArt.asStateFlow()
 
+    private val _bulkMarkPrompt = MutableStateFlow<EpisodeItem?>(null)
+    val bulkMarkPrompt: StateFlow<EpisodeItem?> = _bulkMarkPrompt.asStateFlow()
+
+    private val _showWelcomeTip = MutableStateFlow(true)
+    val showWelcomeTip: StateFlow<Boolean> = _showWelcomeTip.asStateFlow()
+
     private var loadJob: Job? = null
     private var episodesJob: Job? = null
     private var characterArtJob: Job? = null
@@ -79,7 +85,8 @@ class MediaDetailViewModel @Inject constructor(
                         val needsLoad = currentEps.isEmpty() || currentEps.firstOrNull()?.mediaId != sanitizedMediaId || forceRefresh
 
                         if (needsLoad) {
-                            val initialSeason = detail.seasons.find { it.seasonNumber > 0 }?.seasonNumber 
+                            val currentSeason = _episodes.value.firstOrNull()?.seasonNumber
+                            val initialSeason = currentSeason ?: detail.seasons.find { it.seasonNumber > 0 }?.seasonNumber
                                                 ?: detail.seasons.firstOrNull()?.seasonNumber 
                                                 ?: 1
                             loadEpisodes(sanitizedMediaId, initialSeason)
@@ -156,16 +163,96 @@ class MediaDetailViewModel @Inject constructor(
     fun updateTrackingState(mediaId: String, state: TrackingState) {
         viewModelScope.launch {
             repository.updateTrackingState(mediaId, state)
+            if (state == TrackingState.COMPLETED) {
+                repository.markAllAsWatched(mediaId)
+            }
             // Reload to reflect changes
             loadMediaDetail(mediaId, forceRefresh = true)
         }
     }
 
-    fun toggleEpisodeWatched(episodeId: String, mediaId: String) {
+    fun toggleEpisodeWatched(episode: EpisodeItem, mediaId: String) {
+        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
         viewModelScope.launch {
-            repository.toggleEpisodeWatched(episodeId, mediaId)
-            // Refresh detail to update progress
+            val wasWatched = episode.isWatched
+            
+            // Log for Boruto debugging
+            if (sanitizedId.contains("70881")) {
+                android.util.Log.d("BorutoDebug", "Toggling episode ${episode.id} for $sanitizedId. WasWatched=$wasWatched")
+            }
+
+            repository.toggleEpisodeWatched(episode.id, sanitizedId)
+            
+            // If we just marked it as watched, check if there are previous unwatched episodes
+            if (!wasWatched) {
+                val hasUnwatched = repository.hasUnwatchedEpisodesBefore(sanitizedId, episode.seasonNumber, episode.episodeNumber)
+                if (hasUnwatched) {
+                    _bulkMarkPrompt.value = episode
+                }
+            }
+
+            // Refresh detail and check for auto-completion
+            loadMediaDetail(sanitizedId, forceRefresh = true)
+            checkAutoCompletion(sanitizedId)
+        }
+    }
+
+    fun confirmBulkMark(mediaId: String) {
+        val episode = _bulkMarkPrompt.value ?: return
+        viewModelScope.launch {
+            repository.markPreviousEpisodesAsWatchedSequentially(mediaId, episode.seasonNumber, episode.episodeNumber)
+            _bulkMarkPrompt.value = null
             loadMediaDetail(mediaId, forceRefresh = true)
+            checkAutoCompletion(mediaId)
+        }
+    }
+
+    fun dismissBulkMark() {
+        _bulkMarkPrompt.value = null
+    }
+
+    fun dismissWelcomeTip() {
+        _showWelcomeTip.value = false
+    }
+
+    fun markSeasonAsWatched(mediaId: String, seasonNumber: Int) {
+        viewModelScope.launch {
+            repository.markSeasonAsWatched(mediaId, seasonNumber)
+            loadMediaDetail(mediaId, forceRefresh = true)
+            checkAutoCompletion(mediaId)
+        }
+    }
+
+    fun unmarkSeasonAsWatched(mediaId: String, seasonNumber: Int) {
+        viewModelScope.launch {
+            repository.unmarkSeasonAsWatched(mediaId, seasonNumber)
+            loadMediaDetail(mediaId, forceRefresh = true)
+            // If we unmark, it shouldn't be completed anymore
+            checkAutoCompletion(mediaId)
+        }
+    }
+
+    private suspend fun checkAutoCompletion(mediaId: String) {
+        // We can't rely on _mediaDetail.value yet as loadMediaDetail is asynchronous
+        // Let's grab the fresh state from repository
+        repository.getMediaDetailFlow(mediaId).collect { detail ->
+            if (detail != null) {
+                val watched = detail.userProgress?.totalEpisodesWatched ?: 0
+                val total = detail.numberOfEpisodes ?: 0
+                val currentState = detail.userProgress?.trackingState
+
+                if (total > 0 && watched >= total && currentState != TrackingState.COMPLETED) {
+                    repository.updateTrackingState(mediaId, TrackingState.COMPLETED)
+                    // One final reload to sync the UI state
+                    loadMediaDetail(mediaId, forceRefresh = true)
+                } else if (total > 0 && watched < total && currentState == TrackingState.COMPLETED) {
+                    // If it was completed but now has unmarked episodes, move back to Watching
+                    repository.updateTrackingState(mediaId, TrackingState.WATCHING)
+                    loadMediaDetail(mediaId, forceRefresh = true)
+                }
+            }
+            // Stop after first emission (cached or refreshed)
+            return@collect
         }
     }
 
