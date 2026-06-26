@@ -148,6 +148,24 @@ interface EpisodeWatchedDao {
     @Query("SELECT COUNT(*) FROM episode_watched")
     suspend fun countAllWatched(): Int
 
+    /**
+     * Real total minutes watched, computed by joining watched episode IDs
+     * against the episodes table's actual per-episode TMDB runtime —
+     * replaces ProfileViewModel's old flat "episodes * 24 minutes" guess,
+     * which was wrong for anything that isn't a ~24-minute sitcom/anime
+     * episode (a 50-min drama or a 22-min show would both be misreported).
+     * Episodes with no runtime on file (rare — mostly very old/obscure
+     * entries TMDB itself doesn't have a duration for) are excluded rather
+     * than guessed at, so this slightly undercounts in that edge case
+     * instead of fabricating a number for it.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(e.runtime), 0) FROM episode_watched w
+        INNER JOIN episodes e ON e.id = w.episodeId
+        WHERE e.runtime IS NOT NULL
+    """)
+    suspend fun sumWatchedRuntimeMinutes(): Int
+
     @Query("SELECT EXISTS(SELECT 1 FROM episode_watched WHERE episodeId = :episodeId)")
     suspend fun isWatched(episodeId: String): Boolean
 

@@ -1,5 +1,10 @@
 package com.example.watchorderengine.ui.screens
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -18,6 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,6 +36,31 @@ import com.example.watchorderengine.data.model.UserStats
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.ProfileViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * Copies a picker-selected image into app-private storage and returns a
+ * stable file:// path. A raw content:// URI from the Photo Picker is only
+ * guaranteed valid for the lifetime of the grant — persisting it directly
+ * as the avatar URL risks it failing to load after the picker's underlying
+ * permission is revoked (e.g. after some Android versions/OEMs reclaim
+ * transient grants). Copying the bytes once, up front, avoids that entirely.
+ */
+private suspend fun copyImageToAppStorage(context: Context, sourceUri: Uri): String? =
+    withContext(Dispatchers.IO) {
+        try {
+            val destFile = File(context.filesDir, "profile_avatar.jpg")
+            context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            destFile.absolutePath
+        } catch (e: Exception) {
+            null
+        }
+    }
 
 @Composable
 fun ProfileScreen(
@@ -37,6 +68,8 @@ fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val stats by viewModel.stats.collectAsState()
     val username by viewModel.username.collectAsState()
     val avatarUrl by viewModel.avatarUrl.collectAsState()
@@ -46,6 +79,25 @@ fun ProfileScreen(
     var editedName by remember { mutableStateOf(username) }
 
     val scrollState = rememberScrollState()
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val localPath = copyImageToAppStorage(context, uri)
+                if (localPath != null) {
+                    // No manual cache-busting needed: Coil already includes
+                    // the file's last-modified timestamp in its cache key
+                    // for file:// URIs (fixed in Coil well before the 2.6.0
+                    // version this project uses), so overwriting
+                    // profile_avatar.jpg with new bytes is already enough
+                    // for Coil to detect the change and skip its stale cache.
+                    viewModel.updateAvatarUrl("file://$localPath")
+                }
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(theme.background)) {
         Column(
@@ -87,7 +139,11 @@ fun ProfileScreen(
                             contentScale = ContentScale.Crop
                         )
                         Surface(
-                            onClick = { /* TODO: Change avatar */ },
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
                             shape = CircleShape,
                             color = theme.accent,
                             modifier = Modifier.size(32.dp).offset(x = 4.dp, y = 4.dp)

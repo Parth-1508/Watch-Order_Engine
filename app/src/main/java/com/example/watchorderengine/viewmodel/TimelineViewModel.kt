@@ -225,8 +225,16 @@ class TimelineViewModel @Inject constructor(
         // ── STEP 2: Compute DAG layout ────────────────────────────────────────
         val layout = try {
             GraphEngine.computeLayout(filteredNodes, filteredEdges)
-        } catch (e: IllegalStateException) {
-            return TimelineUiState.Error("Data integrity error: ${e.message}")
+        } catch (e: Exception) {
+            // Fallback for any other unforeseen layout errors
+            return TimelineUiState.Error("Layout error: ${e.message}")
+        }
+        
+        // Notify user if cycles were automatically broken
+        if (layout.isCycleDetected) {
+            viewModelScope.launch {
+                _events.send(TimelineEvent.ShowSnackbar("Note: AI generated a complex timeline with cycles. Some connections were automatically adjusted for display."))
+            }
         }
 
         // ── STEP 3: Sort nodes into topological order ─────────────────────────

@@ -19,7 +19,16 @@ data class TmdbPersonDetail(
     @Json(name = "homepage")            val homepage: String?,
     @Json(name = "combined_credits")    val combinedCredits: TmdbPersonCredits?,
     @Json(name = "images")              val images: TmdbPersonImages?,
-    @Json(name = "external_ids")        val externalIds: TmdbExternalIds?
+    @Json(name = "external_ids")        val externalIds: TmdbExternalIds?,
+    /**
+     * Images TMDB users have tagged with this person AND a specific
+     * movie/show — for non-anime characters, this is often the closest
+     * thing to "in-character art" actually available for free: behind-the-
+     * scenes or promotional stills of the actor in costume for a specific
+     * production, as opposed to [images] (generic headshots with no
+     * production context at all).
+     */
+    @Json(name = "tagged_images")       val taggedImages: TmdbTaggedImagesWrapper?
 )
 
 @JsonClass(generateAdapter = true)
@@ -68,4 +77,28 @@ data class TmdbProfileImage(
     @Json(name = "width")        val width: Int,
     @Json(name = "height")       val height: Int,
     @Json(name = "vote_average") val voteAverage: Double?
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbTaggedImagesWrapper(
+    @Json(name = "results") val results: List<TmdbTaggedImage>?
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbTaggedImage(
+    @Json(name = "file_path")    val filePath: String?,
+    @Json(name = "width")        val width: Int?,
+    @Json(name = "height")       val height: Int?,
+    @Json(name = "vote_average") val voteAverage: Double?,
+    @Json(name = "image_type")   val imageType: String?,   // "still" | "poster" | "backdrop" | "profile"
+    @Json(name = "media")        val media: TmdbTaggedImageMedia?
+)
+
+/** The movie/show this tagged image is associated with — lets us prefer images tagged to the SAME production the user is currently viewing. */
+@JsonClass(generateAdapter = true)
+data class TmdbTaggedImageMedia(
+    @Json(name = "id")              val id: Int?,
+    @Json(name = "title")           val title: String?,    // movie
+    @Json(name = "name")            val name: String?,     // tv
+    @Json(name = "media_type")      val mediaType: String?
 )

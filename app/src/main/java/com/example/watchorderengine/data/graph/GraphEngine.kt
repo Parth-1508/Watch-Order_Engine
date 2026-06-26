@@ -32,7 +32,8 @@ object GraphEngine {
         val sortedIds: List<String>,
         val levelMap: Map<String, Int>,
         val columnMap: Map<String, Int>,
-        val maxColumns: Int
+        val maxColumns: Int,
+        val isCycleDetected: Boolean = false
     )
 
     data class OutgoingConnection(
@@ -85,8 +86,34 @@ object GraphEngine {
         queue.forEach { levelMap[it] = 0 }
 
         val sortedIds = mutableListOf<String>()
+        var cycleDetected = false
 
-        while (queue.isNotEmpty()) {
+        while (sortedIds.size < allIds.size) {
+            if (queue.isEmpty()) {
+                // ── CYCLE RECOVERY ───────────────────────────────────────────
+                // If the queue is empty but we haven't processed all nodes, a 
+                // cycle exists. To prevent a hard crash, we'll pick the best 
+                // candidate node to "break" the cycle.
+                cycleDetected = true
+                val remainingIds = allIds - sortedIds.toSet()
+                
+                // Candidate: node with the lowest current inDegree among remaining nodes.
+                // If there's a tie, use chrono_order (earlier first).
+                val candidate = remainingIds.minByOrNull { id ->
+                    val degree = inDegree[id] ?: 0
+                    val chrono = nodes.find { it.id == id }?.chrono_order ?: 0f
+                    // Pack degree and chrono into a comparable pair
+                    degree.toFloat() * 1000000f + chrono
+                } ?: break
+                
+                // Force-clear inDegree and ensure it has a level
+                inDegree[candidate] = 0
+                if (candidate !in levelMap) {
+                    levelMap[candidate] = (levelMap.values.maxOrNull() ?: -1) + 1
+                }
+                queue.add(candidate)
+            }
+
             // Sort queue by chrono_order to ensure deterministic vertical levels
             queue.sortBy { nodes.find { n -> n.id == it }?.chrono_order ?: 0f }
 
@@ -99,26 +126,24 @@ object GraphEngine {
                 // The successor's level is at least (current level + 1).
                 // We take the max to handle diamond-merge patterns correctly.
                 levelMap[next] = maxOf(levelMap[next] ?: 0, currentLevel + 1)
-                inDegree[next] = (inDegree[next] ?: 1) - 1
+                
+                val currentDegree = inDegree[next] ?: 1
+                if (currentDegree > 0) {
+                    inDegree[next] = currentDegree - 1
+                }
 
                 // Once all predecessors of 'next' are processed, enqueue it
-                if (inDegree[next] == 0) queue.add(next)
+                if (inDegree[next] == 0 && next !in sortedIds && next !in queue) {
+                    queue.add(next)
+                }
             }
-        }
-
-        // ── Cycle Detection ───────────────────────────────────────────────────
-        // In a valid DAG, every node must be processable. If some remain
-        // unprocessed, they're part of a cycle — data integrity error.
-        check(sortedIds.size == nodes.size) {
-            val unprocessed = allIds - sortedIds.toSet()
-            "Cycle detected — not a valid DAG! Stuck on: $unprocessed"
         }
 
         // ── Column Assignment ─────────────────────────────────────────────────
         val columnMap = assignColumns(sortedIds, outEdges, inEdges)
         val maxColumns = (columnMap.values.maxOrNull() ?: 0) + 1
 
-        return GraphLayout(sortedIds, levelMap, columnMap, maxColumns)
+        return GraphLayout(sortedIds, levelMap, columnMap, maxColumns, cycleDetected)
     }
 
     /**

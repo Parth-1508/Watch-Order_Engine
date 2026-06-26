@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import javax.inject.Inject
 import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_prefs")
@@ -21,7 +20,7 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK, COMIC, MANGA, RETRO, BOLLYWOOD, NARU
 enum class LayoutStyle { COMFORT, COMPACT }
 
 @Singleton
-class UserPreferencesRepository @Inject constructor(private val context: Context) {
+class UserPreferencesRepository(private val context: Context) {
 
     private val scope = CoroutineScope(Dispatchers.IO)
 

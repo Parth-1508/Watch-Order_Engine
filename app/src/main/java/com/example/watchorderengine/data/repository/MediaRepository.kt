@@ -107,6 +107,41 @@ class MediaRepository @Inject constructor(
         }
     }
 
+    /**
+     * Verifies a TMDB id Gemini supplied for a watch-order node actually
+     * corresponds to a title matching [expectedTitle], before the caller
+     * trusts it. Gemini frequently emits confident, plausible-looking numeric
+     * tmdb_id values that don't correspond to the right movie/show at all —
+     * this is the root cause of "the node says Toy Story but opens an
+     * unrelated movie" once Gemini supplies SOME nonzero id (a zero id was
+     * already safely handled by the title-search fallback elsewhere in this
+     * file; this covers the wrong-but-nonzero case that fallback couldn't
+     * reach, since it only activates when id == entity.tmdbId).
+     *
+     * Uses a loose contains-either-way comparison (not exact equality)
+     * because TMDB titles often carry subtitles/punctuation Gemini's node
+     * title may omit or paraphrase (e.g. "Toy Story" vs "Toy Story (1995)").
+     */
+    private suspend fun verifyTmdbIdMatchesTitle(
+        tmdbId: Int,
+        isMovie: Boolean,
+        expectedTitle: String
+    ): Boolean {
+        return try {
+            val response = if (isMovie) apiService.getMovie(tmdbId) else apiService.getTvShow(tmdbId)
+            if (!response.isSuccessful) return false
+            val actualTitle = response.body()?.let { it.title ?: it.name } ?: return false
+
+            val normalize = { s: String -> s.lowercase().replace(Regex("[^a-z0-9 ]"), "").trim() }
+            val a = normalize(actualTitle)
+            val b = normalize(expectedTitle)
+            a.isNotBlank() && b.isNotBlank() && (a == b || a.contains(b) || b.contains(a))
+        } catch (e: Exception) {
+            Log.w(TAG, "verifyTmdbIdMatchesTitle failed for id=$tmdbId: ${e.message}")
+            false
+        }
+    }
+
     private suspend fun fetchAndCacheMovie(tmdbId: Int, mediaId: String): Boolean {
         return try {
             val response = apiService.getMovie(tmdbId)
@@ -379,10 +414,40 @@ class MediaRepository @Inject constructor(
                         async {
                             Log.d(TAG, "NODE_RESOLVE: Starting for title='${node.title}', gemini_tmdb_id=${node.tmdbId}")
                             
-                            // If Gemini provided a direct TMDB ID, use it. 
-                            // Otherwise, fallback to the parent show's ID (for episode arcs).
-                            var resolvedId = if (node.tmdbId > 0) node.tmdbId else entity.tmdbId
+                            // If Gemini provided a direct TMDB ID, VERIFY it
+                            // actually corresponds to a title matching
+                            // node.title before trusting it — this is the fix
+                            // for the core "Toy Story shows the right title
+                            // but opens a random unrelated movie" bug. Gemini
+                            // (like any LLM) will confidently emit a
+                            // plausible-looking numeric tmdb_id that doesn't
+                            // actually correspond to the right entity; the
+                            // old code trusted ANY nonzero id with zero
+                            // verification, and the isSameTitleAsParent search
+                            // safety-net below never even ran in that case
+                            // (it's gated on resolvedId == entity.tmdbId,
+                            // which is false the moment Gemini supplies any
+                            // nonzero id at all, right or wrong).
+                            var resolvedId = entity.tmdbId
                             var resolvedType = if (node.contentType == "MOVIE") "movie" else "tv"
+
+                            if (node.tmdbId > 0) {
+                                val geminiIdIsValid = verifyTmdbIdMatchesTitle(
+                                    tmdbId = node.tmdbId,
+                                    isMovie = node.contentType == "MOVIE",
+                                    expectedTitle = node.title
+                                )
+                                if (geminiIdIsValid) {
+                                    resolvedId = node.tmdbId
+                                    Log.d(TAG, "NODE_RESOLVE: Gemini's tmdb_id=${node.tmdbId} VERIFIED for '${node.title}'")
+                                } else {
+                                    Log.w(TAG, "NODE_RESOLVE: Gemini's tmdb_id=${node.tmdbId} for '${node.title}' did NOT match — discarding, falling back to search/parent")
+                                    // resolvedId stays at entity.tmdbId, so the
+                                    // exact same title-search safety net below
+                                    // (originally written for the id<=0 case)
+                                    // now also covers a wrong-but-nonzero id.
+                                }
+                            }
 
                             // Safety check: if Gemini ID is 0 or same as parent, but it's a
                             // standalone MOVIE/SERIES, we can try a title search as a last
@@ -470,10 +535,18 @@ class MediaRepository @Inject constructor(
                     }.awaitAll()
                 }
 
-                val mediaEdges = watchOrder.edges.map { edge ->
+                val mediaEdges = watchOrder.edges.mapNotNull { edge ->
+                    val from = idMap[edge.fromNodeId] ?: edge.fromNodeId
+                    val to = idMap[edge.toNodeId] ?: edge.toNodeId
+                    
+                    if (from == to) {
+                        Log.w(TAG, "GENERATION: Filtered self-loop edge for node $from")
+                        return@mapNotNull null
+                    }
+
                     com.example.watchorderengine.data.model.Edge(
-                        from_node_id = idMap[edge.fromNodeId] ?: edge.fromNodeId,
-                        to_node_id = idMap[edge.toNodeId] ?: edge.toNodeId,
+                        from_node_id = from,
+                        to_node_id = to,
                         type = edge.type
                     )
                 }
@@ -834,6 +907,11 @@ class MediaRepository @Inject constructor(
 
     suspend fun countWatchedEpisodes(): Int = withContext(Dispatchers.IO) {
         try { db.episodeWatchedDao().countAllWatched() } catch (e: Exception) { 0 }
+    }
+
+    /** Real total minutes watched — see [EpisodeWatchedDao.sumWatchedRuntimeMinutes] for why this replaced a flat per-episode guess. */
+    suspend fun getTotalWatchedMinutes(): Int = withContext(Dispatchers.IO) {
+        try { db.episodeWatchedDao().sumWatchedRuntimeMinutes() } catch (e: Exception) { 0 }
     }
 
     suspend fun getAllRatedMedia(): List<Pair<String, Float>> = withContext(Dispatchers.IO) {

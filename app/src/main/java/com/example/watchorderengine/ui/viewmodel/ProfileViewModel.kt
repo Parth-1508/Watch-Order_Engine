@@ -45,6 +45,7 @@ class ProfileViewModel @Inject constructor(
                 
                 // Real DB metrics
                 val totalWatchedDef = async { repository.countWatchedEpisodes() }
+                val totalMinutesDef = async { repository.getTotalWatchedMinutes() }
                 val ratingsDef      = async { repository.getAllRatedMedia() }
                 val streakDef       = async { repository.computeWatchStreak() }
 
@@ -55,6 +56,7 @@ class ProfileViewModel @Inject constructor(
                 val paused    = pausedDef.await()
                 
                 val totalWatched = totalWatchedDef.await()
+                val totalMinutes = totalMinutesDef.await()
                 val ratings      = ratingsDef.await()
                 val streak       = streakDef.await()
 
@@ -77,7 +79,7 @@ class ProfileViewModel @Inject constructor(
                 val recentlyWatched = (watching + completed).take(6)
 
                 _stats.value = UserStats(
-                    totalMinutesWatched  = totalWatched.toLong() * 24, // avg 24m per ep
+                    totalMinutesWatched  = totalMinutes.toLong(),
                     totalEpisodesWatched = totalWatched,
                     totalMoviesWatched   = completed.count { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE },
                     showsCompleted       = completed.size,
@@ -100,6 +102,12 @@ class ProfileViewModel @Inject constructor(
     fun updateUsername(newName: String) {
         viewModelScope.launch {
             userPrefs.updateUsername(newName)
+        }
+    }
+
+    fun updateAvatarUrl(url: String) {
+        viewModelScope.launch {
+            userPrefs.updateAvatarUrl(url)
         }
     }
 }
