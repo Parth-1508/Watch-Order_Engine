@@ -368,18 +368,10 @@ class TimelineViewModel @Inject constructor(
 
     /** Navigates to a node's detail screen (handled by nav host). */
     fun onNodeClick(nodeId: String) {
-        val state = _uiState.value as? TimelineUiState.Success
-        val node = state?.rows?.flatMap { it.nodes }?.find { it.node.id == nodeId }?.node
-        
-        // Ensure strictly formatted tmdb_ prefix for navigation consistency
-        val targetId = if (node != null && node.tmdb_id > 0) {
-            "tmdb_${node.tmdb_id}"
-        } else {
-            nodeId
-        }
-        
+        // Use the nodeId directly as it should already be type-safe (tmdb_m_ or tmdb_t_)
+        // from the DAG construction in MediaRepository.
         viewModelScope.launch {
-            _events.send(TimelineEvent.NavigateToDetail(targetId))
+            _events.send(TimelineEvent.NavigateToDetail(nodeId))
         }
     }
 }

@@ -103,3 +103,24 @@ object WOEColors {
     val NarutoStatusFiller = Color(0xFFEF4444)
     val NarutoStatusMixed = Color(0xFFEAB308)
 }
+
+object WatchOrderColors {
+    val DeepSpace       = Color(0xFF080B14)
+    val VoidDark        = Color(0xFF0D1017)
+    val CardSurface     = Color(0xFF141B2D)
+    val CardBorder      = Color(0xFF1E2D45)
+    val ElevatedSurface = Color(0xFF1A2438)
+
+    val AccentGold      = Color(0xFFFFBF3C)
+    val AccentBlue      = Color(0xFF4390F7)
+    val CompletedGreen  = Color(0xFF3BDB8A)
+    val BranchCoral     = Color(0xFFFF6B6B)
+    val SpoilerPurple   = Color(0xFF8B5CF6)
+
+    val TextPrimary     = Color(0xFFECEEF2)
+    val TextSecondary   = Color(0xFF7A8499)
+    val TextMuted       = Color(0xFF3D4554)
+
+    val ConnectorActive = Color(0xFF3BDB8A)
+    val ConnectorIdle   = Color(0xFF1E2D45)
+}

@@ -33,6 +33,26 @@ class MediaRepository @Inject constructor(
     private val geminiService: GeminiService,
     private val watchOrderRepository: WatchOrderRepository
 ) {
+    /**
+     * Builds a type-safe media ID to prevent TMDB ID collisions between 
+     * movies and TV shows. (e.g. tmdb_m_123 vs tmdb_t_123)
+     */
+    private fun buildMediaId(tmdbId: Int, mediaType: String?): String {
+        val prefix = when (mediaType?.lowercase()) {
+            "movie" -> "tmdb_m_"
+            "tv" -> "tmdb_t_"
+            else -> "tmdb_"
+        }
+        return "$prefix$tmdbId"
+    }
+
+    private fun extractTmdbId(mediaId: String): Int? {
+        return mediaId.substringAfterLast("_").toIntOrNull()
+    }
+
+    private fun isMovieId(mediaId: String): Boolean = mediaId.contains("_m_")
+    private fun isTvId(mediaId: String): Boolean = mediaId.contains("_t_")
+
     fun findUniversesForMedia(tmdbId: Int) = watchOrderRepository.findUniversesForMedia(tmdbId)
 
     /**
@@ -83,7 +103,7 @@ class MediaRepository @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     private suspend fun refreshDetail(mediaId: String): Boolean {
-        val tmdbId = mediaId.removePrefix("tmdb_").toIntOrNull() ?: return false
+        val tmdbId = extractTmdbId(mediaId) ?: return false
         val cachedEntity = db.mediaDao().getById(mediaId)
 
         // Robust routing: 
@@ -96,31 +116,71 @@ class MediaRepository @Inject constructor(
             else -> {
                 // Try to resolve category via TMDB search if unknown
                 val searchMatch = searchMedia(cachedEntity?.title ?: "").firstOrNull { it.tmdbId == tmdbId }
-                if (searchMatch?.mediaCategory == MediaCategory.ANIME) {
-                    fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
-                } else if (searchMatch?.mediaCategory == MediaCategory.MOVIE) {
-                    fetchAndCacheMovie(tmdbId, mediaId)
+                if (searchMatch != null) {
+                    if (searchMatch.mediaCategory == MediaCategory.ANIME) {
+                        fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
+                    } else if (searchMatch.mediaCategory == MediaCategory.MOVIE) {
+                        fetchAndCacheMovie(tmdbId, mediaId)
+                    } else {
+                        fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
+                    }
                 } else {
-                    fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
+                    // Last resort: try both based on ID prefix if present, or just guess
+                    if (isMovieId(mediaId)) {
+                        fetchAndCacheMovie(tmdbId, mediaId)
+                    } else if (isTvId(mediaId)) {
+                        fetchAndCacheTv(tmdbId, mediaId)
+                    } else {
+                        fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
+                    }
                 }
             }
         }
     }
 
     /**
+     * Normalizes a title for robust comparison (lowercase, alphanumeric only).
+     * Also converts common Roman Numerals to digits for franchise matching.
+     */
+    private fun normalizeTitle(title: String): String {
+        var t = title.lowercase()
+            .replace(Regex("\\(\\d{4}\\)"), "") // Remove (1995)
+            .replace(Regex("\\bpart\\b"), "")   // Remove "part"
+            .trim()
+            
+        // Handle common Roman Numerals at boundaries or end of string
+        val romanMap = mapOf("viii" to "8", "vii" to "7", "vi" to "6", "iv" to "4", "v" to "5", "iii" to "3", "ii" to "2", "i" to "1")
+        romanMap.forEach { (roman, digit) ->
+            t = t.replace(Regex("\\b$roman\\b"), digit)
+        }
+
+        return t.replace(Regex("[^a-z0-9]"), "") // Final strip
+            .trim()
+    }
+
+    /**
+     * Checks if two titles are likely referring to the same media, handling 
+     * common variations and strictly preventing mismatches in numbered sequels.
+     */
+    private fun isTitleMatch(actual: String, expected: String): Boolean {
+        val a = normalizeTitle(actual)
+        val b = normalizeTitle(expected)
+        if (a == b) return true
+        if (a.isEmpty() || b.isEmpty()) return false
+
+        // CRITICAL: Prevent matching "Toy Story" with "Toy Story 2"
+        val getNumbers = { s: String -> s.filter { it.isDigit() } }
+        val aNum = getNumbers(a)
+        val bNum = getNumbers(b)
+        if (aNum != bNum) return false
+
+        // If numbers match (or both empty), check for containment
+        return a.contains(b) || b.contains(a)
+    }
+
+    /**
      * Verifies a TMDB id Gemini supplied for a watch-order node actually
-     * corresponds to a title matching [expectedTitle], before the caller
-     * trusts it. Gemini frequently emits confident, plausible-looking numeric
-     * tmdb_id values that don't correspond to the right movie/show at all —
-     * this is the root cause of "the node says Toy Story but opens an
-     * unrelated movie" once Gemini supplies SOME nonzero id (a zero id was
-     * already safely handled by the title-search fallback elsewhere in this
-     * file; this covers the wrong-but-nonzero case that fallback couldn't
-     * reach, since it only activates when id == entity.tmdbId).
-     *
-     * Uses a loose contains-either-way comparison (not exact equality)
-     * because TMDB titles often carry subtitles/punctuation Gemini's node
-     * title may omit or paraphrase (e.g. "Toy Story" vs "Toy Story (1995)").
+     * corresponds to a title matching [expectedTitle].
      */
     private suspend fun verifyTmdbIdMatchesTitle(
         tmdbId: Int,
@@ -131,11 +191,7 @@ class MediaRepository @Inject constructor(
             val response = if (isMovie) apiService.getMovie(tmdbId) else apiService.getTvShow(tmdbId)
             if (!response.isSuccessful) return false
             val actualTitle = response.body()?.let { it.title ?: it.name } ?: return false
-
-            val normalize = { s: String -> s.lowercase().replace(Regex("[^a-z0-9 ]"), "").trim() }
-            val a = normalize(actualTitle)
-            val b = normalize(expectedTitle)
-            a.isNotBlank() && b.isNotBlank() && (a == b || a.contains(b) || b.contains(a))
+            isTitleMatch(actualTitle, expectedTitle)
         } catch (e: Exception) {
             Log.w(TAG, "verifyTmdbIdMatchesTitle failed for id=$tmdbId: ${e.message}")
             false
@@ -261,35 +317,35 @@ class MediaRepository @Inject constructor(
     }
 
     private suspend fun buildMediaDetail(mediaId: String): MediaDetail? {
-        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
-        val rawId = sanitizedId.removePrefix("tmdb_").removePrefix("anilist_")
+        val tmdbId = extractTmdbId(mediaId)
+        val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
         
-        android.util.Log.d("BorutoDebug", "buildMediaDetail: input=$mediaId, sanitized=$sanitizedId, raw=$rawId")
-        
-        val entity = db.mediaDao().getById(sanitizedId) ?: db.mediaDao().getById(rawId)
+        // Try exact match first, then fallbacks for legacy IDs
+        val entity = db.mediaDao().getById(mediaId) 
+            ?: db.mediaDao().getById("tmdb_$rawId") // legacy prefix
+            ?: db.mediaDao().getById(rawId)         // legacy raw
+            
         if (entity == null) {
-            android.util.Log.e("BorutoDebug", "Entity NOT FOUND in DB for $sanitizedId or $rawId")
+            android.util.Log.e("BorutoDebug", "Entity NOT FOUND in DB for $mediaId")
             return null
         }
         
         android.util.Log.d("BorutoDebug", "Entity found: id=${entity.id}, title=${entity.title}")
 
         val seasons  = db.seasonDao().getSeasonsByMedia(entity.id)
-        val progress = db.userProgressDao().getProgress(sanitizedId) ?: db.userProgressDao().getProgress(rawId)
         
-        val countPrefixed = db.episodeWatchedDao().countWatchedForMedia(sanitizedId)
-        val countRaw = db.episodeWatchedDao().countWatchedForMedia(rawId)
+        // Progress lookup: check current ID and legacy ID formats
+        val progress = db.userProgressDao().getProgress(entity.id) 
+            ?: db.userProgressDao().getProgress("tmdb_$rawId")
+            ?: db.userProgressDao().getProgress(rawId)
         
-        // Extra debug: check if any episodes exist at all for this media in watched table
-        val allWatchedForPrefixed = db.episodeWatchedDao().getWatchedIds(sanitizedId)
-        val allWatchedForRaw = db.episodeWatchedDao().getWatchedIds(rawId)
+        val countCurrent = db.episodeWatchedDao().countWatchedForMedia(entity.id)
+        val countLegacy = if (entity.id != "tmdb_$rawId") db.episodeWatchedDao().countWatchedForMedia("tmdb_$rawId") else 0
+        val countRaw = if (entity.id != rawId) db.episodeWatchedDao().countWatchedForMedia(rawId) else 0
         
-        android.util.Log.d("BorutoDebug", "DB Check: sanitizedId=$sanitizedId, countPrefixed=$countPrefixed, samples=${allWatchedForPrefixed.take(3)}")
-        android.util.Log.d("BorutoDebug", "DB Check: rawId=$rawId, countRaw=$countRaw, samples=${allWatchedForRaw.take(3)}")
+        val watchedCount = countCurrent + countLegacy + countRaw
         
-        val watchedCount = if (sanitizedId != rawId) countPrefixed + countRaw else countPrefixed
-        
-        android.util.Log.d("BorutoDebug", "Progress calculation: total=$watchedCount")
+        android.util.Log.d("BorutoDebug", "Progress calculation: current=$countCurrent, legacy=$countLegacy, raw=$countRaw, total=$watchedCount")
         
         val totalEps = entity.numberOfEpisodes ?: 0
         android.util.Log.d("BorutoDebug", "Series Total Episodes: $totalEps")
@@ -348,24 +404,31 @@ class MediaRepository @Inject constructor(
     }
 
     suspend fun getEpisodesBySeason(mediaId: String, seasonNumber: Int): List<EpisodeItem> = withContext(Dispatchers.IO) {
-        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
-        val seasonId = "${sanitizedId}_s$seasonNumber"
+        val seasonId = "${mediaId}_s$seasonNumber"
         
         Log.d(TAG, "Querying episodes for seasonId: $seasonId")
         val episodes = db.episodeDao().getEpisodesBySeason(seasonId)
         Log.d(TAG, "Found ${episodes.size} episodes in DB for $seasonId")
         
-        val watchedIds = db.episodeWatchedDao().getWatchedIds(sanitizedId).toSet()
+        // Recover watched status from legacy ID formats if needed
+        val tmdbId = extractTmdbId(mediaId)
+        val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
+        
+        val watchedIds = (db.episodeWatchedDao().getWatchedIds(mediaId) + 
+                         db.episodeWatchedDao().getWatchedIds("tmdb_$rawId") +
+                         db.episodeWatchedDao().getWatchedIds(rawId)).toSet()
+                         
         episodes.map { it.toDomain(watchedIds) }
     }
 
     fun observeEpisodesBySeason(mediaId: String, seasonNumber: Int): Flow<List<EpisodeItem>> {
-        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
-        val rawId = sanitizedId.removePrefix("tmdb_").removePrefix("anilist_")
-        val seasonId = "${sanitizedId}_s$seasonNumber"
+        val seasonId = "${mediaId}_s$seasonNumber"
+        val tmdbId = extractTmdbId(mediaId)
+        val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
 
         return db.episodeDao().observeEpisodesBySeason(seasonId).map { episodes ->
-            val watchedIds = (db.episodeWatchedDao().getWatchedIds(sanitizedId) + 
+            val watchedIds = (db.episodeWatchedDao().getWatchedIds(mediaId) + 
+                            db.episodeWatchedDao().getWatchedIds("tmdb_$rawId") +
                             db.episodeWatchedDao().getWatchedIds(rawId)).toSet()
             episodes.map { it.toDomain(watchedIds) }
         }.flowOn(Dispatchers.IO)
@@ -378,7 +441,7 @@ class MediaRepository @Inject constructor(
             if (!response.isSuccessful) return@withContext emptyList()
             val results = response.body()?.results?.filter { it.mediaType == "movie" || it.mediaType == "tv" } ?: return@withContext emptyList()
             results.forEach { result ->
-                val mediaId = "tmdb_${result.id}"
+                val mediaId = buildMediaId(result.id, result.mediaType)
                 if (db.mediaDao().getById(mediaId) == null) db.mediaDao().upsert(result.toMinimalEntity(mediaId))
             }
             results.mapNotNull { it.toSummary() }
@@ -441,56 +504,38 @@ class MediaRepository @Inject constructor(
                                     resolvedId = node.tmdbId
                                     Log.d(TAG, "NODE_RESOLVE: Gemini's tmdb_id=${node.tmdbId} VERIFIED for '${node.title}'")
                                 } else {
-                                    Log.w(TAG, "NODE_RESOLVE: Gemini's tmdb_id=${node.tmdbId} for '${node.title}' did NOT match — discarding, falling back to search/parent")
-                                    // resolvedId stays at entity.tmdbId, so the
-                                    // exact same title-search safety net below
-                                    // (originally written for the id<=0 case)
-                                    // now also covers a wrong-but-nonzero id.
+                                    Log.w(TAG, "NODE_RESOLVE: Gemini's tmdb_id=${node.tmdbId} for '${node.title}' did NOT match — discarding, falling back to search")
                                 }
                             }
 
-                            // Safety check: if Gemini ID is 0 or same as parent, but it's a
-                            // standalone MOVIE/SERIES, we can try a title search as a last
-                            // resort — but ONLY when the node's title is actually different
-                            // from the parent show. If the titles match (e.g. a "Toy Story"
-                            // node generated while viewing "Toy Story" itself), this node IS
-                            // the parent — searching anyway and grabbing whatever TMDB
-                            // returns is how an unrelated movie ends up attached to the
-                            // correct title (the old fallback `find { it.tmdbId != entity.tmdbId }`
-                            // had no title-matching at all, so it would pick literally any
-                            // other search result once the first two stricter matches missed).
+                            // 2. Search Fallback: if Gemini ID was missing or invalid, search by title.
+                            // But skip if it's an exact match for the parent movie itself.
                             if (resolvedId == entity.tmdbId && (node.contentType == "MOVIE" || node.contentType == "SERIES")) {
-                                val isSameTitleAsParent = node.title.equals(entity.title, ignoreCase = true) ||
-                                                        (entity.title.length > 5 && node.title.startsWith(entity.title, ignoreCase = true))
+                                val isSameTitleAsParent = isTitleMatch(node.title, entity.title)
 
                                 if (!isSameTitleAsParent) {
                                     val query = node.searchQuery ?: node.title
+                                    Log.d(TAG, "NODE_RESOLVE: Searching TMDB for '$query' (node: '${node.title}')")
                                     val searchResults = searchMedia(query)
 
                                     val bestMatch = searchResults.find {
-                                        it.title.equals(node.title, ignoreCase = true)
-                                    } ?: searchResults.find {
-                                        it.title.contains(node.title, ignoreCase = true) &&
-                                        node.title.contains(it.title, ignoreCase = true)
+                                        isTitleMatch(it.title, node.title)
                                     }
-                                    // Removed: the old third fallback matched ANY search result
-                                    // that wasn't the parent's exact ID, with no title check at
-                                    // all — that's what let an unrelated title slip in. If the
-                                    // two title-based matches above don't find anything, we now
-                                    // correctly fall through and keep resolvedId = entity.tmdbId
-                                    // (i.e. treat the node as belonging to the parent show)
-                                    // rather than guessing.
 
                                     if (bestMatch != null) {
                                         resolvedId = bestMatch.tmdbId
                                         resolvedType = if (bestMatch.mediaCategory == MediaCategory.MOVIE) "movie" else "tv"
-                                        Log.d(TAG, "NODE_RESOLVE: Found via search! query='$query', id=$resolvedId")
+                                        Log.d(TAG, "NODE_RESOLVE: Found via search! id=$resolvedId, title='${bestMatch.title}'")
+                                    } else {
+                                        Log.w(TAG, "NODE_RESOLVE: No search results matched '${node.title}'")
                                     }
+                                } else {
+                                    Log.d(TAG, "NODE_RESOLVE: '${node.title}' matches parent show title — skipping search")
                                 }
                             }
 
                             val finalId = if (resolvedId != entity.tmdbId && (node.contentType == "MOVIE" || node.contentType == "SERIES")) {
-                                "tmdb_$resolvedId"
+                                buildMediaId(resolvedId, resolvedType)
                             } else {
                                 node.nodeId
                             }
@@ -624,7 +669,7 @@ class MediaRepository @Inject constructor(
             val results = response.body()?.results ?: return@withContext emptyList()
             results.forEach { result ->
                 if (result.mediaType == "movie" || result.mediaType == "tv") {
-                    val mediaId = "tmdb_${result.id}"
+                    val mediaId = buildMediaId(result.id, result.mediaType)
                     if (db.mediaDao().getById(mediaId) == null) db.mediaDao().upsert(result.toMinimalEntity(mediaId))
                 }
             }
@@ -667,15 +712,17 @@ class MediaRepository @Inject constructor(
     }
 
     suspend fun toggleEpisodeWatched(episodeId: String, mediaId: String): Boolean = withContext(Dispatchers.IO) {
-        val rawEpisodeId = episodeId.removePrefix("tmdb_").removePrefix("anilist_")
-        val isWatchedPrefixed = db.episodeWatchedDao().isWatched(episodeId)
-        val isWatchedRaw = if (episodeId != rawEpisodeId) db.episodeWatchedDao().isWatched(rawEpisodeId) else false
+        val tmdbId = extractTmdbId(mediaId)
+        val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
         
-        val isWatched = isWatchedPrefixed || isWatchedRaw
+        // Check all possible ID formats for this episode (current and legacy)
+        val rawEpisodeId = episodeId.removePrefix("tmdb_m_").removePrefix("tmdb_t_").removePrefix("tmdb_").removePrefix("anilist_")
+        val possibleEpisodeIds = setOf(episodeId, "tmdb_$rawEpisodeId", rawEpisodeId)
+        
+        val isWatched = possibleEpisodeIds.any { db.episodeWatchedDao().isWatched(it) }
         
         if (isWatched) {
-            db.episodeWatchedDao().unmarkWatched(episodeId)
-            if (episodeId != rawEpisodeId) db.episodeWatchedDao().unmarkWatched(rawEpisodeId)
+            possibleEpisodeIds.forEach { db.episodeWatchedDao().unmarkWatched(it) }
         } else {
             db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(episodeId, mediaId))
         }
@@ -709,23 +756,20 @@ class MediaRepository @Inject constructor(
     }
 
     suspend fun markSeasonAsWatched(mediaId: String, seasonNumber: Int) = withContext(Dispatchers.IO) {
-        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
-        val seasonId = "${sanitizedId}_s$seasonNumber"
+        val seasonId = "${mediaId}_s$seasonNumber"
         val episodes = db.episodeDao().getEpisodesBySeason(seasonId)
-        val entities = episodes.map { EpisodeWatchedEntity(it.id, sanitizedId) }
+        val entities = episodes.map { EpisodeWatchedEntity(it.id, mediaId) }
         entities.forEach { db.episodeWatchedDao().markWatched(it) }
     }
 
     suspend fun unmarkSeasonAsWatched(mediaId: String, seasonNumber: Int) = withContext(Dispatchers.IO) {
-        val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
-        val rawId = sanitizedId.removePrefix("tmdb_").removePrefix("anilist_")
+        val tmdbId = extractTmdbId(mediaId)
+        val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
         
-        val seasonPrefixPrefixed = "${sanitizedId}_s${seasonNumber}e%"
-        val seasonPrefixRaw = "${rawId}_s${seasonNumber}e%"
-        
-        db.episodeWatchedDao().unmarkSeasonWatched(sanitizedId, seasonPrefixPrefixed)
-        if (sanitizedId != rawId) {
-            db.episodeWatchedDao().unmarkSeasonWatched(rawId, seasonPrefixRaw)
+        // Clean up current and legacy formats
+        val prefixes = setOf(mediaId, "tmdb_$rawId", rawId)
+        prefixes.forEach { prefix ->
+            db.episodeWatchedDao().unmarkSeasonWatched(prefix, "${prefix}_s${seasonNumber}e%")
         }
     }
 
@@ -822,10 +866,14 @@ class MediaRepository @Inject constructor(
     private fun com.example.watchorderengine.network.model.TmdbDetailResponse.toMediaEntity(
         mediaId: String
     ): MediaEntity {
-        val isMovie = title != null
         val genresList = genres?.map { it.name } ?: emptyList()
         val isAnimation = genresList.contains("Animation")
         
+        // Use ID prefix to determine type if possible, fallback to response fields
+        val isMovie = if (isMovieId(mediaId)) true 
+                      else if (isTvId(mediaId)) false 
+                      else title != null
+
         val category = when {
             isAnimation -> "ANIME"
             isMovie -> "MOVIE"
@@ -981,8 +1029,10 @@ class MediaRepository @Inject constructor(
         val genresList = TmdbConfig.genreNamesFor(genreIds, isMovie)
         val isAnimation = genresList.contains("Animation")
         
+        val tmdbId = extractTmdbId(mediaId) ?: id
+
         return MediaEntity(
-            id = mediaId, tmdbId = id,
+            id = mediaId, tmdbId = tmdbId,
             anilistId = null,
             title = title ?: name ?: "",
             originalTitle = title ?: name ?: "",
@@ -1007,7 +1057,7 @@ class MediaRepository @Inject constructor(
 
     private fun com.example.watchorderengine.network.model.TmdbMediaResult.toSummary(): MediaSummary? {
         if (mediaType == null || (mediaType != "movie" && mediaType != "tv")) return null
-        val mediaId = "tmdb_$id"
+        val mediaId = buildMediaId(id, mediaType)
         val isMovie = mediaType == "movie"
         val genresList = TmdbConfig.genreNamesFor(genreIds, isMovie)
         val isAnimation = genresList.contains("Animation")
@@ -1042,7 +1092,7 @@ class MediaRepository @Inject constructor(
     private fun com.example.watchorderengine.network.model.TmdbMediaResult.toSummary(
         isMovie: Boolean
     ): MediaSummary? {
-        val mediaId = "tmdb_$id"
+        val mediaId = buildMediaId(id, if (isMovie) "movie" else "tv")
         val genresList = TmdbConfig.genreNamesFor(genreIds, isMovie)
         val isAnimation = genresList.contains("Animation")
 
@@ -1070,9 +1120,11 @@ class MediaRepository @Inject constructor(
     ): MediaEntity {
         val genresList = TmdbConfig.genreNamesFor(genreIds, isMovie)
         val isAnimation = genresList.contains("Animation")
+        
+        val tmdbId = extractTmdbId(mediaId) ?: id
 
         return MediaEntity(
-            id = mediaId, tmdbId = id,
+            id = mediaId, tmdbId = tmdbId,
             anilistId = null,
             title = title ?: name ?: "",
             originalTitle = title ?: name ?: "",
@@ -1112,13 +1164,13 @@ class MediaRepository @Inject constructor(
                 // Cache to Room so tapping a card opens Detail instantly,
                 // same pattern as searchMedia()/getTrending().
                 movies.forEach { result ->
-                    val mediaId = "tmdb_${result.id}"
+                    val mediaId = buildMediaId(result.id, "movie")
                     if (db.mediaDao().getById(mediaId) == null) {
                         db.mediaDao().upsert(result.toMinimalEntity(mediaId, isMovie = true))
                     }
                 }
                 shows.forEach { result ->
-                    val mediaId = "tmdb_${result.id}"
+                    val mediaId = buildMediaId(result.id, "tv")
                     if (db.mediaDao().getById(mediaId) == null) {
                         db.mediaDao().upsert(result.toMinimalEntity(mediaId, isMovie = false))
                     }

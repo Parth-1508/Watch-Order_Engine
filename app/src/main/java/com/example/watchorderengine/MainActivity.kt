@@ -34,14 +34,13 @@ class MainActivity : ComponentActivity() {
             val themeMode by settingsViewModel.themeMode.collectAsState()
             
             val appThemeMode = when (themeMode) {
+                ThemeMode.DEFAULT -> AppThemeMode.DEFAULT
                 ThemeMode.DARK -> AppThemeMode.DARK
                 ThemeMode.LIGHT -> AppThemeMode.LIGHT
                 ThemeMode.COMIC -> AppThemeMode.COMIC
                 ThemeMode.MANGA -> AppThemeMode.MANGA
-                ThemeMode.RETRO -> AppThemeMode.RETRO
-                ThemeMode.BOLLYWOOD -> AppThemeMode.BOLLYWOOD
-                ThemeMode.NARUTO -> AppThemeMode.NARUTO
-                ThemeMode.SYSTEM -> if (androidx.compose.foundation.isSystemInDarkTheme()) AppThemeMode.DARK else AppThemeMode.LIGHT
+                ThemeMode.FUNK -> AppThemeMode.FUNK
+                ThemeMode.SYSTEM -> if (androidx.compose.foundation.isSystemInDarkTheme()) AppThemeMode.DARK else AppThemeMode.DEFAULT
             }
 
             WatchOrderEngineTheme(mode = appThemeMode) {

@@ -16,7 +16,7 @@ import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_prefs")
 
-enum class ThemeMode { SYSTEM, LIGHT, DARK, COMIC, MANGA, RETRO, BOLLYWOOD, NARUTO }
+enum class ThemeMode { SYSTEM, LIGHT, DARK, COMIC, MANGA, FUNK, DEFAULT }
 enum class LayoutStyle { COMFORT, COMPACT }
 
 @Singleton
@@ -41,7 +41,8 @@ class UserPreferencesRepository(private val context: Context) {
     }.stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { preferences ->
-        ThemeMode.valueOf(preferences[PreferencesKeys.THEME_MODE] ?: ThemeMode.DARK.name)
+        val raw = preferences[PreferencesKeys.THEME_MODE] ?: ThemeMode.DEFAULT.name
+        runCatching { ThemeMode.valueOf(raw) }.getOrDefault(ThemeMode.DEFAULT)
     }
 
     val layoutStyle: Flow<LayoutStyle> = context.dataStore.data.map { preferences ->

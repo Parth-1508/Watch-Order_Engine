@@ -7,7 +7,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 enum class AppThemeMode {
-    LIGHT, DARK, COMIC, MANGA, RETRO, BOLLYWOOD, NARUTO
+    DEFAULT, LIGHT, DARK, COMIC, MANGA, FUNK
 }
 
 data class AppThemeConfig(
@@ -26,7 +26,7 @@ data class AppThemeConfig(
     val appRadius: Dp,
     val isComic: Boolean = false,
     val isManga: Boolean = false,
-    val isRetro: Boolean = false
+    val isFunk: Boolean = false
 )
 
 val LocalAppTheme = staticCompositionLocalOf<AppThemeConfig> {
@@ -34,19 +34,20 @@ val LocalAppTheme = staticCompositionLocalOf<AppThemeConfig> {
 }
 
 private val LightThemeConfig = AppThemeConfig(
-    primary = WOEColors.LightPrimary,
-    secondary = WOEColors.LightSecondary,
-    accent = WOEColors.LightAccent,
-    background = WOEColors.LightBackground,
-    surface = WOEColors.LightSurface,
-    surfaceHover = WOEColors.LightSurfaceHover,
-    textPrimary = WOEColors.LightTextPrimary,
-    textSecondary = WOEColors.LightTextSecondary,
-    border = WOEColors.LightBorder,
-    statusCanon = WOEColors.LightStatusCanon,
-    statusFiller = WOEColors.LightStatusFiller,
-    statusMixed = WOEColors.LightStatusMixed,
-    appRadius = 16.dp
+    primary = WOEColors.MangaPrimary,
+    secondary = WOEColors.MangaSecondary,
+    accent = WOEColors.MangaAccent,
+    background = WOEColors.MangaBackground,
+    surface = WOEColors.MangaSurface,
+    surfaceHover = WOEColors.MangaSurfaceHover,
+    textPrimary = WOEColors.MangaTextPrimary,
+    textSecondary = WOEColors.MangaTextSecondary,
+    border = WOEColors.MangaBorder,
+    statusCanon = WOEColors.MangaStatusCanon,
+    statusFiller = WOEColors.MangaStatusFiller,
+    statusMixed = WOEColors.MangaStatusMixed,
+    appRadius = 0.dp,
+    isManga = true
 )
 
 private val DarkThemeConfig = AppThemeConfig(
@@ -83,40 +84,6 @@ private val ComicThemeConfig = AppThemeConfig(
 )
 
 private val MangaThemeConfig = AppThemeConfig(
-    primary = WOEColors.MangaPrimary,
-    secondary = WOEColors.MangaSecondary,
-    accent = WOEColors.MangaAccent,
-    background = WOEColors.MangaBackground,
-    surface = WOEColors.MangaSurface,
-    surfaceHover = WOEColors.MangaSurfaceHover,
-    textPrimary = WOEColors.MangaTextPrimary,
-    textSecondary = WOEColors.MangaTextSecondary,
-    border = WOEColors.MangaBorder,
-    statusCanon = WOEColors.MangaStatusCanon,
-    statusFiller = WOEColors.MangaStatusFiller,
-    statusMixed = WOEColors.MangaStatusMixed,
-    appRadius = 0.dp,
-    isManga = true
-)
-
-private val RetroThemeConfig = AppThemeConfig(
-    primary = WOEColors.RetroPrimary,
-    secondary = WOEColors.RetroSecondary,
-    accent = WOEColors.RetroAccent,
-    background = WOEColors.RetroBackground,
-    surface = WOEColors.RetroSurface,
-    surfaceHover = WOEColors.RetroSurfaceHover,
-    textPrimary = WOEColors.RetroTextPrimary,
-    textSecondary = WOEColors.RetroTextSecondary,
-    border = WOEColors.RetroBorder,
-    statusCanon = WOEColors.RetroStatusCanon,
-    statusFiller = WOEColors.RetroStatusFiller,
-    statusMixed = WOEColors.RetroStatusMixed,
-    appRadius = 8.dp,
-    isRetro = true
-)
-
-private val BollywoodThemeConfig = AppThemeConfig(
     primary = WOEColors.BollywoodPrimary,
     secondary = WOEColors.BollywoodSecondary,
     accent = WOEColors.BollywoodAccent,
@@ -132,7 +99,24 @@ private val BollywoodThemeConfig = AppThemeConfig(
     appRadius = 24.dp
 )
 
-private val NarutoThemeConfig = AppThemeConfig(
+private val FunkThemeConfig = AppThemeConfig(
+    primary = WOEColors.RetroPrimary,
+    secondary = WOEColors.RetroSecondary,
+    accent = WOEColors.RetroAccent,
+    background = WOEColors.RetroBackground,
+    surface = WOEColors.RetroSurface,
+    surfaceHover = WOEColors.RetroSurfaceHover,
+    textPrimary = WOEColors.RetroTextPrimary,
+    textSecondary = WOEColors.RetroTextSecondary,
+    border = WOEColors.RetroBorder,
+    statusCanon = WOEColors.RetroStatusCanon,
+    statusFiller = WOEColors.RetroStatusFiller,
+    statusMixed = WOEColors.RetroStatusMixed,
+    appRadius = 8.dp,
+    isFunk = true
+)
+
+private val DefaultThemeConfig = AppThemeConfig(
     primary = WOEColors.NarutoPrimary,
     secondary = WOEColors.NarutoSecondary,
     accent = WOEColors.NarutoAccent,
@@ -150,27 +134,33 @@ private val NarutoThemeConfig = AppThemeConfig(
 
 @Composable
 fun WatchOrderEngineTheme(
-    mode: AppThemeMode = AppThemeMode.DARK,
+    mode: AppThemeMode = AppThemeMode.DEFAULT,
     content: @Composable () -> Unit
 ) {
     val config = when (mode) {
+        AppThemeMode.DEFAULT -> DefaultThemeConfig
         AppThemeMode.LIGHT -> LightThemeConfig
         AppThemeMode.DARK -> DarkThemeConfig
         AppThemeMode.COMIC -> ComicThemeConfig
         AppThemeMode.MANGA -> MangaThemeConfig
-        AppThemeMode.RETRO -> RetroThemeConfig
-        AppThemeMode.BOLLYWOOD -> BollywoodThemeConfig
-        AppThemeMode.NARUTO -> NarutoThemeConfig
+        AppThemeMode.FUNK -> FunkThemeConfig
     }
 
-    val colorScheme = if (mode == AppThemeMode.LIGHT) {
+    val isLightTheme = mode == AppThemeMode.LIGHT || mode == AppThemeMode.MANGA
+
+    val colorScheme = if (isLightTheme) {
         lightColorScheme(
             primary = config.accent,
             onPrimary = config.primary,
             background = config.background,
             onBackground = config.textPrimary,
             surface = config.surface,
-            onSurface = config.textPrimary
+            onSurface = config.textPrimary,
+            secondary = config.secondary,
+            onSecondary = config.textPrimary,
+            surfaceVariant = config.surfaceHover,
+            onSurfaceVariant = config.textSecondary,
+            outline = config.border
         )
     } else {
         darkColorScheme(
@@ -179,7 +169,12 @@ fun WatchOrderEngineTheme(
             background = config.background,
             onBackground = config.textPrimary,
             surface = config.surface,
-            onSurface = config.textPrimary
+            onSurface = config.textPrimary,
+            secondary = config.secondary,
+            onSecondary = config.textPrimary,
+            surfaceVariant = config.surfaceHover,
+            onSurfaceVariant = config.textSecondary,
+            outline = config.border
         )
     }
 

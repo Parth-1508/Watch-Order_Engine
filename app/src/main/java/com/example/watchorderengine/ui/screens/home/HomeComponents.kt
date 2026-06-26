@@ -130,19 +130,21 @@ fun CategoryTab(
             )
             if (count > 0) {
                 Spacer(modifier = Modifier.width(6.dp))
-                Box(
-                    modifier = Modifier
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(if (isSelected) textColor else theme.textSecondary),
-                    contentAlignment = Alignment.Center
+                Surface(
+                    modifier = Modifier.size(18.dp),
+                    shape = CircleShape,
+                    color = if (isSelected) textColor else theme.textSecondary
                 ) {
-                    Text(
-                        text = count.toString(),
-                        color = if (isSelected) bgColor else theme.surface,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black
-                    )
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Text(
+                            text = count.toString(),
+                            color = if (isSelected) bgColor else theme.surface,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            lineHeight = 9.sp
+                        )
+                    }
                 }
             }
         }

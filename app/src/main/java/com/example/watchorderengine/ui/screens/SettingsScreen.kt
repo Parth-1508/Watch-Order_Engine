@@ -94,13 +94,16 @@ fun SettingsScreen(
             color = theme.surface
         ) {
             Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                ThemeMode.entries.filter { it != ThemeMode.SYSTEM }.forEach { mode ->
+                // Filter out SYSTEM to keep it simple, or keep it if desired. 
+                // Ensuring we show our new themes.
+                val visibleThemes = ThemeMode.entries.filter { it != ThemeMode.SYSTEM }
+                visibleThemes.forEachIndexed { index, mode ->
                     ThemeOptionRow(
                         mode = mode,
                         isSelected = currentThemeMode == mode,
                         onClick = { viewModel.setThemeMode(mode) }
                     )
-                    if (mode != ThemeMode.entries.last()) {
+                    if (index < visibleThemes.size - 1) {
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = theme.textPrimary.copy(alpha = 0.05f)
@@ -258,7 +261,11 @@ fun ThemeOptionRow(mode: ThemeMode, isSelected: Boolean, onClick: () -> Unit) {
                 imageVector = when(mode) {
                     ThemeMode.LIGHT -> Icons.Default.LightMode
                     ThemeMode.DARK -> Icons.Default.DarkMode
-                    else -> Icons.Default.AutoAwesome
+                    ThemeMode.COMIC -> Icons.Default.BurstMode
+                    ThemeMode.MANGA -> Icons.Default.HistoryEdu
+                    ThemeMode.FUNK -> Icons.Default.AutoAwesome
+                    ThemeMode.DEFAULT -> Icons.Default.RocketLaunch
+                    else -> Icons.Default.Palette
                 },
                 contentDescription = null,
                 tint = theme.textPrimary,

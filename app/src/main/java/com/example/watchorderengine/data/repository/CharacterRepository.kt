@@ -138,18 +138,21 @@ class CharacterRepository @Inject constructor(
                 ?.sortedByDescending { it.popularity ?: 0.0 }
                 ?: emptyList()
 
-            fun toCreditItem(credit: com.example.watchorderengine.network.model.TmdbPersonCastCredit) = CreditItem(
-                tmdbId = credit.id,
-                creditId = credit.creditId,
-                mediaId = "tmdb_${credit.id}",
-                title = credit.title ?: credit.name ?: "Unknown",
-                character = credit.character ?: "",
-                posterUrl = TmdbConfig.buildImageUrl(credit.posterPath, TmdbConfig.PosterSize.CARD),
-                year = (credit.releaseDate ?: credit.firstAirDate)?.take(4) ?: "",
-                mediaType = credit.mediaType ?: "movie",
-                voteAverage = credit.voteAverage?.toFloat() ?: 0f,
-                episodeCount = credit.episodeCount
-            )
+            fun toCreditItem(credit: com.example.watchorderengine.network.model.TmdbPersonCastCredit): CreditItem {
+                val prefix = if (credit.mediaType == "tv") "tmdb_t_" else "tmdb_m_"
+                return CreditItem(
+                    tmdbId = credit.id,
+                    creditId = credit.creditId,
+                    mediaId = "$prefix${credit.id}",
+                    title = credit.title ?: credit.name ?: "Unknown",
+                    character = credit.character ?: "",
+                    posterUrl = TmdbConfig.buildImageUrl(credit.posterPath, TmdbConfig.PosterSize.CARD),
+                    year = (credit.releaseDate ?: credit.firstAirDate)?.take(4) ?: "",
+                    mediaType = credit.mediaType ?: "movie",
+                    voteAverage = credit.voteAverage?.toFloat() ?: 0f,
+                    episodeCount = credit.episodeCount
+                )
+            }
 
             val aniListDescription = cleanAniListText(aniChar?.description)
             val characterLore = aniListDescription ?: wikiLore ?: ""
