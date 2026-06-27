@@ -60,6 +60,7 @@ fun MediaDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isEpisodesLoading by viewModel.isEpisodesLoading.collectAsState()
     val generationError by viewModel.generationError.collectAsState()
+    val generationSuccess by viewModel.generationSuccess.collectAsState()
 
     LaunchedEffect(mediaId) {
         android.util.Log.d("MediaDetail", "Loading mediaId: $mediaId")
@@ -84,9 +85,11 @@ fun MediaDetailScreen(
                     isEpisodesLoading = isEpisodesLoading,
                     universe = universes,
                     generationError = generationError,
+                    generationSuccess = generationSuccess,
                     bulkMarkPrompt = bulkMarkPrompt,
                     showWelcomeTip = showWelcomeTip,
                     onDismissGenerationError = { viewModel.dismissGenerationError() },
+                    onDismissGenerationSuccess = { viewModel.dismissGenerationSuccess() },
                     onBack = onBack,
                     onUpdateTracking = { viewModel.updateTrackingState(detail.id, it) },
                     onToggleEpisode = { viewModel.toggleEpisodeWatched(it, detail.id) },
@@ -122,11 +125,13 @@ private fun DetailContent(
     isEpisodesLoading: Boolean,
     universe: List<com.example.watchorderengine.data.model.Universe>,
     generationError: String?,
+    generationSuccess: Boolean,
     bulkMarkPrompt: EpisodeItem?,
     showWelcomeTip: Boolean,
     onDismissGenerationError: () -> Unit,
+    onDismissGenerationSuccess: () -> Unit,
     onBack: () -> Unit,
-    onUpdateTracking: (TrackingState) -> Unit,
+    onUpdateTracking: (TrackingState?) -> Unit,
     onToggleEpisode: (EpisodeItem) -> Unit,
     onSeasonChange: (Int) -> Unit,
     onGenerateOrder: () -> Unit,
@@ -356,6 +361,14 @@ private fun DetailContent(
                             onDismissRequest = { expanded = false },
                             modifier = Modifier.fillMaxWidth(0.9f).background(theme.surface)
                         ) {
+                            // "None" option to remove from watchlist
+                            DropdownMenuItem(
+                                text = { Text("None (Remove)", color = theme.textPrimary) },
+                                onClick = {
+                                    onUpdateTracking(null)
+                                    expanded = false
+                                }
+                            )
                             TrackingState.entries.forEach { state ->
                                 DropdownMenuItem(
                                     text = { Text(state.displayName, color = theme.textPrimary) },
@@ -535,7 +548,17 @@ private fun DetailContent(
                 }
                 "chronology" -> {
                     item {
-                        ChronologyTab(detail, isAnalyzing, universe, generationError, onGenerateOrder, onUniverseClick, onDismissGenerationError)
+                        ChronologyTab(
+                            detail = detail,
+                            isAnalyzing = isAnalyzing,
+                            universe = universe,
+                            generationError = generationError,
+                            generationSuccess = generationSuccess,
+                            onGenerate = onGenerateOrder,
+                            onUniverseClick = onUniverseClick,
+                            onDismissError = onDismissGenerationError,
+                            onDismissSuccess = onDismissGenerationSuccess
+                        )
                     }
                 }
             }
@@ -926,9 +949,11 @@ private fun ChronologyTab(
     isAnalyzing: Boolean,
     universe: List<com.example.watchorderengine.data.model.Universe>,
     generationError: String?,
+    generationSuccess: Boolean,
     onGenerate: () -> Unit,
     onUniverseClick: (String) -> Unit,
-    onDismissError: () -> Unit
+    onDismissError: () -> Unit,
+    onDismissSuccess: () -> Unit
 ) {
     val theme = LocalAppTheme.current
     Column(modifier = Modifier.padding(16.dp)) {
@@ -945,6 +970,24 @@ private fun ChronologyTab(
                     Text(generationError, color = Color(0xFFF87171), fontSize = 12.sp, modifier = Modifier.weight(1f))
                     IconButton(onClick = onDismissError, modifier = Modifier.size(24.dp)) {
                         Icon(Icons.Default.Close, null, tint = Color(0xFFF87171))
+                    }
+                }
+            }
+        }
+
+        if (generationSuccess) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                color = Color(0xFF4ADE80).copy(alpha = 0.15f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color(0xFF4ADE80).copy(alpha = 0.4f))
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4ADE80), modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Watch order generated successfully!", color = Color(0xFF4ADE80), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismissSuccess, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, null, tint = Color(0xFF4ADE80))
                     }
                 }
             }

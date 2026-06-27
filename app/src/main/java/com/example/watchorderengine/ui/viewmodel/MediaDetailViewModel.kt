@@ -39,6 +39,9 @@ class MediaDetailViewModel @Inject constructor(
     private val _generationError = MutableStateFlow<String?>(null)
     val generationError: StateFlow<String?> = _generationError.asStateFlow()
 
+    private val _generationSuccess = MutableStateFlow(false)
+    val generationSuccess: StateFlow<Boolean> = _generationSuccess.asStateFlow()
+
     private val _universes = MutableStateFlow<List<com.example.watchorderengine.data.model.Universe>>(emptyList())
     val universes: StateFlow<List<com.example.watchorderengine.data.model.Universe>> = _universes.asStateFlow()
 
@@ -143,10 +146,12 @@ class MediaDetailViewModel @Inject constructor(
             try {
                 _isAnalyzing.value = true
                 _generationError.value = null
+                _generationSuccess.value = false
                 val errorMessage = repository.generateWatchOrder(mediaId)
                 if (errorMessage != null) {
                     _generationError.value = errorMessage
                 } else {
+                    _generationSuccess.value = true
                     // Reload to reflect changes in episode types
                     loadMediaDetail(mediaId, forceRefresh = true)
                 }
@@ -160,11 +165,19 @@ class MediaDetailViewModel @Inject constructor(
         _generationError.value = null
     }
 
-    fun updateTrackingState(mediaId: String, state: TrackingState) {
+    fun dismissGenerationSuccess() {
+        _generationSuccess.value = false
+    }
+
+    fun updateTrackingState(mediaId: String, state: TrackingState?) {
         viewModelScope.launch {
-            repository.updateTrackingState(mediaId, state)
-            if (state == TrackingState.COMPLETED) {
-                repository.markAllAsWatched(mediaId)
+            if (state == null) {
+                repository.removeFromWatchlist(mediaId)
+            } else {
+                repository.updateTrackingState(mediaId, state)
+                if (state == TrackingState.COMPLETED) {
+                    repository.markAllAsWatched(mediaId)
+                }
             }
             // Reload to reflect changes
             loadMediaDetail(mediaId, forceRefresh = true)

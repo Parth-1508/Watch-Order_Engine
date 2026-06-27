@@ -11,6 +11,13 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE id = :id")
     suspend fun getById(id: String): MediaEntity?
 
+    /**
+     * Type-safe lookup by raw TMDB numeric ID and category.
+     * Prevents collisions between Movies and TV shows that share the same TMDB ID.
+     */
+    @Query("SELECT * FROM media WHERE tmdbId = :tmdbId AND mediaCategory = :category LIMIT 1")
+    suspend fun getByTmdbIdAndCategory(tmdbId: Int, category: String): MediaEntity?
+
     @Query("SELECT * FROM media ORDER BY lastUpdated DESC")
     suspend fun getAll(): List<MediaEntity>
 
@@ -58,27 +65,9 @@ interface EpisodeDao {
         toAbsolute: Int
     ): List<EpisodeEntity>
 
-    /**
-     * One-shot read for a specific season.
-     *
-     * ERROR #3 FIX: this function is now `suspend` so the coroutine dispatcher
-     * (Dispatchers.IO in the repository) actually suspends while Room reads the
-     * database, rather than blocking the calling thread.  The original non-suspend
-     * version ran synchronously on whatever thread called it — if that happened to
-     * be the main thread (during a LaunchedEffect) the query would ANR.
-     */
     @Query("SELECT * FROM episodes WHERE seasonId = :seasonId ORDER BY episodeNumber ASC")
     suspend fun getEpisodesBySeason(seasonId: String): List<EpisodeEntity>
 
-    /**
-     * Reactive variant: returns a [Flow] that re-emits whenever any row in
-     * the matching season changes.
-     *
-     * ERROR #3 FIX: the ViewModel uses this to collect episodes reactively.
-     * When [MediaRepository.refreshSeasonEpisodes] writes rows to Room, Room
-     * notifies all active observers of this query automatically — no polling,
-     * no manual re-trigger from the ViewModel needed.
-     */
     @Query("SELECT * FROM episodes WHERE seasonId = :seasonId ORDER BY episodeNumber ASC")
     fun observeEpisodesBySeason(seasonId: String): Flow<List<EpisodeEntity>>
 
@@ -100,7 +89,7 @@ interface UserProgressDao {
     @Query("SELECT * FROM user_progress WHERE mediaId = :mediaId")
     suspend fun getProgress(mediaId: String): UserProgressEntity?
 
-    @Query("SELECT * FROM user_progress WHERE trackingState = :state")
+    @Query("SELECT * FROM user_progress WHERE trackingState = :state ORDER BY updatedAt DESC")
     suspend fun getByState(state: String): List<UserProgressEntity>
 
     @Query("SELECT * FROM user_progress ORDER BY updatedAt DESC")
@@ -120,6 +109,9 @@ interface UserProgressDao {
 
     @Query("UPDATE user_progress SET priorityTag = :priority, updatedAt = :now WHERE mediaId = :mediaId")
     suspend fun updatePriority(mediaId: String, priority: String, now: Long): Int
+
+    @Query("DELETE FROM user_progress WHERE mediaId = :mediaId")
+    suspend fun deleteByMediaId(mediaId: String)
 }
 
 // ─── EpisodeWatchedDao ───────────────────────────────────────────────────────
@@ -130,35 +122,12 @@ interface EpisodeWatchedDao {
     @Query("SELECT episodeId FROM episode_watched WHERE mediaId = :mediaId")
     suspend fun getWatchedIds(mediaId: String): List<String>
 
-    /**
-     * Per-show count (used by progress ring on MediaDetail).
-     * Pass an empty string for [mediaId] to count ALL watched episodes globally.
-     *
-     * ERROR #4 FIX: ProfileViewModel previously multiplied list sizes by a
-     * magic number.  Now it calls `countWatched("")` to get the real global
-     * total from the database.
-     *
-     * Note: passing "" matches no mediaId rows in SQLite's LIKE comparison,
-     * so we use two separate queries to keep the logic explicit and correct.
-     */
     @Query("SELECT COUNT(*) FROM episode_watched WHERE mediaId = :mediaId")
     suspend fun countWatchedForMedia(mediaId: String): Int
 
-    /** Global watched episode count across ALL shows — used by ProfileViewModel. */
     @Query("SELECT COUNT(*) FROM episode_watched")
     suspend fun countAllWatched(): Int
 
-    /**
-     * Real total minutes watched, computed by joining watched episode IDs
-     * against the episodes table's actual per-episode TMDB runtime —
-     * replaces ProfileViewModel's old flat "episodes * 24 minutes" guess,
-     * which was wrong for anything that isn't a ~24-minute sitcom/anime
-     * episode (a 50-min drama or a 22-min show would both be misreported).
-     * Episodes with no runtime on file (rare — mostly very old/obscure
-     * entries TMDB itself doesn't have a duration for) are excluded rather
-     * than guessed at, so this slightly undercounts in that edge case
-     * instead of fabricating a number for it.
-     */
     @Query("""
         SELECT COALESCE(SUM(e.runtime), 0) FROM episode_watched w
         INNER JOIN episodes e ON e.id = w.episodeId
@@ -178,10 +147,6 @@ interface EpisodeWatchedDao {
     @Query("DELETE FROM episode_watched WHERE mediaId = :mediaId AND episodeId LIKE :seasonPrefix")
     suspend fun unmarkSeasonWatched(mediaId: String, seasonPrefix: String)
 
-    /**
-     * Returns all watchedAt timestamps, used by [MediaRepository.computeWatchStreak]
-     * to calculate consecutive calendar-day streaks.
-     */
     @Query("SELECT watchedAt FROM episode_watched ORDER BY watchedAt DESC")
     suspend fun getAllWatchedTimestamps(): List<Long>
 }

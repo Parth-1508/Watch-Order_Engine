@@ -302,6 +302,24 @@ fun ProfileScreen(
                         }
                     }
                 }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(theme.surface.copy(alpha = 0.5f))
+                        .padding(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Add shows to your watchlist to build your taste profile!",
+                        color = theme.textSecondary,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
         
