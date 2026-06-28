@@ -388,133 +388,94 @@ class MediaRepository @Inject constructor(
     suspend fun generateWatchOrder(mediaId: String): String? = withContext(Dispatchers.IO) {
         val entity = db.mediaDao().getById(mediaId) ?: return@withContext "Show not found."
         val isMovie = entity.mediaCategory == "MOVIE"
-        val seasonCounts = db.seasonDao().getSeasonsByMedia(mediaId)
-            .sortedBy { it.seasonNumber }.map { it.episodeCount }
 
-        val result = geminiService.generateWatchOrder(
-            showTitle          = entity.title,
-            overview           = entity.overview,
-            seasonEpisodeCounts = seasonCounts,
-            mediaType          = if (isMovie) "movie" else "tv"
-        )
+        // ── Step 1: RAW DATA FIRST. Build the item list from real, already-cached
+        // TMDB metadata (SeasonEntity.name/overview/episodeCount) — never from
+        // free-text the model has to "remember". Gemini never sees this show
+        // until this list already exists.
+        val rawItems: List<com.example.watchorderengine.network.gemini.RawMediaItem> = if (isMovie) {
+            listOf(
+                com.example.watchorderengine.network.gemini.RawMediaItem(
+                    itemId      = mediaId,
+                    title       = entity.title,
+                    overview    = entity.overview,
+                    contentType = "MOVIE",
+                    releaseDate = entity.releaseDate,
+                    tmdbId      = entity.tmdbId,
+                    source      = "TMDB_MOVIE"
+                )
+            )
+        } else {
+            db.seasonDao().getSeasonsByMedia(mediaId).sortedBy { it.seasonNumber }.map { season ->
+                com.example.watchorderengine.network.gemini.RawMediaItem(
+                    itemId       = season.id,
+                    title        = "${entity.title} — ${season.name}",
+                    overview     = season.overview.ifBlank { entity.overview },
+                    contentType  = "SERIES",
+                    seasonNumber = season.seasonNumber,
+                    episodeCount = season.episodeCount,
+                    releaseDate  = season.airDate,
+                    tmdbId       = entity.tmdbId,
+                    source       = "TMDB_SEASON"
+                )
+            }
+        }
+
+        if (rawItems.isEmpty()) {
+            return@withContext "No season data cached yet for this show — open it once before generating a watch order."
+        }
+
+        // ── Step 2: Gemini SORTS the real data. It returns the same item_ids
+        // back, only with ordering/phase/filler metadata attached.
+        val result = geminiService.generateWatchOrder(showTitle = entity.title, rawItems = rawItems)
 
         when (result) {
             is GeminiResult.Error -> result.message
             is GeminiResult.Success -> {
-                val watchOrder = result.watchOrder
-                val universeId = mediaId
-                val idMap      = java.util.concurrent.ConcurrentHashMap<String, String>()
+                val sortedNodes = result.watchOrder.nodes
+                val sortedEdges = result.watchOrder.edges
+                Log.d(TAG, "SORTED: ${sortedNodes.size} nodes (of ${rawItems.size} raw items), ${sortedEdges.size} edges")
 
-                Log.d(TAG, "GENERATION: ${watchOrder.nodes.size} nodes, ${watchOrder.edges.size} edges")
-
-                val mediaNodes = supervisorScope {
-                    watchOrder.nodes.map { node ->
-                        async {
-                            var resolvedId   = entity.tmdbId
-                            var resolvedType = if (node.contentType == "MOVIE") "movie" else "tv"
-
-                            // Verify Gemini's supplied TMDB ID before trusting it.
-                            if (node.tmdbId > 0) {
-                                val valid = verifyTmdbIdMatchesTitle(node.tmdbId,
-                                    node.contentType == "MOVIE", node.title)
-                                if (valid) {
-                                    resolvedId = node.tmdbId
-                                } else {
-                                    Log.w(TAG, "Gemini tmdb_id=${node.tmdbId} rejected for '${node.title}'")
-                                }
-                            }
-
-                            // Search TMDB for nodes that differ from the parent show.
-                            if (resolvedId == entity.tmdbId &&
-                                (node.contentType == "MOVIE" || node.contentType == "SERIES") &&
-                                !isTitleMatch(node.title, entity.title)) {
-                                val query = node.searchQuery ?: node.title
-                                val best  = searchMedia(query).find { isTitleMatch(it.title, node.title) }
-                                if (best != null) {
-                                    resolvedId   = best.tmdbId
-                                    resolvedType = if (isMovieId(best.id)) "movie" else "tv"
-                                    Log.d(TAG, "NODE_RESOLVE: '${node.title}' → id=$resolvedId, type=$resolvedType via search")
-                                }
-                            }
-
-                            // ALWAYS derive finalId from buildMediaId — guarantees Detail points to exactly one entity.
-                            val finalId = buildMediaId(resolvedId, resolvedType)
-                            idMap[node.nodeId] = finalId
-
-                            // Ensure a skeleton entity exists so Detail can render immediately.
-                            if (db.mediaDao().getById(finalId) == null) {
-                                db.mediaDao().upsert(MediaEntity(
-                                    id = finalId, tmdbId = resolvedId,
-                                    anilistId = null, title = node.title,
-                                    originalTitle = node.title,
-                                    overview = "", tagline = "", status = "Skeleton",
-                                    posterUrl = null, backdropUrl = null,
-                                    mediaCategory = if (resolvedType == "movie") "MOVIE" else "TV_SHOW",
-                                    genres = emptyList(), ageRating = "NR",
-                                    voteAverage = 0f, voteCount = 0,
-                                    runtime = null, numberOfSeasons = null,
-                                    numberOfEpisodes = null, releaseDate = null,
-                                    releaseYear = "", trailerKey = null,
-                                    watchProvidersJson = "[]",
-                                    castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
-                                ))
-                            }
-
-                            MediaNode(
-                                id               = finalId,
-                                title            = node.title,
-                                tmdb_id          = resolvedId,
-                                tmdb_media_type  = resolvedType,
-                                content_type     = node.contentType,
-                                type             = if (resolvedType == "movie") MediaCategory.MOVIE else MediaCategory.TV_SHOW,
-                                chrono_order     = node.chronoOrder,
-                                release_order    = node.releaseOrder,
-                                phase            = node.phase,
-                                tags             = node.tags
-                            )
-                        }
-                    }.awaitAll()
-                }
-
-                val mediaEdges = watchOrder.edges.mapNotNull { edge ->
-                    val from = idMap[edge.fromNodeId] ?: buildMediaId(
-                        extractTmdbId(edge.fromNodeId) ?: return@mapNotNull null, "tv")
-                    val to   = idMap[edge.toNodeId]   ?: buildMediaId(
-                        extractTmdbId(edge.toNodeId)   ?: return@mapNotNull null, "tv")
-                    if (from == to) return@mapNotNull null
-                    Edge(from_node_id = from, to_node_id = to, type = edge.type)
-                }
-
-                watchOrderRepository.clearGeneratedUniverse(universeId)
-                val publishResult = watchOrderRepository.publishGeneratedUniverse(
-                    universeId    = universeId,
+                // ── Step 3: Publish. Every node's title/overview/tmdb_id comes from
+                // rawItems (real TMDB data) — Gemini only supplied ordering/phase/filler.
+                watchOrderRepository.clearGeneratedUniverse(mediaId)
+                val publishResult = watchOrderRepository.publishSortedUniverse(
+                    universeId    = mediaId,
                     universeName  = entity.title,
                     coverUrl      = entity.posterUrl ?: "",
-                    nodes         = mediaNodes,
-                    edges         = mediaEdges
+                    rawItems      = rawItems,
+                    sortedNodes   = sortedNodes,
+                    sortedEdges   = sortedEdges,
+                    resolveMediaId = { raw ->
+                        // A season of THIS show always maps back onto the show's own
+                        // page; buildMediaId stays available for future raw-item
+                        // sources (e.g. AniList relations) that point at a different
+                        // tmdb_id entirely.
+                        if (raw.tmdbId == entity.tmdbId) {
+                            mediaId to (if (isMovie) "movie" else "tv")
+                        } else {
+                            val type = if (raw.contentType == "MOVIE") "movie" else "tv"
+                            buildMediaId(raw.tmdbId, type) to type
+                        }
+                    }
                 )
                 if (publishResult.isFailure) {
                     return@withContext "Firestore push failed: ${publishResult.exceptionOrNull()?.message}"
                 }
 
+                // ── Step 4: Tag this show's own cached episodes CANON/FILLER per
+                // season, using Gemini's classification of that season's raw item.
                 supervisorScope {
-                    watchOrder.nodes.forEach { node ->
-                        val finalId = idMap[node.nodeId] ?: return@forEach
-                        if (finalId != mediaId) {
-                            launch { refreshDetail(finalId) }
-                        }
-                        val classification = when {
-                            "FILLER" in node.tags -> "FILLER"
-                            "MIXED"  in node.tags -> "MIXED"
-                            else                  -> "CANON"
-                        }
-                        val seasonId     = "${finalId}_s${node.startSeason}"
-                        val nodeEpisodes = db.episodeDao().getEpisodesBySeason(seasonId)
-                            .filter { it.episodeNumber in node.startEpisode..node.endEpisode }
-                        nodeEpisodes.forEach { ep ->
-                            db.episodeDao().upsertAll(listOf(ep.copy(
-                                episodeType = classification, arcName = node.title
-                            )))
+                    sortedNodes.forEach { node ->
+                        val raw = rawItems.find { it.itemId == node.itemId } ?: return@forEach
+                        val seasonNumber = raw.seasonNumber ?: return@forEach
+                        val classification = if (node.filler) "FILLER" else "CANON"
+                        val seasonId = "${mediaId}_s$seasonNumber"
+                        val seasonEpisodes = db.episodeDao().getEpisodesBySeason(seasonId)
+                        if (seasonEpisodes.isNotEmpty()) {
+                            db.episodeDao().upsertAll(seasonEpisodes.map {
+                                it.copy(episodeType = classification, arcName = node.phase)
+                            })
                         }
                     }
                 }

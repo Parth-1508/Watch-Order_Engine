@@ -84,8 +84,8 @@ class CharacterRepository @Inject constructor(
             val voiceActor = aniEdge?.voiceActors?.firstOrNull()
 
             val fictionalArt = mutableListOf<String>()
-            aniChar?.image?.large?.takeIf { it.isNotBlank() }?.let { fictionalArt.add(it) }
-            wikiImageUrl?.takeIf { it.isNotBlank() }?.let { if (!fictionalArt.contains(it)) fictionalArt.add(it) }
+            aniChar?.image?.large?.takeIf { isValidImageUrl(it) }?.let { fictionalArt.add(it) }
+            wikiImageUrl?.takeIf { isValidImageUrl(it) }?.let { if (!fictionalArt.contains(it)) fictionalArt.add(it) }
 
             // TMDB "tagged images" tied to THIS specific production — stills
             // of the actor in costume/in-character for this show, which is
@@ -107,6 +107,7 @@ class CharacterRepository @Inject constructor(
                 .sortedByDescending { it.voteAverage ?: 0.0 }
                 .take(6)
                 .mapNotNull { TmdbConfig.buildImageUrl(it.filePath, TmdbConfig.PosterSize.CARD) }
+                .filter { isValidImageUrl(it) }
                 .forEach { url -> if (!fictionalArt.contains(url)) fictionalArt.add(url) }
 
             media?.relations?.edges.orEmpty()
@@ -116,7 +117,7 @@ class CharacterRepository @Inject constructor(
                     } == true 
                 }
                 .mapNotNull { it.node?.coverImage?.extraLarge ?: it.node?.coverImage?.large }
-                .filter { it.isNotBlank() }
+                .filter { isValidImageUrl(it) }
                 .forEach { url -> if (!fictionalArt.contains(url)) fictionalArt.add(url) }
 
             val actorGenderStr = when (person.gender) {
@@ -124,11 +125,13 @@ class CharacterRepository @Inject constructor(
             }
 
             val mainProfile = TmdbConfig.buildProfileUrl(person.profilePath, TmdbConfig.ProfileSize.LARGE)
+                ?.takeIf { isValidImageUrl(it) }
+                
             val extraPhotos = person.images?.profiles
                 ?.sortedByDescending { it.voteAverage ?: 0.0 }
                 ?.take(8)
                 ?.mapNotNull { TmdbConfig.buildProfileUrl(it.filePath, TmdbConfig.ProfileSize.LARGE) }
-                ?.filter { it.isNotBlank() }
+                ?.filter { isValidImageUrl(it) }
                 ?: emptyList()
             val allPhotos = (listOfNotNull(mainProfile) + extraPhotos).distinct()
 
@@ -217,7 +220,7 @@ class CharacterRepository @Inject constructor(
             ?.mapNotNull { edge ->
                 val name = edge.node?.name?.full?.lowercase() ?: return@mapNotNull null
                 val img = edge.node.image?.large ?: return@mapNotNull null
-                if (img.isBlank()) return@mapNotNull null
+                if (!isValidImageUrl(img)) return@mapNotNull null
                 name to img
             }
             ?.toMap()
@@ -264,6 +267,29 @@ class CharacterRepository @Inject constructor(
         val a = candidate.lowercase()
         val b = characterName.lowercase()
         return a.contains(b) || b.contains(a)
+    }
+
+    /**
+     * Checks if an image URL is a known blank placeholder or invalid.
+     */
+    private fun isValidImageUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val lower = url.lowercase()
+        val placeholders = listOf(
+            "no_image",
+            "placeholder",
+            "missing",
+            "default_profile",
+            "avatar_default",
+            "silhouette",
+            "no-photo",
+            "null",
+            "empty",
+            "image_not_found"
+        )
+        // SVGs are often Wikipedia placeholders.
+        // Also filter out very small thumbnails if we have better options.
+        return placeholders.none { lower.contains(it) } && !lower.endsWith(".svg")
     }
 
     suspend fun getCharacterLore(characterName: String, mediaTitle: String): Pair<String?, String?> {

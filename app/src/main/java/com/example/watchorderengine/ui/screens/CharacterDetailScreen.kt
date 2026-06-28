@@ -165,7 +165,11 @@ private fun CharacterDetailBody(
             detail.actorProfileUrl?.takeIf { it.isNotBlank() }?.let { if (!contains(it)) add(it) }
             detail.actorPhotos.filter { it.isNotBlank() }.forEach { if (!contains(it)) add(it) }
             if (isEmpty() && !detail.characterImageUrl.isNullOrBlank()) add(detail.characterImageUrl)
-        }.distinct()
+        }.distinct().filter { url ->
+            // Extra safety: ensure we don't show known placeholder URLs in the hero strip
+            val lower = url.lowercase()
+            !lower.contains("placeholder") && !lower.contains("no_image") && !lower.contains("silhouette")
+        }
     }
     
     val safeHeroImages = heroImages.ifEmpty { listOfNotNull(detail.actorProfileUrl).filter { it.isNotBlank() } }
