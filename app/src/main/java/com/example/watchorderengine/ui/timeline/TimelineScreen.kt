@@ -55,7 +55,6 @@ fun TimelineScreen(
             .fillMaxSize()
             .background(WatchOrderColors.DeepSpace)
             .drawBehind {
-                // Ambient Starfield
                 val random = java.util.Random(42)
                 repeat(100) {
                     val x = random.nextFloat() * size.width
@@ -69,7 +68,6 @@ fun TimelineScreen(
                     )
                 }
                 
-                // Nebula glow
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(WatchOrderColors.AccentGold.copy(alpha = 0.05f), Color.Transparent),
@@ -184,7 +182,6 @@ private fun TimelineContent(
         BranchingTimelineView(
             rows = state.rows,
             onNodeToggle = { node -> viewModel.toggleNodeCompletion(node.node.id, node.isCompleted) },
-            // FIX: pass the full MediaNode so onNodeClick can resolve tmdb_id correctly.
             onNodeClick = { node -> viewModel.onNodeClick(node.node) },
             modifier = Modifier.fillMaxSize()
         )

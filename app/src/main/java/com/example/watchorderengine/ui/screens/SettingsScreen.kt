@@ -23,6 +23,7 @@ import com.example.watchorderengine.data.prefs.ThemeMode
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.SettingsViewModel
+import com.example.watchorderengine.ui.viewmodel.WipeGraphsState
 import kotlinx.coroutines.delay
 
 @Composable
@@ -34,8 +35,10 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
     val currentThemeMode by viewModel.themeMode.collectAsState()
     val hideFiller by viewModel.hideFiller.collectAsState()
+    val wipeGraphsState by viewModel.wipeGraphsState.collectAsState()
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showClearedToast by remember { mutableStateOf(false) }
+    var showWipeGraphsDialog by remember { mutableStateOf(false) }
 
     if (showClearCacheDialog) {
         AlertDialog(
@@ -55,6 +58,28 @@ fun SettingsScreen(
                 }) { Text("Clear", fontWeight = FontWeight.Bold, color = Color(0xFFFF4500)) }
             },
             dismissButton = { TextButton(onClick = { showClearCacheDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    if (showWipeGraphsDialog) {
+        AlertDialog(
+            onDismissRequest = { showWipeGraphsDialog = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF4500)) },
+            title = { Text("Delete All Generated Graphs?", fontWeight = FontWeight.Black) },
+            text = {
+                Text(
+                    "This permanently deletes every AI-generated watch-order graph — and your progress on " +
+                    "all of them — from the cloud. This cannot be undone. Local cache is untouched; only the " +
+                    "data in Firestore is wiped."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWipeGraphsDialog = false
+                    viewModel.wipeAllCloudGraphs()
+                }) { Text("Delete Everything", fontWeight = FontWeight.Bold, color = Color(0xFFFF4500)) }
+            },
+            dismissButton = { TextButton(onClick = { showWipeGraphsDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -94,8 +119,6 @@ fun SettingsScreen(
             color = theme.surface
         ) {
             Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                // Filter out SYSTEM to keep it simple, or keep it if desired. 
-                // Ensuring we show our new themes.
                 val visibleThemes = ThemeMode.entries.filter { it != ThemeMode.SYSTEM }
                 visibleThemes.forEachIndexed { index, mode ->
                     ThemeOptionRow(
@@ -113,12 +136,7 @@ fun SettingsScreen(
             }
         }
 
-        // Preferences Section — Spoiler Wall is the only toggle here with a
-        // real system behind it (filters filler episodes in Detail's
-        // episode list). The old Notifications toggle was removed: there is
-        // no notification system anywhere in this app (no push, no
-        // background work) to actually enable/disable, so it could only
-        // ever be a switch that lied about doing something.
+        // Preferences Section
         SettingSectionTitle("PREFERENCES")
         Surface(
             modifier = Modifier
@@ -136,13 +154,7 @@ fun SettingsScreen(
             )
         }
 
-        // Account Section — informational, since this app uses anonymous
-        // Firebase auth with no email/password system. There is
-        // deliberately no "Log Out" button: signing out of an anonymous
-        // account generates a brand-new anonymous UID on next launch and
-        // permanently orphans every bit of Firestore watch progress under
-        // the old UID, with no way back in. A button that looks routine but
-        // is actually irreversible data loss is worse than no button.
+        // Account Section
         SettingSectionTitle("ACCOUNT")
         Surface(
             modifier = Modifier
@@ -203,6 +215,70 @@ fun SettingsScreen(
             ) {
                 Text("Cache cleared.", modifier = Modifier.padding(12.dp), color = Color(0xFF4ADE80), fontWeight = FontWeight.Bold)
             }
+        }
+
+        // Danger Zone
+        SettingSectionTitle("DANGER ZONE")
+        Surface(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .border(2.dp, Color(0xFFFF4500), RoundedCornerShape(4.dp))
+                .clickable(enabled = wipeGraphsState != WipeGraphsState.InProgress) { showWipeGraphsDialog = true },
+            color = theme.surface
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (wipeGraphsState == WipeGraphsState.InProgress) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color(0xFFFF4500),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Default.DeleteForever, null, tint = Color(0xFFFF4500))
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text("DELETE ALL GENERATED GRAPHS", fontWeight = FontWeight.Black, fontSize = 14.sp, color = Color(0xFFFF4500))
+                    Text(
+                        "Permanently wipes every AI-generated watch order from the cloud",
+                        fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        when (val state = wipeGraphsState) {
+            is WipeGraphsState.Success -> {
+                LaunchedEffect(state) {
+                    delay(3000)
+                    viewModel.acknowledgeWipeResult()
+                }
+                Surface(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    color = Color(0xFF4ADE80).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("All generated graphs deleted.", modifier = Modifier.padding(12.dp), color = Color(0xFF4ADE80), fontWeight = FontWeight.Bold)
+                }
+            }
+            is WipeGraphsState.Failure -> {
+                Surface(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    color = Color(0xFFFF4500).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Couldn't delete graphs.", color = Color(0xFFFF4500), fontWeight = FontWeight.Bold)
+                        Text(state.message, color = Color(0xFFFF4500), fontSize = 11.sp)
+                        TextButton(onClick = { viewModel.acknowledgeWipeResult() }) { Text("Dismiss") }
+                    }
+                }
+            }
+            else -> Unit
         }
 
         // About Section

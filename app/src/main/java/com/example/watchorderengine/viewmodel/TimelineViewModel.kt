@@ -17,6 +17,10 @@ import javax.inject.Inject
 
 // ─── UI Layer Models ──────────────────────────────────────────────────────────
 
+/**
+ * A fully-resolved node, ready to render. Bridges the domain model [MediaNode]
+ * with ephemeral UI state (completion, spoiler, column position).
+ */
 data class DisplayNode(
     val node: MediaNode,
     val column: Int,
@@ -25,6 +29,10 @@ data class DisplayNode(
     val metadata: TmdbFetchState
 )
 
+/**
+ * A single horizontal "row" in the visual timeline — one topological level.
+ * May contain multiple nodes if the graph branches at this level.
+ */
 data class TimelineRow(
     val level: Int,
     val nodes: List<DisplayNode>,
@@ -32,6 +40,7 @@ data class TimelineRow(
     val outgoing: List<GraphEngine.OutgoingConnection>
 )
 
+/** The sealed UI state hierarchy emitted by the ViewModel's StateFlow. */
 sealed interface TimelineUiState {
     data object Loading : TimelineUiState
 
@@ -51,10 +60,11 @@ sealed interface TimelineUiState {
     ) : TimelineUiState {
         val progressFraction: Float
             get() = if (totalNodeCount == 0) 0f
-                    else completedCount.toFloat() / totalNodeCount
+            else completedCount.toFloat() / totalNodeCount
     }
 }
 
+/** One-shot side effects (toasts, navigation). */
 sealed interface TimelineEvent {
     data class ShowSnackbar(val message: String) : TimelineEvent
     data class NavigateToDetail(val mediaId: String) : TimelineEvent
@@ -153,9 +163,9 @@ class TimelineViewModel @Inject constructor(
             return TimelineUiState.Error("No content found in this universe.")
         }
 
-        val filteredNodes   = GraphEngine.applyRouteFilter(nodes, progress.active_route ?: "ALL")
+        val filteredNodes = GraphEngine.applyRouteFilter(nodes, progress.active_route ?: "ALL")
         val filteredNodeIds = filteredNodes.map { it.id }.toSet()
-        val filteredEdges   = edges.filter {
+        val filteredEdges = edges.filter {
             it.from_node_id in filteredNodeIds && it.to_node_id in filteredNodeIds
         }
 
@@ -164,7 +174,7 @@ class TimelineViewModel @Inject constructor(
         } catch (e: Exception) {
             return TimelineUiState.Error("Layout error: ${e.message}")
         }
-
+        
         if (layout.isCycleDetected) {
             viewModelScope.launch {
                 _events.send(TimelineEvent.ShowSnackbar(
@@ -173,7 +183,7 @@ class TimelineViewModel @Inject constructor(
             }
         }
 
-        val nodeById    = filteredNodes.associateBy { it.id }
+        val nodeById = filteredNodes.associateBy { it.id }
         val sortedNodes = layout.sortedIds.mapNotNull { nodeById[it] }
 
         val effectiveCompleted = buildEffectiveCompleted(
@@ -187,19 +197,19 @@ class TimelineViewModel @Inject constructor(
 
         val displayNodes = sortedNodes.map { mediaNode ->
             DisplayNode(
-                node             = mediaNode,
-                column           = layout.columnMap[mediaNode.id] ?: 0,
-                isCompleted      = mediaNode.id in effectiveCompleted,
+                node = mediaNode,
+                column = layout.columnMap[mediaNode.id] ?: 0,
+                isCompleted = mediaNode.id in effectiveCompleted,
                 isSpoilerBlurred = mediaNode.id in blurredIds,
-                metadata         = tmdbCache.getOrLoading(mediaNode.tmdb_id)
+                metadata = tmdbCache.getOrLoading(mediaNode.tmdb_id)
             )
         }
 
         val displayNodeMeta = displayNodes.associate { it.node.id to (it.column to it.isCompleted) }
-        val connections     = GraphEngine.computeConnections(
+        val connections = GraphEngine.computeConnections(
             displayNodeMap = displayNodeMeta,
-            edges          = filteredEdges,
-            levelMap       = layout.levelMap
+            edges = filteredEdges,
+            levelMap = layout.levelMap
         )
 
         val rows = displayNodes
@@ -208,21 +218,21 @@ class TimelineViewModel @Inject constructor(
             .sortedBy { it.key }
             .map { (level, nodesAtLevel) ->
                 TimelineRow(
-                    level        = level,
-                    nodes        = nodesAtLevel.sortedBy { it.column },
+                    level = level,
+                    nodes = nodesAtLevel.sortedBy { it.column },
                     totalColumns = layout.maxColumns,
-                    outgoing     = connections[level] ?: emptyList()
+                    outgoing = connections[level] ?: emptyList()
                 )
             }
 
         return TimelineUiState.Success(
-            universe             = universe,
-            rows                 = rows,
-            availableTags        = tags,
-            activeRouteTag       = progress.active_route ?: "ALL",
+            universe = universe,
+            rows = rows,
+            availableTags = tags,
+            activeRouteTag = progress.active_route ?: "ALL",
             spoilerShieldEnabled = progress.spoiler_shield_enabled,
-            completedCount       = effectiveCompleted.intersect(filteredNodeIds).size,
-            totalNodeCount       = filteredNodes.size
+            completedCount = effectiveCompleted.intersect(filteredNodeIds).size,
+            totalNodeCount = filteredNodes.size
         )
     }
 
@@ -245,8 +255,11 @@ class TimelineViewModel @Inject constructor(
         viewModelScope.launch {
             val result = repository.setNodeCompletion(currentUniverseId, nodeId, newState)
             optimisticOverrides.update { it - nodeId }
+
             if (result.isFailure) {
-                _events.send(TimelineEvent.ShowSnackbar("Couldn't save progress. Check your connection."))
+                _events.send(
+                    TimelineEvent.ShowSnackbar("Couldn't save progress. Check your connection.")
+                )
             }
         }
     }
@@ -260,7 +273,8 @@ class TimelineViewModel @Inject constructor(
     }
 
     fun toggleSpoilerShield() {
-        val currentEnabled = (_uiState.value as? TimelineUiState.Success)?.spoilerShieldEnabled ?: true
+        val currentEnabled = (_uiState.value as? TimelineUiState.Success)
+            ?.spoilerShieldEnabled ?: true
         viewModelScope.launch {
             repository.setSpoilerShieldEnabled(currentUniverseId, !currentEnabled).onFailure {
                 _events.send(TimelineEvent.ShowSnackbar("Couldn't save spoiler shield preference."))
@@ -283,13 +297,12 @@ class TimelineViewModel @Inject constructor(
          * Builds the Room-compatible media ID from a MediaNode's TMDB fields.
          */
         fun resolveMediaId(node: MediaNode): String {
-            if (node.tmdb_id <= 0) return node.id  // last resort
+            if (node.tmdb_id <= 0) return node.id
 
             val prefix = when (node.tmdb_media_type.lowercase().trim()) {
                 "movie" -> "tmdb_m_"
                 "tv", "anime", "ova", "ona", "special" -> "tmdb_t_"
                 else -> {
-                    // content_type gives us a second hint if tmdb_media_type is missing
                     when (node.content_type.uppercase()) {
                         "MOVIE", "SHORT" -> "tmdb_m_"
                         else             -> "tmdb_t_"

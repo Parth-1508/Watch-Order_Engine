@@ -139,6 +139,10 @@ interface EpisodeWatchedDao {
     @Query("SELECT episodeId FROM episode_watched")
     suspend fun getAllWatchedIds(): List<String>
 
+    /**
+     * Accurate runtime summing that handles dual-ID mapping (legacy vs current).
+     * Prevents One Piece / Naruto stats from being missing or glitched.
+     */
     @Query("""
         SELECT COALESCE(SUM(e.runtime), 0) FROM episodes e
         WHERE EXISTS (

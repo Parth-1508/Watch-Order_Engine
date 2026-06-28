@@ -1,5 +1,8 @@
 package com.example.watchorderengine.ui.screens
 
+import android.os.Build
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -14,10 +17,12 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -137,7 +142,6 @@ private fun BackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-/** Clamps a theme's card radius down to something sane for small chips/pills/thumbnails. */
 private fun chipRadius(appRadius: androidx.compose.ui.unit.Dp) =
     if (appRadius > 12.dp) 12.dp else appRadius
 
@@ -155,17 +159,11 @@ private fun CharacterDetailBody(
     val scrollState = rememberScrollState()
     var activeTab by remember { mutableStateOf(0) }
 
-    // Build the hero image list:
     val heroImages = remember(detail) {
         buildList {
-            // First, add all character-specific art
             addAll(detail.characterPhotos.filter { it.isNotBlank() })
-            
-            // Then, add the real actor's photos
             detail.actorProfileUrl?.takeIf { it.isNotBlank() }?.let { if (!contains(it)) add(it) }
             detail.actorPhotos.filter { it.isNotBlank() }.forEach { if (!contains(it)) add(it) }
-            
-            // Fallback
             if (isEmpty() && !detail.characterImageUrl.isNullOrBlank()) add(detail.characterImageUrl)
         }.distinct()
     }
@@ -173,63 +171,68 @@ private fun CharacterDetailBody(
     val safeHeroImages = heroImages.ifEmpty { listOfNotNull(detail.actorProfileUrl).filter { it.isNotBlank() } }
     val heroUrl = safeHeroImages.getOrNull(photoIndex) ?: safeHeroImages.firstOrNull() ?: detail.characterImageUrl ?: detail.actorProfileUrl
 
+    val hasHeroImage = !heroUrl.isNullOrBlank()
+
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
 
-        // ── Hero ──
-        Box(modifier = Modifier.fillMaxWidth().height(320.dp)) {
-            AsyncImage(
-                model = heroUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
-            )
-            Box(
-                modifier = Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, theme.background),
-                        startY = 260f
-                    )
-                )
-            )
-            BackButton(onBack, modifier = Modifier.align(Alignment.TopStart).padding(12.dp))
-
-            // Floating avatar
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = 52.dp)
-            ) {
+        if (hasHeroImage) {
+            Box(modifier = Modifier.fillMaxWidth().height(320.dp)) {
                 AsyncImage(
                     model = heroUrl,
-                    contentDescription = detail.characterName,
-                    modifier = Modifier
-                        .size(104.dp)
-                        .clip(CircleShape)
-                        .background(theme.surface)
-                        .border(3.dp, theme.accent, CircleShape),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                     error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                 )
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomEnd).offset((-2).dp, (-2).dp),
-                    shape = RoundedCornerShape(6.dp),
-                    color = roleColor(detail.characterRole, theme)
-                ) {
-                    Text(
-                        detail.characterRole,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.Black
+                Box(
+                    modifier = Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, theme.background),
+                            startY = 260f
+                        )
                     )
+                )
+                BackButton(onBack, modifier = Modifier.align(Alignment.TopStart).padding(12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .offset(y = 52.dp)
+                ) {
+                    AsyncImage(
+                        model = heroUrl,
+                        contentDescription = detail.characterName,
+                        modifier = Modifier
+                            .size(104.dp)
+                            .clip(CircleShape)
+                            .background(theme.surface)
+                            .border(3.dp, theme.accent, CircleShape),
+                        contentScale = ContentScale.Crop,
+                        error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
+                    )
+                    Surface(
+                        modifier = Modifier.align(Alignment.BottomEnd).offset((-2).dp, (-2).dp),
+                        shape = RoundedCornerShape(6.dp),
+                        color = roleColor(detail.characterRole, theme)
+                    ) {
+                        Text(
+                            detail.characterRole,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.Black
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(60.dp))
+        } else {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                BackButton(onBack, modifier = Modifier.padding(12.dp))
+            }
+            Spacer(Modifier.height(16.dp))
         }
 
-        Spacer(Modifier.height(60.dp))
-
-        // ── Name block ──
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -277,7 +280,6 @@ private fun CharacterDetailBody(
             }
         }
 
-        // ── Photo strip ──
         if (safeHeroImages.size > 1) {
             Spacer(Modifier.height(20.dp))
             LazyRow(
@@ -307,7 +309,6 @@ private fun CharacterDetailBody(
             }
         }
 
-        // ── Tab bar ──
         val tabs = buildList {
             add("Character")
             add("Actor")
@@ -358,7 +359,6 @@ private fun CharacterDetailBody(
     }
 }
 
-/** Ties role badge color to theme tokens instead of hardcoded gold/blue/gray. */
 private fun roleColor(role: String, theme: com.example.watchorderengine.ui.theme.AppThemeConfig) = when (role) {
     "MAIN" -> theme.accent
     "SUPPORTING" -> theme.statusMixed
@@ -403,7 +403,6 @@ private fun CharacterTab(detail: CharacterDetail) {
             }
         }
 
-        // ── Wikipedia lore block ──
         val showWikiSupplementBlock = !detail.wikiLore.isNullOrBlank() &&
             detail.characterDescription != detail.wikiLore &&
             detail.characterDescription.length > 150
@@ -413,7 +412,6 @@ private fun CharacterTab(detail: CharacterDetail) {
             WikiLoreCard(lore = detail.wikiLore!!)
         }
 
-        // ── Wikipedia attribution ──
         if (!detail.wikiLore.isNullOrBlank() && detail.characterDescription == detail.wikiLore) {
             WikiAttributionFooter()
         }
@@ -451,7 +449,6 @@ private fun CharacterTab(detail: CharacterDetail) {
             }
         }
 
-        // ── Character Gallery (Fictional Art) ──
         val displayArt = remember(detail) {
             val fictional = detail.characterPhotos.filter { it.isNotBlank() }
             if (fictional.isEmpty() && !detail.characterImageUrl.isNullOrBlank()) {
@@ -695,36 +692,81 @@ private fun WikiLoreCard(lore: String) {
     var expanded by remember { mutableStateOf(false) }
     var overflows by remember { mutableStateOf(false) }
 
-    InfoCard {
-        Column {
-            Text(
-                text       = lore,
-                color      = theme.textSecondary,
-                fontSize   = 13.sp,
-                lineHeight = 19.sp,
-                fontStyle  = androidx.compose.ui.text.font.FontStyle.Italic,
-                maxLines   = if (expanded) Int.MAX_VALUE else 4,
-                overflow   = TextOverflow.Ellipsis,
-                onTextLayout = { result ->
-                    if (!overflows) overflows = result.hasVisualOverflow
-                }
-            )
+    var revealed by remember { mutableStateOf(false) }
+    val blurRadius by animateDpAsState(
+        targetValue   = if (revealed) 0.dp else 16.dp,
+        animationSpec = tween(durationMillis = 400),
+        label         = "wikiLoreBlur"
+    )
 
-            if (overflows || expanded) {
-                TextButton(
-                    onClick  = { expanded = !expanded },
-                    modifier = Modifier.align(Alignment.End),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        if (expanded) "Show less" else "Show more",
-                        color    = theme.accent,
-                        fontSize = 12.sp
-                    )
+    InfoCard {
+        Box {
+            Column(modifier = Modifier.blur(blurRadius)) {
+                Text(
+                    text       = lore,
+                    color      = theme.textSecondary,
+                    fontSize   = 13.sp,
+                    lineHeight = 19.sp,
+                    fontStyle  = androidx.compose.ui.text.font.FontStyle.Italic,
+                    maxLines   = if (expanded) Int.MAX_VALUE else 4,
+                    overflow   = TextOverflow.Ellipsis,
+                    onTextLayout = { result ->
+                        if (!overflows) overflows = result.hasVisualOverflow
+                    }
+                )
+
+                if (overflows || expanded) {
+                    TextButton(
+                        onClick  = { expanded = !expanded },
+                        modifier = Modifier.align(Alignment.End),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                        enabled  = revealed
+                    ) {
+                        Text(
+                            if (expanded) "Show less" else "Show more",
+                            color    = theme.accent,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
+
+                WikiAttributionFooter()
             }
 
-            WikiAttributionFooter()
+            if (!revealed) {
+                val scrimAlpha = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.55f else 0.94f
+                Surface(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clickable(onClickLabel = "Reveal spoilers") { revealed = true },
+                    color = theme.background.copy(alpha = scrimAlpha)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Surface(
+                            shape  = RoundedCornerShape(chipRadius(theme.appRadius)),
+                            color  = theme.surface,
+                            border = BorderStroke(1.dp, theme.border)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.VisibilityOff, contentDescription = null,
+                                    tint = theme.accent, modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "Tap to Reveal Spoilers",
+                                    color = theme.textPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -788,8 +830,6 @@ private fun CreditListRow(credit: CreditItem, onClick: () -> Unit) {
         }
     }
 }
-
-// ─── Shared ───
 
 @Composable
 private fun SectionHeader(title: String, modifier: Modifier = Modifier) {

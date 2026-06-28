@@ -4,6 +4,7 @@ import com.example.watchorderengine.BuildConfig
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -15,13 +16,24 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// ─── Gemini Response Models ───────────────────────────────────────────────────
+// ─── Raw Ingestion Input (TMDB / AniList — fetched BEFORE Gemini ever runs) ───
 
-/**
- * The structured JSON Gemini returns: a full chronological/branching DAG
- * for the requested show or movie — nodes (watchable units / arcs) plus
- * directed edges expressing "watch A before B" prerequisites.
- */
+@JsonClass(generateAdapter = true)
+data class RawMediaItem(
+    @Json(name = "item_id")       val itemId: String,
+    @Json(name = "title")         val title: String,
+    @Json(name = "overview")      val overview: String,
+    @Json(name = "content_type")  val contentType: String,     // "MOVIE" | "SERIES" | "SPECIAL" | "OVA"
+    @Json(name = "season_number") val seasonNumber: Int? = null,
+    @Json(name = "episode_count") val episodeCount: Int? = null,
+    @Json(name = "release_date")  val releaseDate: String? = null,
+    @Json(name = "tmdb_id")       val tmdbId: Int = 0,
+    @Json(name = "anilist_id")    val anilistId: Int? = null,
+    @Json(name = "source")        val source: String            // "TMDB_SEASON" | "TMDB_MOVIE" | "ANILIST_RELATION"
+)
+
+// ─── Gemini Response Models (SORTER output only) ──────────────────────────────
+
 @JsonClass(generateAdapter = true)
 data class GeminiWatchOrder(
     @Json(name = "nodes") val nodes: List<GeminiNode>,
@@ -30,28 +42,19 @@ data class GeminiWatchOrder(
 
 @JsonClass(generateAdapter = true)
 data class GeminiNode(
-    @Json(name = "node_id")          val nodeId: String,
-    @Json(name = "title")            val title: String,
-    @Json(name = "synopsis")         val synopsis: String,
-    @Json(name = "content_type")     val contentType: String,     // "MOVIE" | "SERIES" | "SPECIAL" | "EPISODE" | "SHORT"
-    @Json(name = "start_season")     val startSeason: Int,
-    @Json(name = "start_episode")    val startEpisode: Int,
-    @Json(name = "end_season")       val endSeason: Int,
-    @Json(name = "end_episode")      val endEpisode: Int,
+    @Json(name = "item_id")          val itemId: String,   // MUST match a RawMediaItem.itemId verbatim
     @Json(name = "chrono_order")     val chronoOrder: Float,
     @Json(name = "release_order")    val releaseOrder: Float,
     @Json(name = "phase")            val phase: String,
-    @Json(name = "tags")             val tags: List<String>,
+    @Json(name = "filler")           val filler: Boolean,
     @Json(name = "is_branch_point")  val isBranchPoint: Boolean,
-    @Json(name = "is_merge_point")   val isMergePoint: Boolean,
-    @Json(name = "tmdb_id")          val tmdbId: Int = 0,
-    @Json(name = "search_query")     val searchQuery: String? = null
+    @Json(name = "is_merge_point")   val isMergePoint: Boolean
 )
 
 @JsonClass(generateAdapter = true)
 data class GeminiEdge(
-    @Json(name = "from_node_id") val fromNodeId: String,
-    @Json(name = "to_node_id")   val toNodeId: String,
+    @Json(name = "from_item_id") val fromItemId: String,
+    @Json(name = "to_item_id")   val toItemId: String,
     @Json(name = "type")         val type: String,          // "REQUIRED" | "RECOMMENDED" | "OPTIONAL"
     @Json(name = "label")        val label: String
 )
@@ -106,6 +109,9 @@ class GeminiService @Inject constructor() {
         .addLast(KotlinJsonAdapterFactory())
         .build()
 
+    private val rawItemListAdapter =
+        moshi.adapter<List<RawMediaItem>>(Types.newParameterizedType(List::class.java, RawMediaItem::class.java))
+
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -119,12 +125,21 @@ class GeminiService @Inject constructor() {
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     }
 
+    /**
+     * Sorts and classifies a FIXED array of [RawMediaItem]s that were already
+     * fetched from TMDB/AniList. Gemini cannot add, remove, rename, or
+     * re-identify entries here — it only assigns chronological order, a
+     * phase label, a filler flag, and (optionally) branch/merge edges
+     * between the exact items it was given.
+     */
     suspend fun generateWatchOrder(
         showTitle: String,
-        overview: String,
-        seasonEpisodeCounts: List<Int>,
-        mediaType: String
+        rawItems: List<RawMediaItem>
     ): GeminiResult = withContext(Dispatchers.IO) {
+
+        if (rawItems.isEmpty()) {
+            return@withContext GeminiResult.Error("No raw TMDB/AniList items supplied to sort.")
+        }
 
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isBlank()) {
@@ -133,7 +148,23 @@ class GeminiService @Inject constructor() {
             )
         }
 
-        val prompt = buildPrompt(showTitle, overview, seasonEpisodeCounts, mediaType)
+        if (rawItems.size == 1) {
+            val only = rawItems.first()
+            return@withContext GeminiResult.Success(
+                GeminiWatchOrder(
+                    nodes = listOf(
+                        GeminiNode(
+                            itemId = only.itemId, chronoOrder = 0f, releaseOrder = 0f,
+                            phase = "Main Story", filler = false,
+                            isBranchPoint = false, isMergePoint = false
+                        )
+                    ),
+                    edges = emptyList()
+                )
+            )
+        }
+
+        val prompt = buildSortPrompt(showTitle, rawItems)
         val schemaAny = moshi.adapter(Any::class.java).fromJson(RESPONSE_SCHEMA_JSON)
             ?: return@withContext GeminiResult.Error("Internal error building Gemini request schema.")
 
@@ -153,7 +184,7 @@ class GeminiService @Inject constructor() {
             .build()
 
         return@withContext try {
-            android.util.Log.d("GeminiService", "Sending request to Gemini...")
+            android.util.Log.d("GeminiService", "Sending sort request to Gemini for ${rawItems.size} raw items...")
             val response = client.newCall(request).execute()
             val body = response.body?.string() ?: return@withContext GeminiResult.Error(
                 "Empty response from Gemini (HTTP ${response.code})"
@@ -169,57 +200,74 @@ class GeminiService @Inject constructor() {
             val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                 ?: return@withContext GeminiResult.Error("Gemini returned an empty response body.")
 
-            val watchOrder = moshi.adapter(GeminiWatchOrder::class.java).fromJson(rawJson)
+            val parsed = moshi.adapter(GeminiWatchOrder::class.java).fromJson(rawJson)
                 ?: return@withContext GeminiResult.Error("Failed to parse Gemini response.")
 
-            GeminiResult.Success(watchOrder)
+            GeminiResult.Success(sanitizeAgainstRawItems(parsed, rawItems))
 
         } catch (e: Exception) {
             GeminiResult.Error("Network error calling Gemini: ${e.message}")
         }
     }
 
-    private fun buildPrompt(
-        showTitle: String,
-        overview: String,
-        seasonEpisodeCounts: List<Int>,
-        mediaType: String
-    ): String {
-        val episodeInfo = if (mediaType == "tv" && seasonEpisodeCounts.isNotEmpty()) {
-            "Episode counts: ${seasonEpisodeCounts.joinToString(", ")}"
-        } else ""
+    private fun sanitizeAgainstRawItems(
+        watchOrder: GeminiWatchOrder,
+        rawItems: List<RawMediaItem>
+    ): GeminiWatchOrder {
+        val validIds = rawItems.map { it.itemId }.toSet()
+        val seen = mutableSetOf<String>()
+
+        val cleanNodes = watchOrder.nodes.filter { node ->
+            val isValid = node.itemId in validIds
+            val isFirstSeen = seen.add(node.itemId)
+            isValid && isFirstSeen
+        }
+
+        val missing = (validIds - seen).map { id ->
+            val nextOrder = (cleanNodes.size).toFloat()
+            GeminiNode(
+                itemId = id, chronoOrder = nextOrder, releaseOrder = nextOrder,
+                phase = "Uncategorized", filler = false,
+                isBranchPoint = false, isMergePoint = false
+            )
+        }
+
+        val finalIds = seen + missing.map { it.itemId }
+        val cleanEdges = watchOrder.edges.filter { it.fromItemId in finalIds && it.toItemId in finalIds }
+
+        return GeminiWatchOrder(nodes = cleanNodes + missing, edges = cleanEdges)
+    }
+
+    private fun buildSortPrompt(showTitle: String, rawItems: List<RawMediaItem>): String {
+        val itemsJson = rawItemListAdapter.toJson(rawItems)
 
         return """
-            You are a world-class anime and cinema archivist specializing in "Master Watch Orders". 
-            Generate a definitive, high-accuracy branching DAG (Directed Acyclic Graph) for: "$showTitle".
-            Overview: $overview
-            $episodeInfo
+            You are a SORTER, not an archivist. Do NOT use your own memory of "$showTitle"
+            to generate content — every entry you are allowed to talk about is already
+            listed below, fetched directly from TMDB/AniList.
 
-            CORE PHILOSOPHY:
-            1. Group content into logical "Arcs" or "Movies". 
-            2. For long series, do NOT generate one node per episode. Group them into cohesive Arcs (e.g., "Chunin Exams: Eps 20-67").
-            3. Use edges ONLY for strict requirements. Avoid "spaghetti" connections.
-            4. Identify true branches (e.g., skip filler, watch a movie optionally).
+            RAW_ITEMS (the complete, fixed, real dataset — ${rawItems.size} entries):
+            $itemsJson
 
-            NODE SPECIFICATION:
-            - node_id: lowercase slug (e.g., "arc_land_of_waves")
-            - title: Clear name
-            - synopsis: 1-sentence summary
-            - content_type: MOVIE, SERIES, EPISODE, SHORT, SPECIAL
-            - start_season / start_episode / end_season / end_episode: Precise boundaries.
-            - chrono_order: Sequential float.
-            - release_order: Sequential float.
-            - phase: Major saga name.
-            - tags: [CANON, FILLER, MIXED, MOVIE, SPECIAL, MUST_WATCH].
-            - is_branch_point: True if this node leads to multiple mutually exclusive or optional paths.
-            - is_merge_point: True if this node requires multiple previous paths to be finished.
-            - tmdb_id: The official TMDB ID for this specific movie or series. For arcs within the current show, use 0.
-            - search_query: A precise TMDB search string for this specific node. 
-              IMPORTANT: For sequels, include the full name and year (e.g., "Iron Man 2 2010", "Avengers: Endgame 2019"). 
-              For series arcs, search for the series name (e.g., "Naruto Shippuden").
+            YOUR ONLY JOB:
+            1. Assign each item a chrono_order (story chronology) and release_order
+               (real-world release order) as floats, lowest = first.
+            2. Assign each item a short "phase" label (saga/season grouping) for display.
+            3. Set filler=true only for items that are optional/skippable side content;
+               filler=false for anything required to follow the main story.
+            4. Set is_branch_point/is_merge_point ONLY where the supplied items
+               genuinely diverge or reconverge. Do not invent branches.
+            5. Add edges only between item_id values that appear in RAW_ITEMS.
 
-            EDGE SPECIFICATION:
-            - type: REQUIRED (prerequisite), RECOMMENDED (best flow), OPTIONAL (extra).
+            HARD RULES — violating any of these makes your response unusable:
+            - Do NOT add an item that is not in RAW_ITEMS.
+            - Do NOT omit an item that IS in RAW_ITEMS — every item_id above must
+              appear exactly once in your "nodes" array.
+            - Every "item_id" you output must be copied character-for-character
+              from RAW_ITEMS. Never paraphrase, retype, or invent one.
+            - Do NOT include title, overview, episode counts, or any TMDB/AniList
+              ID in your response — those fields already exist upstream; you were
+              not given a place to set them because you are not allowed to.
 
             FORMAT: Return ONLY valid JSON.
         """.trimIndent()
@@ -234,27 +282,16 @@ class GeminiService @Inject constructor() {
               "items": {
                 "type": "object",
                 "properties": {
-                  "node_id":         { "type": "string" },
-                  "title":           { "type": "string" },
-                  "synopsis":        { "type": "string" },
-                  "content_type":    { "type": "string", "enum": ["MOVIE", "SERIES", "EPISODE", "SHORT", "SPECIAL", "COMIC", "NOVEL", "GAME"] },
-                  "start_season":    { "type": "integer" },
-                  "start_episode":   { "type": "integer" },
-                  "end_season":      { "type": "integer" },
-                  "end_episode":     { "type": "integer" },
+                  "item_id":         { "type": "string" },
                   "chrono_order":    { "type": "number" },
                   "release_order":   { "type": "number" },
                   "phase":           { "type": "string" },
-                  "tags":            { "type": "array", "items": { "type": "string" } },
+                  "filler":          { "type": "boolean" },
                   "is_branch_point": { "type": "boolean" },
-                  "is_merge_point":  { "type": "boolean" },
-                  "tmdb_id":         { "type": "integer" },
-                  "search_query":    { "type": "string" }
+                  "is_merge_point":  { "type": "boolean" }
                 },
-                "required": ["node_id", "title", "synopsis", "content_type", 
-                             "start_season", "start_episode", "end_season", "end_episode", 
-                             "chrono_order", "release_order", "phase", "tags", 
-                             "is_branch_point", "is_merge_point", "tmdb_id", "search_query"]
+                "required": ["item_id", "chrono_order", "release_order", "phase",
+                             "filler", "is_branch_point", "is_merge_point"]
               }
             },
             "edges": {
@@ -262,12 +299,12 @@ class GeminiService @Inject constructor() {
               "items": {
                 "type": "object",
                 "properties": {
-                  "from_node_id": { "type": "string" },
-                  "to_node_id":   { "type": "string" },
+                  "from_item_id": { "type": "string" },
+                  "to_item_id":   { "type": "string" },
                   "type":         { "type": "string", "enum": ["REQUIRED", "RECOMMENDED", "OPTIONAL"] },
                   "label":        { "type": "string" }
                 },
-                "required": ["from_node_id", "to_node_id", "type", "label"]
+                "required": ["from_item_id", "to_item_id", "type", "label"]
               }
             }
           },

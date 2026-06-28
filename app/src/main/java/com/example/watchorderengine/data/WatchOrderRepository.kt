@@ -1,6 +1,9 @@
 package com.example.watchorderengine.data
 
 import com.example.watchorderengine.data.model.*
+import com.example.watchorderengine.network.gemini.GeminiEdge
+import com.example.watchorderengine.network.gemini.GeminiNode
+import com.example.watchorderengine.network.gemini.RawMediaItem
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -121,11 +124,7 @@ class WatchOrderRepository @Inject constructor(
 
 
     /**
-     * Finds every universe this piece of media appears in — not just the
-     * first match. A movie/show can legitimately be a node in more than one
-     * generated universe (e.g. a crossover movie that's both "part of MCU"
-     * and "part of its own franchise"), so Detail's "Part of X" card needs
-     * the full list, not a single Universe?.
+     * Finds every universe this piece of media appears in.
      */
     fun findUniversesForMedia(tmdbId: Int): Flow<List<Universe>> = callbackFlow {
         val listener = firestore.collection("universes")
@@ -181,13 +180,6 @@ class WatchOrderRepository @Inject constructor(
         }
 
 
-    /**
-     * Writes a resolved poster URL back onto a universe document. Used by
-     * MediaRepository's one-time backfill for legacy universes that were
-     * seeded (via the old Node.js scripts) with no poster/cover field at
-     * all — those docs render as blank rectangular tabs in the Graph list
-     * until this runs once and fills them in.
-     */
     suspend fun updateUniversePoster(universeId: String, posterUrl: String): Result<Unit> =
         runCatching {
             universeRef(universeId).set(
@@ -206,10 +198,6 @@ class WatchOrderRepository @Inject constructor(
 
     // ─── Gemini-Generated Universe Publishing ─────────────────────────────────
 
-    /**
-     * Persists a Gemini-generated watch-order DAG to Firestore as a new
-     * universe, immediately after generation succeeds.
-     */
     suspend fun publishGeneratedUniverse(
         universeId: String,
         universeName: String,
@@ -233,7 +221,6 @@ class WatchOrderRepository @Inject constructor(
             SetOptions.merge()
         )
 
-        // Default tags for filtering
         val defaultTags = listOf(
             "ALL" to mapOf("label" to "All Content", "order" to 0, "color" to "#888899"),
             "CANON" to mapOf("label" to "Canon Only", "order" to 1, "color" to "#4ADE80"),
@@ -262,5 +249,83 @@ class WatchOrderRepository @Inject constructor(
         nodeDocs.documents.forEach { batch.delete(it.reference) }
         edgeDocs.documents.forEach { batch.delete(it.reference) }
         batch.commit().await()
+    }
+
+    suspend fun publishSortedUniverse(
+        universeId: String,
+        universeName: String,
+        coverUrl: String,
+        rawItems: List<RawMediaItem>,
+        sortedNodes: List<GeminiNode>,
+        sortedEdges: List<GeminiEdge>,
+        resolveMediaId: (RawMediaItem) -> Pair<String, String>
+    ): Result<Unit> = runCatching {
+        check(sortedNodes.isNotEmpty()) { "Cannot publish an empty universe." }
+        val itemsById = rawItems.associateBy { it.itemId }
+        val resolvedIdByItemId = mutableMapOf<String, String>()
+
+        val mediaNodes = sortedNodes.mapNotNull { node ->
+            val raw = itemsById[node.itemId] ?: return@mapNotNull null
+            val (mediaId, tmdbMediaType) = resolveMediaId(raw)
+            resolvedIdByItemId[node.itemId] = mediaId
+
+            MediaNode(
+                id              = mediaId,
+                title           = raw.title,
+                content_type    = raw.contentType,
+                type            = if (tmdbMediaType == "movie") MediaCategory.MOVIE else MediaCategory.TV_SHOW,
+                tmdb_id         = raw.tmdbId,
+                tmdb_media_type = tmdbMediaType,
+                chrono_order    = node.chronoOrder,
+                release_order   = node.releaseOrder,
+                phase           = node.phase,
+                tags            = if (node.filler) listOf("FILLER") else listOf("CANON"),
+                episodeCount    = raw.episodeCount ?: 0
+            )
+        }
+
+        val mediaEdges = sortedEdges.mapNotNull { edge ->
+            val from = resolvedIdByItemId[edge.fromItemId] ?: return@mapNotNull null
+            val to   = resolvedIdByItemId[edge.toItemId]   ?: return@mapNotNull null
+            if (from == to) null else Edge(from_node_id = from, to_node_id = to, type = edge.type)
+        }
+
+        publishGeneratedUniverse(
+            universeId   = universeId,
+            universeName = universeName,
+            coverUrl     = coverUrl,
+            nodes        = mediaNodes,
+            edges        = mediaEdges
+        ).getOrThrow()
+    }
+
+    // ─── Danger Zone: Full Cloud Wipe ──────────────────────────────────────────
+
+    suspend fun deleteAllGeneratedUniverses(): Result<Unit> = runCatching {
+        val uid = requireAuth()
+        val universeDocs = firestore.collection("universes").get().await()
+
+        for (universeDoc in universeDocs.documents) {
+            val universeId = universeDoc.id
+            val nodeDocs = nodesRef(universeId).get().await()
+            val edgeDocs = edgesRef(universeId).get().await()
+            val tagDocs  = tagsRef(universeId).get().await()
+
+            (nodeDocs.documents + edgeDocs.documents + tagDocs.documents + universeDoc)
+                .chunked(450)
+                .forEach { chunk ->
+                    val batch = firestore.batch()
+                    chunk.forEach { batch.delete(it.reference) }
+                    batch.commit().await()
+                }
+        }
+
+        val progressDocs = firestore.collection("users").document(uid)
+            .collection("progress").get().await()
+        progressDocs.documents.chunked(450).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { batch.delete(it.reference) }
+            batch.commit().await()
+        }
     }
 }
