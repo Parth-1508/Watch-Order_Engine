@@ -134,14 +134,21 @@ interface EpisodeWatchedDao {
     suspend fun countWatchedForMedia(mediaId: String): Int
 
     @Query("SELECT COUNT(*) FROM episode_watched")
-    suspend fun countAllWatched(): Int
+    suspend fun countAllWatchedRaw(): Int
+
+    @Query("SELECT episodeId FROM episode_watched")
+    suspend fun getAllWatchedIds(): List<String>
 
     @Query("""
-        SELECT COALESCE(SUM(e.runtime), 0) FROM episode_watched w
-        INNER JOIN episodes e ON e.id = w.episodeId
-        WHERE e.runtime IS NOT NULL
+        SELECT COALESCE(SUM(e.runtime), 0) FROM episodes e
+        WHERE EXISTS (
+            SELECT 1 FROM episode_watched w 
+            WHERE w.episodeId = e.id 
+               OR w.episodeId = REPLACE(REPLACE(e.id, 'tmdb_m_', 'tmdb_'), 'tmdb_t_', 'tmdb_')
+               OR w.episodeId = REPLACE(REPLACE(e.id, 'tmdb_m_', ''), 'tmdb_t_', '')
+        )
     """)
-    suspend fun sumWatchedRuntimeMinutes(): Int
+    suspend fun sumWatchedRuntimeMinutesTypeSafe(): Int
 
     @Query("SELECT EXISTS(SELECT 1 FROM episode_watched WHERE episodeId = :episodeId)")
     suspend fun isWatched(episodeId: String): Boolean
@@ -154,6 +161,9 @@ interface EpisodeWatchedDao {
 
     @Query("DELETE FROM episode_watched WHERE mediaId = :mediaId AND episodeId LIKE :seasonPrefix")
     suspend fun unmarkSeasonWatched(mediaId: String, seasonPrefix: String)
+
+    @Query("DELETE FROM episode_watched WHERE mediaId = :mediaId")
+    suspend fun deleteByMediaId(mediaId: String)
 
     @Query("SELECT watchedAt FROM episode_watched ORDER BY watchedAt DESC")
     suspend fun getAllWatchedTimestamps(): List<Long>
