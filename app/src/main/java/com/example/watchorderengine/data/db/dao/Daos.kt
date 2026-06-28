@@ -12,11 +12,19 @@ interface MediaDao {
     suspend fun getById(id: String): MediaEntity?
 
     /**
-     * Type-safe lookup by raw TMDB numeric ID and category.
-     * Prevents collisions between Movies and TV shows that share the same TMDB ID.
+     * Type-safe TMDB ID lookup filtered by media category.
+     *
+     * ALWAYS pass a category list matching the ID prefix:
+     *   "tmdb_m_{id}" → listOf("MOVIE")
+     *   "tmdb_t_{id}" → listOf("TV_SHOW", "ANIME")
+     *
+     * The previous untyped query (WHERE tmdbId = X LIMIT 1) was
+     * non-deterministic when a movie AND a TV show shared the same numeric
+     * TMDB ID — SQLite LIMIT 1 with no ORDER BY is undefined, producing the
+     * "half the time opens the wrong show" symptom.
      */
-    @Query("SELECT * FROM media WHERE tmdbId = :tmdbId AND mediaCategory = :category LIMIT 1")
-    suspend fun getByTmdbIdAndCategory(tmdbId: Int, category: String): MediaEntity?
+    @Query("SELECT * FROM media WHERE tmdbId = :tmdbId AND mediaCategory IN (:categories) LIMIT 1")
+    suspend fun getByTmdbIdAndCategory(tmdbId: Int, categories: List<String>): MediaEntity?
 
     @Query("SELECT * FROM media ORDER BY lastUpdated DESC")
     suspend fun getAll(): List<MediaEntity>

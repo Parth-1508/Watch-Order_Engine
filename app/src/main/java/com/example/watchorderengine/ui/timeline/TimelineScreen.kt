@@ -44,7 +44,7 @@ fun TimelineScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is TimelineEvent.NavigateToDetail -> onNodeDetail(event.nodeId)
+                is TimelineEvent.NavigateToDetail -> onNodeDetail(event.mediaId)
                 is TimelineEvent.ShowSnackbar -> { /* Handle snackbar */ }
             }
         }
@@ -184,9 +184,9 @@ private fun TimelineContent(
         BranchingTimelineView(
             rows = state.rows,
             onNodeToggle = { node -> viewModel.toggleNodeCompletion(node.node.id, node.isCompleted) },
-            onNodeClick = { node -> viewModel.onNodeClick(node.node.id) },
+            // FIX: pass the full MediaNode so onNodeClick can resolve tmdb_id correctly.
+            onNodeClick = { node -> viewModel.onNodeClick(node.node) },
             modifier = Modifier.fillMaxSize()
         )
     }
 }
-

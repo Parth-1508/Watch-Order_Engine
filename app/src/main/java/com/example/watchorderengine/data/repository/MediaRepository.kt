@@ -131,21 +131,21 @@ class MediaRepository @Inject constructor(
 
     private suspend fun buildMediaDetail(mediaId: String): MediaDetail? {
         val tmdbId = extractTmdbId(mediaId)
-        val expectedCategory = when {
-            isMovieId(mediaId) -> "MOVIE"
-            isTvId(mediaId)    -> "TV_SHOW"
-            else -> null
-        }
 
-        // FIX: strictly type-safe lookup — NEVER use the untyped "tmdb_{id}" key directly.
-        // If the exact ID isn't in DB, fall back to lookup by numeric ID AND category.
+        // FIX: type-safe lookup — NEVER use the untyped "tmdb_{id}" key.
+        // Type-safe fallback: filter by category so movie #20 never
+        // collides with TV show #20 ("half the time" navigation bug).
+        val typedCategories = when {
+            isMovieId(mediaId) -> listOf("MOVIE")
+            isTvId(mediaId)    -> listOf("TV_SHOW", "ANIME")
+            else               -> listOf("MOVIE", "TV_SHOW", "ANIME")
+        }
         val entity = db.mediaDao().getById(mediaId)
-            ?: (if (tmdbId != null && expectedCategory != null) {
-                db.mediaDao().getByTmdbIdAndCategory(tmdbId, expectedCategory)
-            } else if (tmdbId != null) {
-                // Very old legacy IDs with no type prefix at all
+            ?: tmdbId?.let { db.mediaDao().getByTmdbIdAndCategory(it, typedCategories) }
+            ?: tmdbId?.let { 
+                // Legacy Fallback for very old IDs
                 db.mediaDao().getById("tmdb_$tmdbId") ?: db.mediaDao().getById(tmdbId.toString())
-            } else null)
+            }
 
         if (entity == null) {
             Log.d(TAG, "buildMediaDetail: no entity for $mediaId (tmdbId=$tmdbId) — will refresh")
@@ -154,23 +154,28 @@ class MediaRepository @Inject constructor(
 
         Log.d(TAG, "buildMediaDetail: found entity id=${entity.id} title=${entity.title}")
 
+        val rawId    = tmdbId?.toString() ?: mediaId.substringAfterLast("_")
         val seasons  = db.seasonDao().getSeasonsByMedia(entity.id)
         
         // Progress lookup: check current ID and legacy ID formats for history recovery
-        val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
+        val legacyPrefix = "tmdb_$rawId"
         val progress = db.userProgressDao().getProgress(entity.id)
             ?: db.userProgressDao().getProgress(mediaId)
-            ?: db.userProgressDao().getProgress("tmdb_$rawId")
+            ?: db.userProgressDao().getProgress(legacyPrefix)
             ?: db.userProgressDao().getProgress(rawId)
 
-        // Count watched episodes across all possible ID formats (Boruto fix)
+        // Count watched episodes — handle both the entity's canonical ID, navigation ID, 
+        // and legacy IDs (Boruto progress recovery fix).
         val watchedCount = db.episodeWatchedDao().countWatchedForMedia(entity.id)
             .let { count ->
                 var total = count
                 if (entity.id != mediaId) total += db.episodeWatchedDao().countWatchedForMedia(mediaId)
-                val legacyPrefix = "tmdb_$rawId"
-                if (entity.id != legacyPrefix && mediaId != legacyPrefix) total += db.episodeWatchedDao().countWatchedForMedia(legacyPrefix)
-                if (entity.id != rawId && mediaId != rawId && legacyPrefix != rawId) total += db.episodeWatchedDao().countWatchedForMedia(rawId)
+                if (entity.id != legacyPrefix && mediaId != legacyPrefix) {
+                    total += db.episodeWatchedDao().countWatchedForMedia(legacyPrefix)
+                }
+                if (entity.id != rawId && mediaId != rawId && legacyPrefix != rawId) {
+                    total += db.episodeWatchedDao().countWatchedForMedia(rawId)
+                }
                 total
             }
 
@@ -325,22 +330,6 @@ class MediaRepository @Inject constructor(
 
     // ─── Episodes ─────────────────────────────────────────────────────────────
 
-    suspend fun getEpisodesBySeason(mediaId: String, seasonNumber: Int): List<EpisodeItem> =
-        withContext(Dispatchers.IO) {
-            val seasonId   = "${mediaId}_s$seasonNumber"
-            val episodes   = db.episodeDao().getEpisodesBySeason(seasonId)
-            
-            // Recover watched status from legacy ID formats if needed
-            val tmdbId = extractTmdbId(mediaId)
-            val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
-            
-            val watchedIds = (db.episodeWatchedDao().getWatchedIds(mediaId) + 
-                             db.episodeWatchedDao().getWatchedIds("tmdb_$rawId") +
-                             db.episodeWatchedDao().getWatchedIds(rawId)).toSet()
-                             
-            episodes.map { it.toDomain(watchedIds) }
-        }
-
     fun observeEpisodesBySeason(mediaId: String, seasonNumber: Int): Flow<List<EpisodeItem>> {
         val seasonId = "${mediaId}_s$seasonNumber"
         val tmdbId = extractTmdbId(mediaId)
@@ -392,7 +381,6 @@ class MediaRepository @Inject constructor(
             is GeminiResult.Error -> result.message
             is GeminiResult.Success -> {
                 val watchOrder = result.watchOrder
-                val universeId = mediaId
                 val idMap      = java.util.concurrent.ConcurrentHashMap<String, String>()
 
                 Log.d(TAG, "GENERATION: ${watchOrder.nodes.size} nodes, ${watchOrder.edges.size} edges")
@@ -422,8 +410,6 @@ class MediaRepository @Inject constructor(
                                 val best  = searchMedia(query).find { isTitleMatch(it.title, node.title) }
                                 if (best != null) {
                                     resolvedId   = best.tmdbId
-                                    // FIX: Derive resolvedType from the search result's ID prefix.
-                                    // Using best.mediaCategory was unsafe for ANIME (which can be movie or tv).
                                     resolvedType = if (isMovieId(best.id)) "movie" else "tv"
                                     Log.d(TAG, "NODE_RESOLVE: '${node.title}' → id=$resolvedId, type=$resolvedType via search")
                                 }
@@ -477,9 +463,9 @@ class MediaRepository @Inject constructor(
                     Edge(from_node_id = from, to_node_id = to, type = edge.type)
                 }
 
-                watchOrderRepository.clearGeneratedUniverse(universeId)
+                watchOrderRepository.clearGeneratedUniverse(mediaId)
                 val publishResult = watchOrderRepository.publishGeneratedUniverse(
-                    universeId    = universeId,
+                    universeId    = mediaId,
                     universeName  = entity.title,
                     coverUrl      = entity.posterUrl ?: "",
                     nodes         = mediaNodes,
@@ -588,21 +574,16 @@ class MediaRepository @Inject constructor(
         val progressList = db.userProgressDao().getByState(trackingState.name)
         val summaries    = progressList.mapNotNull { progress ->
             val tmdbId = extractTmdbId(progress.mediaId)
-            val expectedCategory = when {
-                isMovieId(progress.mediaId) -> "MOVIE"
-                isTvId(progress.mediaId)    -> "TV_SHOW"
-                else -> null
+            // Type-safe fallback: derive category from the progress.mediaId prefix
+            // so a TV-show progress entry never resolves to a movie entity.
+            val progressCategories = when {
+                isMovieId(progress.mediaId) -> listOf("MOVIE")
+                isTvId(progress.mediaId)    -> listOf("TV_SHOW", "ANIME")
+                else                        -> listOf("MOVIE", "TV_SHOW", "ANIME")
             }
-            
-            // FIX: exact lookup first; fall back to typed numeric lookup for migration.
             val entity = db.mediaDao().getById(progress.mediaId)
-                ?: (if (tmdbId != null && expectedCategory != null) {
-                    db.mediaDao().getByTmdbIdAndCategory(tmdbId, expectedCategory)
-                } else if (tmdbId != null) {
-                    db.mediaDao().getById("tmdb_$tmdbId") ?: db.mediaDao().getById(tmdbId.toString())
-                } else null)
+                ?: tmdbId?.let { db.mediaDao().getByTmdbIdAndCategory(it, progressCategories) }
                 ?: return@mapNotNull null
-            
             entity.toSummary(trackingState, PriorityTag.valueOf(progress.priorityTag))
         }
         sortSummaries(summaries, sortType)
@@ -634,28 +615,10 @@ class MediaRepository @Inject constructor(
 
     suspend fun toggleEpisodeWatched(episodeId: String, mediaId: String): Boolean =
         withContext(Dispatchers.IO) {
-            val tmdbId = extractTmdbId(mediaId)
-            val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
-            
-            // Check all possible ID formats for this episode (current and legacy)
-            val rawEpisodeId = episodeId.removePrefix("tmdb_m_").removePrefix("tmdb_t_").removePrefix("tmdb_").removePrefix("anilist_")
-            val possibleEpisodeIds = setOf(episodeId, "tmdb_$rawEpisodeId", rawEpisodeId)
-            
-            val isWatched = possibleEpisodeIds.any { db.episodeWatchedDao().isWatched(it) }
-            
-            if (isWatched) {
-                possibleEpisodeIds.forEach { db.episodeWatchedDao().unmarkWatched(it) }
-            } else {
-                db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(episodeId, mediaId))
-            }
+            val isWatched = db.episodeWatchedDao().isWatched(episodeId)
+            if (isWatched) db.episodeWatchedDao().unmarkWatched(episodeId)
+            else db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(episodeId, mediaId))
             !isWatched
-        }
-
-    suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int) =
-        withContext(Dispatchers.IO) {
-            db.episodeDao().getAllEpisodesByMedia(mediaId)
-                .filter { it.absoluteEpisodeNumber < upToAbsoluteNumber }
-                .forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
         }
 
     suspend fun markPreviousEpisodesAsWatchedSequentially(
@@ -679,14 +642,7 @@ class MediaRepository @Inject constructor(
     }
 
     suspend fun unmarkSeasonAsWatched(mediaId: String, seasonNumber: Int) = withContext(Dispatchers.IO) {
-        val tmdbId = extractTmdbId(mediaId)
-        val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
-        
-        // Clean up current and legacy formats
-        val prefixes = setOf(mediaId, "tmdb_$rawId", rawId)
-        prefixes.forEach { prefix ->
-            db.episodeWatchedDao().unmarkSeasonWatched(prefix, "${prefix}_s${seasonNumber}e%")
-        }
+        db.episodeWatchedDao().unmarkSeasonWatched(mediaId, "${mediaId}_s${seasonNumber}e%")
     }
 
     suspend fun hasUnwatchedEpisodesBefore(
@@ -848,17 +804,17 @@ class MediaRepository @Inject constructor(
         priorityTag = priority, releaseDate = releaseDate,
         genres = genres
     )
-    
+
     private fun com.example.watchorderengine.network.model.TmdbDetailResponse.toMediaEntity(
         mediaId: String
     ): MediaEntity {
         val genresList = genres?.map { it.name } ?: emptyList()
         val isMovie    = if (isMovieId(mediaId)) true else if (isTvId(mediaId)) false else title != null
-        
-        // FIX: Store the true type (MOVIE or TV_SHOW) to align with TMDB ID spaces.
-        // The "Anime" classification is moved to the mapper/UI layer via genres.
-        val category = if (isMovie) "MOVIE" else "TV_SHOW"
-        
+        val category   = if (isMovie) "MOVIE" else "TV_SHOW"
+
+        // Always honour the typed prefix passed in — never compute a new ID here.
+        // The original sanitizedMediaId calculation that stripped _m_/_t_ to "tmdb_{id}"
+        // was removed as part of the collision fix.
         val trailerKey = videos?.results
             ?.filter { it.site == "YouTube" && it.type == "Trailer" && it.official }
             ?.maxByOrNull { it.publishedAt ?: "" }?.key

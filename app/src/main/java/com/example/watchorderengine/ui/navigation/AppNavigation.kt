@@ -91,8 +91,8 @@ fun AppNavigation() {
         NavHost(
             navController = navController,
             startDestination = Screen.Opening.route,
-            enterTransition = { fadeIn(tween(300)) },
-            exitTransition = { fadeOut(tween(300)) },
+            enterTransition = { fadeIn(tween(200)) },
+            exitTransition = { fadeOut(tween(200)) },
             modifier = Modifier.padding(padding)
         ) {
             composable(Screen.Opening.route) {
