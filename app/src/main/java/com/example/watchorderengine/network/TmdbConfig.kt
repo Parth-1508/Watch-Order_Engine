@@ -59,6 +59,26 @@ object TmdbConfig {
     }
 
     /**
+     * Checks if an image URL is a known blank placeholder or invalid.
+     */
+    fun isValidImageUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val lower = url.lowercase()
+        val placeholders = listOf(
+            "no_image", "placeholder", "missing", "default_profile", "avatar_default", 
+            "silhouette", "no-photo", "null", "empty", "image_not_found", "no-image",
+            "default.jpg", "generic", "uncredited", "black-profile", "empty_profile",
+            "no_photo", "blank", "none", "not-found", "portrait_placeholder",
+            "no_headshot", "silhouette_inline"
+        )
+        // SVGs are almost exclusively Wikipedia "No Image" placeholders.
+        return placeholders.none { lower.contains(it) } && 
+               !lower.endsWith(".svg") &&
+               !lower.contains("wiki-no-image") &&
+               !lower.contains("wikimedia.org/static/images/icons/")
+    }
+
+    /**
      * The TMDB media type string used to select the correct API endpoint.
      * These are constants so we don't scatter magic strings across the codebase.
      */

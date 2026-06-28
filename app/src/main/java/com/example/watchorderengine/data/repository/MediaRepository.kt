@@ -323,11 +323,15 @@ class MediaRepository @Inject constructor(
     ): String {
         val cast = if (isMovie) {
             body.credits?.cast?.take(15)?.map { c ->
-                CastMember(c.id, c.name, c.character ?: "", TmdbConfig.buildProfileUrl(c.profilePath), c.order ?: 99)
+                val profileUrl = TmdbConfig.buildProfileUrl(c.profilePath)
+                    ?.takeIf { TmdbConfig.isValidImageUrl(it) }
+                CastMember(c.id, c.name, c.character ?: "", profileUrl, c.order ?: 99)
             } ?: emptyList()
         } else {
             body.aggregateCredits?.cast?.take(15)?.map { c ->
-                CastMember(c.id, c.name, c.roles?.firstOrNull()?.character ?: "", TmdbConfig.buildProfileUrl(c.profilePath), c.order ?: 99)
+                val profileUrl = TmdbConfig.buildProfileUrl(c.profilePath)
+                    ?.takeIf { TmdbConfig.isValidImageUrl(it) }
+                CastMember(c.id, c.name, c.roles?.firstOrNull()?.character ?: "", profileUrl, c.order ?: 99)
             } ?: emptyList()
         }
         return castAdapter.toJson(cast) ?: "[]"
@@ -804,7 +808,8 @@ class MediaRepository @Inject constructor(
         priority: PriorityTag = PriorityTag.NONE
     ) = MediaSummary(
         id = id, tmdbId = tmdbId, title = title,
-        posterUrl = posterUrl, backdropUrl = backdropUrl,
+        posterUrl = posterUrl?.takeIf { TmdbConfig.isValidImageUrl(it) }, 
+        backdropUrl = backdropUrl?.takeIf { TmdbConfig.isValidImageUrl(it) },
         mediaCategory = when {
             genres.contains("Animation") -> MediaCategory.ANIME
             mediaCategory == "MOVIE"     -> MediaCategory.MOVIE

@@ -161,23 +161,22 @@ private fun CharacterDetailBody(
 
     val heroImages = remember(detail) {
         buildList {
-            addAll(detail.characterPhotos.filter { it.isNotBlank() })
-            detail.actorProfileUrl?.takeIf { it.isNotBlank() }?.let { if (!contains(it)) add(it) }
-            detail.actorPhotos.filter { it.isNotBlank() }.forEach { if (!contains(it)) add(it) }
-            if (isEmpty() && !detail.characterImageUrl.isNullOrBlank()) add(detail.characterImageUrl)
+            addAll(detail.characterPhotos)
+            detail.actorProfileUrl?.let { add(it) }
+            addAll(detail.actorPhotos)
+            detail.characterImageUrl?.let { add(it) }
         }.distinct().filter { url ->
-            // Extra safety: ensure we don't show known placeholder URLs in the hero strip
             val lower = url.lowercase()
-            !lower.contains("placeholder") && !lower.contains("no_image") && !lower.contains("silhouette")
+            val placeholders = listOf(
+                "placeholder", "no_image", "silhouette", "default", "missing", 
+                "none", "empty", "blank", "not-found", "null", "no-photo", 
+                "generic", "uncredited", "no_headshot"
+            )
+            placeholders.none { lower.contains(it) } && !lower.endsWith(".svg")
         }
     }
     
-    val safeHeroImages = heroImages.filter { url ->
-        val lower = url.lowercase()
-        !lower.contains("placeholder") && !lower.contains("no_image") && 
-        !lower.contains("silhouette") && !lower.contains("default") && !lower.contains("missing")
-    }
-    
+    val safeHeroImages = heroImages
     val heroUrl = safeHeroImages.getOrNull(photoIndex) ?: safeHeroImages.firstOrNull()
 
     val hasHeroImage = !heroUrl.isNullOrBlank()
