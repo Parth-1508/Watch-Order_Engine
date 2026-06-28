@@ -84,8 +84,11 @@ class CharacterRepository @Inject constructor(
             val voiceActor = aniEdge?.voiceActors?.firstOrNull()
 
             val fictionalArt = mutableListOf<String>()
-            aniChar?.image?.large?.takeIf { isValidImageUrl(it) }?.let { fictionalArt.add(it) }
-            wikiImageUrl?.takeIf { isValidImageUrl(it) }?.let { if (!fictionalArt.contains(it)) fictionalArt.add(it) }
+            val aniImg = aniChar?.image?.large?.takeIf { isValidImageUrl(it) }
+            aniImg?.let { fictionalArt.add(it) }
+            
+            val validWikiImg = wikiImageUrl?.takeIf { isValidImageUrl(it) }
+            validWikiImg?.let { if (!fictionalArt.contains(it)) fictionalArt.add(it) }
 
             // TMDB "tagged images" tied to THIS specific production — stills
             // of the actor in costume/in-character for this show, which is
@@ -164,14 +167,11 @@ class CharacterRepository @Inject constructor(
             // 1. AniList image (anime — purpose-drawn for this exact character)
             // 2. Wikipedia infobox image (usually a real photo/render tied
             //    specifically to this character's page, when one exists)
-            // 3. A TMDB still tagged to THIS production (in-costume, in-context —
-            //    added because for most non-anime characters, neither of the
-            //    above exists at all, leaving only the generic headshot below)
-            // 4. Fallback to the TMDB actor headshot (always available if the
-            //    person has any profile photo on file)
-            val primaryCharImg = aniChar?.image?.large
-                ?: wikiImageUrl
-                ?: fictionalArt.firstOrNull { it != aniChar?.image?.large && it != wikiImageUrl }
+            // 3. A TMDB still tagged to THIS production (in-costume, in-context)
+            // 4. Fallback to the TMDB actor headshot
+            val primaryCharImg = aniImg
+                ?: validWikiImg
+                ?: fictionalArt.firstOrNull { it != aniImg && it != validWikiImg }
                 ?: mainProfile
 
             CharacterDetail(
@@ -285,10 +285,16 @@ class CharacterRepository @Inject constructor(
             "no-photo",
             "null",
             "empty",
-            "image_not_found"
+            "image_not_found",
+            "no-image",
+            "default.jpg", // AniList default
+            "generic",
+            "uncredited",
+            "black-profile",
+            "empty_profile",
+            "no_photo"
         )
         // SVGs are often Wikipedia placeholders.
-        // Also filter out very small thumbnails if we have better options.
         return placeholders.none { lower.contains(it) } && !lower.endsWith(".svg")
     }
 

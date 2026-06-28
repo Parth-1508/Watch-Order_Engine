@@ -172,8 +172,13 @@ private fun CharacterDetailBody(
         }
     }
     
-    val safeHeroImages = heroImages.ifEmpty { listOfNotNull(detail.actorProfileUrl).filter { it.isNotBlank() } }
-    val heroUrl = safeHeroImages.getOrNull(photoIndex) ?: safeHeroImages.firstOrNull() ?: detail.characterImageUrl ?: detail.actorProfileUrl
+    val safeHeroImages = heroImages.filter { url ->
+        val lower = url.lowercase()
+        !lower.contains("placeholder") && !lower.contains("no_image") && 
+        !lower.contains("silhouette") && !lower.contains("default") && !lower.contains("missing")
+    }
+    
+    val heroUrl = safeHeroImages.getOrNull(photoIndex) ?: safeHeroImages.firstOrNull()
 
     val hasHeroImage = !heroUrl.isNullOrBlank()
 
