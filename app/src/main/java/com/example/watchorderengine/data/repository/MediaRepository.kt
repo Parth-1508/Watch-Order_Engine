@@ -208,9 +208,39 @@ class MediaRepository @Inject constructor(
         val totalEps = entity.numberOfEpisodes ?: 0
         val finalWatchedCount = if (totalEps > 0) watchedCount.coerceAtMost(totalEps) else watchedCount
 
-        val cast = runCatching { castAdapter.fromJson(entity.castJson) }.getOrDefault(emptyList<CastMember>())
-        val arcs = runCatching { arcsAdapter.fromJson(entity.arcsJson) }.getOrDefault(emptyList<StoryArc>())
-        val providers = runCatching { wpAdapter.fromJson(entity.watchProvidersJson) }.getOrDefault(emptyList<WatchProviderItem>())
+        val cast = runCatching { castAdapter.fromJson(entity.castJson) }.getOrNull() ?: emptyList<CastMember>()
+        var arcs = runCatching { arcsAdapter.fromJson(entity.arcsJson) }.getOrNull() ?: emptyList<StoryArc>()
+        val providers = runCatching { wpAdapter.fromJson(entity.watchProvidersJson) }.getOrNull() ?: emptyList<WatchProviderItem>()
+
+        // If no curated arcs, try to derive them from Gemini-tagged episodes
+        if (arcs.isEmpty()) {
+            val episodesList = db.episodeDao().getAllEpisodesByMedia(entity.id)
+            arcs = episodesList.filter { it.arcName != null }
+                .groupBy { it.arcName }
+                .map { (name, eps) ->
+                    val first = eps.minBy { it.absoluteEpisodeNumber }
+                    val last = eps.maxBy { it.absoluteEpisodeNumber }
+                    StoryArc(
+                        name = name!!,
+                        startAbsoluteEpisode = first.absoluteEpisodeNumber,
+                        endAbsoluteEpisode = last.absoluteEpisodeNumber,
+                        startSeason = first.seasonNumber,
+                        startEpisode = first.episodeNumber,
+                        endSeason = last.seasonNumber,
+                        endEpisode = last.episodeNumber,
+                        synopsis = "Generated via Watch Order Engine."
+                    )
+                }
+                .sortedBy { it.startAbsoluteEpisode }
+        }
+
+        // Content-based recommendations from local cache
+        val allMedia = db.mediaDao().getAll()
+        val recs = com.example.watchorderengine.data.recommendation.RecommendationEngine.generateRecommendations(
+            completedMedia = listOf(entity to (progress ?: UserProgressEntity(entity.id, TrackingState.WATCHING.name))),
+            candidates = allMedia.filter { it.id != entity.id },
+            topK = 6
+        ).map { rec -> rec.media.toSummary() }
 
         return MediaDetail(
             id               = entity.id,
@@ -240,9 +270,9 @@ class MediaRepository @Inject constructor(
             trailerKey       = entity.trailerKey,
             watchProviders   = providers ?: emptyList(),
             cast             = cast ?: emptyList(),
-            recommendations  = emptyList(),
+            recommendations  = recs,
             seasons          = seasons.map { it.toDomain() },
-            arcs             = arcs ?: emptyList(),
+            arcs             = arcs,
             userProgress     = progress?.toDomain(finalWatchedCount) ?: if (finalWatchedCount > 0) {
                 UserProgress(mediaId = entity.id, trackingState = TrackingState.WATCHING,
                     totalEpisodesWatched = finalWatchedCount)
@@ -755,25 +785,36 @@ class MediaRepository @Inject constructor(
         } catch (e: Exception) { emptyList() }
     }
 
-    suspend fun discoverByGenre(category: TmdbConfig.DiscoveryCategory): List<MediaSummary> =
+    suspend fun discoverByGenre(
+        category: TmdbConfig.DiscoveryCategory,
+        providerIds: Set<Int> = emptySet()
+    ): List<MediaSummary> =
         withContext(Dispatchers.IO) {
             try {
-                val movieResponse = apiService.discoverMovies(genreId = category.movieGenreId)
-                val tvResponse    = apiService.discoverTvShows(genreId = category.tvGenreId)
+                val providersStr = providerIds.joinToString("|").takeIf { it.isNotBlank() }
+                
+                val movieResponse = apiService.discoverMovies(
+                    genreId = category.movieGenreId,
+                    providerIds = providersStr
+                )
+                val tvResponse = apiService.discoverTvShows(
+                    genreId = category.tvGenreId,
+                    providerIds = providersStr
+                )
                 val movies = if (movieResponse.isSuccessful) movieResponse.body()?.results ?: emptyList() else emptyList()
                 val shows  = if (tvResponse.isSuccessful)    tvResponse.body()?.results    ?: emptyList() else emptyList()
 
                 movies.forEach { result ->
                     val id = buildMediaId(result.id, "movie")
-                    if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, isMovie = true))
+                    if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = true))
                 }
                 shows.forEach { result ->
                     val id = buildMediaId(result.id, "tv")
-                    if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, isMovie = false))
+                    if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = false))
                 }
 
-                val movieSummaries = movies.mapNotNull { it.toSummary(isMovie = true) }
-                val tvSummaries    = shows.mapNotNull  { it.toSummary(isMovie = false) }
+                val movieSummaries = movies.mapNotNull { it.toSummary(explicitIsMovie = true) }
+                val tvSummaries    = shows.mapNotNull  { it.toSummary(explicitIsMovie = false) }
                 movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
                     movieSummaries.drop(tvSummaries.size) + tvSummaries.drop(movieSummaries.size)
             } catch (e: Exception) {
@@ -953,9 +994,10 @@ class MediaRepository @Inject constructor(
     }
 
     private fun com.example.watchorderengine.network.model.TmdbMediaResult.toMinimalEntity(
-        mediaId: String
+        mediaId: String,
+        explicitIsMovie: Boolean? = null
     ): MediaEntity {
-        val isMovie    = mediaType == "movie"
+        val isMovie = explicitIsMovie ?: (mediaType == "movie")
         val genresList = TmdbConfig.genreNamesFor(genreIds, isMovie)
         return MediaEntity(
             id = mediaId, tmdbId = extractTmdbId(mediaId) ?: id,
@@ -970,56 +1012,19 @@ class MediaRepository @Inject constructor(
             releaseDate = releaseDate ?: firstAirDate,
             releaseYear = (releaseDate ?: firstAirDate)?.take(4) ?: "",
             trailerKey = null, castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
-        )
-    }
-
-    private fun com.example.watchorderengine.network.model.TmdbMediaResult.toMinimalEntity(
-        mediaId: String, isMovie: Boolean
-    ): MediaEntity {
-        val genresList = TmdbConfig.genreNamesFor(genreIds, isMovie)
-        return MediaEntity(
-            id = mediaId, tmdbId = extractTmdbId(mediaId) ?: id,
-            anilistId = null, title = title ?: name ?: "", originalTitle = title ?: name ?: "",
-            overview = "", tagline = "", status = "",
-            posterUrl   = TmdbConfig.buildImageUrl(posterPath),
-            backdropUrl = TmdbConfig.buildImageUrl(backdropPath, TmdbConfig.PosterSize.HD),
-            mediaCategory = if (isMovie) "MOVIE" else "TV_SHOW",
-            genres = genresList, ageRating = "NR",
-            voteAverage = voteAverage?.toFloat() ?: 0f, voteCount = 0,
-            runtime = null, numberOfSeasons = null, numberOfEpisodes = null,
-            releaseDate = releaseDate ?: firstAirDate,
-            releaseYear = (releaseDate ?: firstAirDate)?.take(4) ?: "",
-            trailerKey = null, castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
-        )
-    }
-
-    private fun com.example.watchorderengine.network.model.TmdbMediaResult.toSummary(): MediaSummary? {
-        if (mediaType == null || (mediaType != "movie" && mediaType != "tv")) return null
-        val mediaId    = buildMediaId(id, mediaType)
-        val isMovie    = mediaType == "movie"
-        val genresList = TmdbConfig.genreNamesFor(genreIds, isMovie)
-        return MediaSummary(
-            id = mediaId, tmdbId = id,
-            title = title ?: name ?: return null,
-            posterUrl   = TmdbConfig.buildImageUrl(posterPath),
-            backdropUrl = TmdbConfig.buildImageUrl(backdropPath, TmdbConfig.PosterSize.HD),
-            mediaCategory = when {
-                genresList.contains("Animation") -> MediaCategory.ANIME
-                isMovie                          -> MediaCategory.MOVIE
-                else                             -> MediaCategory.TV_SHOW
-            },
-            voteAverage = voteAverage?.toFloat() ?: 0f,
-            releaseYear = (releaseDate ?: firstAirDate)?.take(4) ?: "",
-            trackingState = null, ageRating = "NR",
-            genres = genresList, releaseDate = releaseDate ?: firstAirDate
         )
     }
 
     private fun com.example.watchorderengine.network.model.TmdbMediaResult.toSummary(
-        isMovie: Boolean
+        explicitIsMovie: Boolean? = null
     ): MediaSummary? {
-        val mediaId    = buildMediaId(id, if (isMovie) "movie" else "tv")
+        val effectiveType = mediaType ?: if (explicitIsMovie == true) "movie" else if (explicitIsMovie == false) "tv" else null
+        if (effectiveType == null || (effectiveType != "movie" && effectiveType != "tv")) return null
+        
+        val mediaId    = buildMediaId(id, effectiveType)
+        val isMovie    = effectiveType == "movie"
         val genresList = TmdbConfig.genreNamesFor(genreIds, isMovie)
+
         return MediaSummary(
             id = mediaId, tmdbId = id,
             title = title ?: name ?: return null,

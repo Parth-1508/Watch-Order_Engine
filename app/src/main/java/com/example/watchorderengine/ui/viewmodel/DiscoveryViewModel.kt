@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.TrackingState
-import com.example.watchorderengine.data.model.WatchProviderItem
 import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.network.TmdbConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,8 +34,6 @@ object StreamingPlatforms {
         StreamingPlatform(232,  "Zee5",         logo("/kgd9I4vq3v3pKkMX3s0KQdnZDgw.jpg")),
         StreamingPlatform(307,  "SonyLiv",      logo("/DOBsJLpNq59GNv5GrBUeVFgOSY.jpg")),
     )
-
-    val BY_ID: Map<Int, StreamingPlatform> = ALL.associateBy { it.providerId }
 }
 
 // ─── UI Filter State ──────────────────────────────────────────────────────────
@@ -46,12 +43,6 @@ data class PlatformFilterState(
     val selectedProviderIds: Set<Int> = emptySet(),
 ) {
     val isFilterActive: Boolean get() = selectedProviderIds.isNotEmpty()
-
-    val filterSummary: String
-        get() = if (!isFilterActive) "All Platforms"
-        else selectedProviderIds
-            .mapNotNull { StreamingPlatforms.BY_ID[it]?.displayName }
-            .joinToString(", ")
 }
 
 /** What the user did to a card — distinct from the swipe gesture itself, see [SwipeAction]. */
@@ -102,10 +93,6 @@ class DiscoveryViewModel @Inject constructor(
         _platformFilter.value = _platformFilter.value.copy(selectedProviderIds = updated)
     }
 
-    fun clearPlatformFilters() {
-        _platformFilter.value = _platformFilter.value.copy(selectedProviderIds = emptySet())
-    }
-
     fun selectCategory(category: TmdbConfig.DiscoveryCategory?) {
         if (_activeCategory.value == category) return
         _activeCategory.value = category
@@ -116,13 +103,27 @@ class DiscoveryViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
 
-            val raw = _activeCategory.value?.let { repository.discoverByGenre(it) }
-                ?: repository.getTrending()
+            val selectedProviders = _platformFilter.value.selectedProviderIds
+            val raw = _activeCategory.value?.let { repository.discoverByGenre(it, selectedProviders) }
+                ?: repository.getTrending() // Trending doesn't support provider filter in API yet
 
             val trackedIds = repository.getAllTrackedMediaIds()
             val skippedIds = repository.getSkippedMediaIds()
 
-            _rawDeck.value = raw.filter { it.id !in trackedIds && it.id !in skippedIds }
+            var filtered = raw.filter { it.id !in trackedIds && it.id !in skippedIds }
+
+            // Fallback local filter for Trending or if API results didn't cache providers
+            if (selectedProviders.isNotEmpty()) {
+                filtered = filtered.filter { media ->
+                    val providers = repository.getCachedWatchProviders(media.id)
+                    // If we have providers cached, check them. 
+                    // If not, we might be hiding valid results, but it's the safest way 
+                    // until we have a better bulk provider API.
+                    providers.any { it.providerId in selectedProviders }
+                }
+            }
+
+            _rawDeck.value = filtered
             _isLoading.value = false
         }
     }

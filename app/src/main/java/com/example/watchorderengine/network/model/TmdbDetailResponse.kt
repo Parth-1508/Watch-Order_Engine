@@ -277,16 +277,6 @@ data class TmdbWatchProvider(
     @Json(name = "provider_name")    val providerName: String,
 )
 
-@JsonClass(generateAdapter = true)
-data class TmdbPersonResponse(
-    @Json(name = "id")           val id: Int,
-    @Json(name = "name")         val name: String,
-    @Json(name = "biography")    val biography: String?,
-    @Json(name = "birthday")     val birthday: String?,
-    @Json(name = "place_of_birth") val placeOfBirth: String?,
-    @Json(name = "profile_path") val profilePath: String?
-)
-
 data class TmdbMediaDetail(
     val tmdbId: Int,
     val title: String,

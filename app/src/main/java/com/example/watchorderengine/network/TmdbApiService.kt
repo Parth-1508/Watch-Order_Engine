@@ -109,7 +109,7 @@ interface TmdbApiService {
     suspend fun getPerson(
         @Path("personId") personId: Int,
         @Query("language") language: String = "en-US"
-    ): Response<com.example.watchorderengine.network.model.TmdbPersonResponse>
+    ): Response<com.example.watchorderengine.network.model.TmdbPersonDetail>
 
     /**
      * Discovers movies matching a genre, sorted by popularity. Used by the
@@ -123,6 +123,8 @@ interface TmdbApiService {
     @GET("discover/movie")
     suspend fun discoverMovies(
         @Query("with_genres") genreId: Int,
+        @Query("with_watch_providers") providerIds: String? = null,
+        @Query("watch_region") watchRegion: String? = "IN",
         @Query("language") language: String = "en-US",
         @Query("sort_by") sortBy: String = "popularity.desc",
         @Query("page") page: Int = 1,
@@ -138,6 +140,8 @@ interface TmdbApiService {
     @GET("discover/tv")
     suspend fun discoverTvShows(
         @Query("with_genres") genreId: Int,
+        @Query("with_watch_providers") providerIds: String? = null,
+        @Query("watch_region") watchRegion: String? = "IN",
         @Query("language") language: String = "en-US",
         @Query("sort_by") sortBy: String = "popularity.desc",
         @Query("page") page: Int = 1
