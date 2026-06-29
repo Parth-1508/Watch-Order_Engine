@@ -3,6 +3,8 @@
 /local.properties
 /google-services.json
 app/google-services.json
+serviceAccountKey.json
+Summer Project/
 /.idea
 .DS_Store
 /build
