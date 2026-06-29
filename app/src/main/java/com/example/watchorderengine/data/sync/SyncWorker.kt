@@ -22,6 +22,7 @@ class SyncWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val db: WatchOrderDatabase,
     private val watchOrderRepository: WatchOrderRepository,
+    private val reviewRepository: com.example.watchorderengine.data.repository.ReviewRepository,
     private val userPrefs: UserPreferencesRepository,
 ) : CoroutineWorker(context, params) {
 
@@ -73,6 +74,18 @@ class SyncWorker @AssistedInject constructor(
                         ).getOrThrow()
                         db.pendingSyncTaskDao().deleteById(task.id)
                         Log.d(SYNC_TAG, "Flushed EPISODE_WATCHED $episodeId ✓")
+                    }
+
+                    TaskType.REVIEW_SUBMISSION -> {
+                        val reviewId = task.reviewId
+                        if (reviewId == null) {
+                            Log.e(SYNC_TAG, "REVIEW_SUBMISSION task ${task.id} missing reviewId — deleting.")
+                            db.pendingSyncTaskDao().deleteById(task.id)
+                            continue@taskLoop
+                        }
+                        reviewRepository.syncReviewDirect(reviewId).getOrThrow()
+                        db.pendingSyncTaskDao().deleteById(task.id)
+                        Log.d(SYNC_TAG, "Flushed REVIEW_SUBMISSION $reviewId ✓")
                     }
 
                     else -> {

@@ -31,6 +31,7 @@ class UserPreferencesRepository(private val context: Context) {
         val USERNAME = stringPreferencesKey("username")
         val AVATAR_URL = stringPreferencesKey("avatar_url")
         val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
+        val SELECTED_GENRES = stringSetPreferencesKey("selected_genres")
     }
 
     val username: StateFlow<String> = context.dataStore.data.map { preferences ->
@@ -58,6 +59,10 @@ class UserPreferencesRepository(private val context: Context) {
         preferences[PreferencesKeys.CLOUD_SYNC_ENABLED] ?: true
     }
 
+    val selectedGenres: Flow<Set<String>> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.SELECTED_GENRES] ?: emptySet()
+    }
+
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { it[PreferencesKeys.THEME_MODE] = mode.name }
     }
@@ -72,6 +77,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setCloudSyncEnabled(enabled: Boolean) {
         context.dataStore.edit { it[PreferencesKeys.CLOUD_SYNC_ENABLED] = enabled }
+    }
+
+    suspend fun setSelectedGenres(genres: Set<String>) {
+        context.dataStore.edit { it[PreferencesKeys.SELECTED_GENRES] = genres }
     }
 
     suspend fun updateUsername(name: String) {

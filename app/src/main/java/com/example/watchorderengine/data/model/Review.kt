@@ -18,6 +18,14 @@ data class ReviewDocument(
     @set:PropertyName("media_id")
     var mediaId: String = "",
 
+    @get:PropertyName("media_title")
+    @set:PropertyName("media_title")
+    var mediaTitle: String = "",
+
+    @get:PropertyName("media_poster_url")
+    @set:PropertyName("media_poster_url")
+    var mediaPosterUrl: String? = null,
+
     @get:PropertyName("user_id")
     @set:PropertyName("user_id")
     var userId: String = "",
@@ -62,6 +70,8 @@ fun ReviewEntity.toFirestoreDocument(authorName: String, authorAvatarUrl: String
     return ReviewDocument(
         id             = id,
         mediaId        = mediaId,
+        mediaTitle     = mediaTitle,
+        mediaPosterUrl = mediaPosterUrl,
         userId         = userId,
         rating         = rating.toDouble(),
         reviewText     = reviewText,
@@ -77,6 +87,8 @@ fun ReviewDocument.toRoomEntity(): ReviewEntity {
     return ReviewEntity(
         id          = id,
         mediaId     = mediaId,
+        mediaTitle  = mediaTitle.ifBlank { mediaId },
+        mediaPosterUrl = mediaPosterUrl,
         userId      = userId,
         rating      = rating.toFloat(),
         reviewText  = reviewText,

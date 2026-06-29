@@ -40,4 +40,12 @@ object AppModule {
     @Singleton
     fun provideUserPreferencesRepository(@ApplicationContext context: Context): UserPreferencesRepository =
         UserPreferencesRepository(context)
+
+    @Provides
+    fun provideReviewDao(db: WatchOrderDatabase): com.example.watchorderengine.data.db.dao.ReviewDao =
+        db.reviewDao()
+
+    @Provides
+    fun provideMediaDao(db: WatchOrderDatabase): com.example.watchorderengine.data.db.dao.MediaDao =
+        db.mediaDao()
 }

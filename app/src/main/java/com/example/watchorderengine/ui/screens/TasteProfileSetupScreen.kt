@@ -57,7 +57,7 @@ private const val MIN_SELECTIONS = 3
  */
 @Composable
 fun TasteProfileSetupScreen(
-    onComplete: () -> Unit,
+    onComplete: (Set<String>) -> Unit,
     onSkip: () -> Unit
 ) {
     val theme = LocalAppTheme.current
@@ -180,7 +180,7 @@ fun TasteProfileSetupScreen(
 
             // ── CTA ─────────────────────────────────────────────────────────
             Button(
-                onClick  = { if (canContinue) onComplete() },
+                onClick  = { if (canContinue) onComplete(selectedGenres.toSet()) },
                 enabled  = canContinue,
                 modifier = Modifier
                     .fillMaxWidth()

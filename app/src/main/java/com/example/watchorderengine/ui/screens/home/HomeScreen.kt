@@ -152,11 +152,18 @@ fun HomeScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Box(modifier = Modifier.size(80.dp).background(Color.White.copy(alpha = 0.05f), CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Tv, null, tint = Color.Gray, modifier = Modifier.size(40.dp))
+                            Icon(
+                                imageVector = if (state.activeCategory == "Recommended") Icons.Default.AutoAwesome else Icons.Default.Tv, 
+                                contentDescription = null, 
+                                tint = Color.Gray, 
+                                modifier = Modifier.size(40.dp)
+                            )
                         }
                         Text("NO SHOWS HERE YET", color = Color.Gray, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 16.dp))
                         Text(
-                            text = "Open a show and set it to ${state.activeCategory}",
+                            text = if (state.activeCategory == "Recommended") 
+                                "Rate more shows to build your taste profile!" 
+                                else "Open a show and set it to ${state.activeCategory}",
                             color = Color.Gray,
                             fontSize = 12.sp,
                             modifier = Modifier.padding(top = 8.dp)

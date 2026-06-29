@@ -45,6 +45,7 @@ fun DiscoveryScreen(
     val deck by viewModel.discoveryDeck.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val activeCategory by viewModel.activeCategory.collectAsState()
+    val platformFilter by viewModel.platformFilter.collectAsState()
 
     Box(
         modifier = Modifier
@@ -61,14 +62,11 @@ fun DiscoveryScreen(
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // Category chips now drive a REAL TMDB /discover query per genre
-            // (with_genres), not a client-side filter of an already-loaded
-            // trending list — that's what made Horror/Comedy/etc. always
-            // look empty before, regardless of what was actually on TMDB.
+            // Category chips
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp, bottom = 8.dp),
+                    .padding(top = 16.dp, bottom = 4.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -84,6 +82,34 @@ fun DiscoveryScreen(
                         label = category.label,
                         isSelected = activeCategory == category,
                         onClick = { viewModel.selectCategory(category) }
+                    )
+                }
+            }
+
+            // Platform filters
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                item {
+                    Text(
+                        "PLATFORMS:",
+                        color = Color.Gray,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+                }
+                items(platformFilter.availablePlatforms) { platform ->
+                    val isSelected = platform.providerId in platformFilter.selectedProviderIds
+                    PlatformChip(
+                        platform = platform,
+                        isSelected = isSelected,
+                        onClick = { viewModel.togglePlatform(platform.providerId) }
                     )
                 }
             }
@@ -129,6 +155,44 @@ private fun CategoryChip(label: String, isSelected: Boolean, onClick: () -> Unit
             fontSize = 10.sp,
             fontWeight = FontWeight.Black
         )
+    }
+}
+
+@Composable
+private fun PlatformChip(
+    platform: com.example.watchorderengine.ui.viewmodel.StreamingPlatform,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected) Color.White.copy(alpha = 0.2f) else Color.Transparent,
+        border = BorderStroke(
+            width = if (isSelected) 1.5.dp else 1.dp,
+            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.2f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            AsyncImage(
+                model = platform.logoUrl,
+                contentDescription = platform.displayName,
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Text(
+                text = platform.displayName.uppercase(),
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold
+            )
+        }
     }
 }
 

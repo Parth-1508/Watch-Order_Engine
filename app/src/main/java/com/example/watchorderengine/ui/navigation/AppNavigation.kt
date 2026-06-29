@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.*
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
@@ -196,8 +197,10 @@ fun AppNavigation() {
             // After completing (or skipping within) the setup, the user lands
             // on Home and the entire onboarding backstack is cleared.
             composable(Screen.TasteProfileSetup.route) {
+                val onboardingViewModel: com.example.watchorderengine.ui.viewmodel.TasteProfileViewModel = hiltViewModel()
                 TasteProfileSetupScreen(
-                    onComplete = {
+                    onComplete = { genres ->
+                        onboardingViewModel.saveSelectedGenres(genres)
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
                         }

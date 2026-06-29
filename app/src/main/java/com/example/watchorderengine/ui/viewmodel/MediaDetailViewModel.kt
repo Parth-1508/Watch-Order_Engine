@@ -6,14 +6,14 @@ import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.EpisodeItem
 import com.example.watchorderengine.data.model.MediaDetail
 import com.example.watchorderengine.data.model.TrackingState
+import com.example.watchorderengine.data.db.entity.ReviewEntity
 import com.example.watchorderengine.data.repository.CharacterRepository
 import com.example.watchorderengine.data.repository.MediaRepository
+import com.example.watchorderengine.data.repository.ReviewRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -21,7 +21,8 @@ import javax.inject.Inject
 class MediaDetailViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: MediaRepository,
-    private val characterRepository: CharacterRepository
+    private val characterRepository: CharacterRepository,
+    private val reviewRepository: ReviewRepository
 ) : ViewModel() {
 
     private val _mediaDetail = MutableStateFlow<MediaDetail?>(null)
@@ -32,6 +33,9 @@ class MediaDetailViewModel @Inject constructor(
 
     private val _episodes = MutableStateFlow<List<EpisodeItem>>(emptyList())
     val episodes: StateFlow<List<EpisodeItem>> = _episodes.asStateFlow()
+
+    private val _reviews = MutableStateFlow<List<ReviewEntity>>(emptyList())
+    val reviews: StateFlow<List<ReviewEntity>> = _reviews.asStateFlow()
 
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
@@ -62,6 +66,7 @@ class MediaDetailViewModel @Inject constructor(
 
     private var loadJob: Job? = null
     private var episodesJob: Job? = null
+    private var reviewsJob: Job? = null
     private var characterArtJob: Job? = null
 
     fun loadMediaDetail(mediaId: String, forceRefresh: Boolean = false) {
@@ -80,6 +85,8 @@ class MediaDetailViewModel @Inject constructor(
                     _episodes.value = emptyList()
                     _isEpisodesLoading.value = false
                 }
+
+                observeReviews(sanitizedMediaId)
 
                 repository.getMediaDetailFlow(sanitizedMediaId).collect { detail ->
                     _mediaDetail.value = detail
@@ -123,6 +130,27 @@ class MediaDetailViewModel @Inject constructor(
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    private fun observeReviews(mediaId: String) {
+        reviewsJob?.cancel()
+        reviewsJob = viewModelScope.launch {
+            reviewRepository.observeReviewsForMedia(mediaId).collect {
+                _reviews.value = it
+            }
+        }
+    }
+
+    fun submitReview(mediaId: String, rating: Float, text: String, hasSpoilers: Boolean) {
+        viewModelScope.launch {
+            reviewRepository.submitReview(mediaId, rating, text, hasSpoilers, context)
+        }
+    }
+
+    fun deleteReview(reviewId: String) {
+        viewModelScope.launch {
+            reviewRepository.deleteReview(reviewId)
         }
     }
 

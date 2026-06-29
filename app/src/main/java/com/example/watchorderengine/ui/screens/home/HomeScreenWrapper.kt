@@ -19,6 +19,8 @@ fun HomeScreenWrapper(
     val dropped by viewModel.droppedList.collectAsState()
     val paused by viewModel.pausedList.collectAsState()
     val trending by viewModel.trendingList.collectAsState()
+    val recommendations by viewModel.recommendations.collectAsState()
+    val nextUpItem by viewModel.nextUp.collectAsState()
 
     var state by remember {
         mutableStateOf(
@@ -28,7 +30,7 @@ fun HomeScreenWrapper(
         )
     }
 
-    val realShows = remember(watching, planned, completed, dropped, paused, trending) {
+    val realShows = remember(watching, planned, completed, dropped, paused, trending, recommendations) {
         val mappedWatching = watching.map { it.toMediaShowItem("Watching") }
         val mappedPlanned = planned.map { it.toMediaShowItem("Planned") }
         val mappedCompleted = completed.map { it.toMediaShowItem("Completed") }
@@ -36,28 +38,24 @@ fun HomeScreenWrapper(
         val mappedPaused = paused.map { it.toMediaShowItem("Paused") }
         val mappedTrending = trending.map { it.toMediaShowItem(null) }
 
-        (mappedWatching + mappedPlanned + mappedCompleted + mappedDropped + mappedPaused + mappedTrending)
+        val mappedRecs = recommendations.map { rec ->
+            MediaShowItem(
+                id = rec.media.tmdbId,
+                internalId = rec.media.id,
+                title = rec.media.title,
+                imageUrl = rec.media.posterUrl ?: "",
+                genres = rec.media.genres,
+                badge = "RECOMMENDED",
+                watchlistStatus = "Recommended"
+            )
+        }
+
+        (mappedWatching + mappedPlanned + mappedCompleted + mappedDropped + mappedPaused + mappedTrending + mappedRecs)
             .distinctBy { it.internalId }
     }
 
     LaunchedEffect(realShows) {
         state = state.copy(shows = realShows)
-    }
-
-    val nextUpItem: NextUpItem? = remember(watching) {
-        watching.firstOrNull()?.let { media ->
-            NextUpItem(
-                internalId   = media.id,
-                showTitle    = media.title,
-                episodeLabel = when (media.mediaCategory) {
-                    MediaCategory.MOVIE -> "Movie"
-                    else                -> "Continue watching"
-                },
-                posterUrl   = media.posterUrl,
-                backdropUrl = media.backdropUrl,
-                progressPercent = 0
-            )
-        }
     }
 
     HomeScreen(

@@ -198,6 +198,9 @@ interface ReviewDao {
     @Query("SELECT AVG(rating) FROM user_reviews WHERE mediaId = :mediaId")
     suspend fun getAverageRating(mediaId: String): Float?
 
+    @Query("SELECT * FROM user_reviews WHERE id = :reviewId")
+    suspend fun getById(reviewId: String): ReviewEntity?
+
     @Upsert
     suspend fun upsert(entity: ReviewEntity)
 

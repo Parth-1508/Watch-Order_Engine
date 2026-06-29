@@ -25,6 +25,8 @@ data class ReviewEntity(
     @PrimaryKey
     val id: String,
     val mediaId: String,
+    val mediaTitle: String,
+    val mediaPosterUrl: String?,
     val userId: String,
     val rating: Float,
     val reviewText: String = "",

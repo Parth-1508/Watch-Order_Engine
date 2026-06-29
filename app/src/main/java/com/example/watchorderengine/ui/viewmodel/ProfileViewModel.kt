@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.model.UserStats
+import com.example.watchorderengine.data.db.entity.ReviewEntity
 import com.example.watchorderengine.data.repository.MediaRepository
+import com.example.watchorderengine.data.repository.ReviewRepository
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.*
@@ -16,7 +19,9 @@ import javax.inject.Inject
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val repository: MediaRepository,
-    private val userPrefs: UserPreferencesRepository
+    private val reviewRepository: ReviewRepository,
+    private val userPrefs: UserPreferencesRepository,
+    private val auth: FirebaseAuth
 ) : ViewModel() {
 
     private val _stats = MutableStateFlow<UserStats?>(null)
@@ -25,11 +30,24 @@ class ProfileViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _userReviews = MutableStateFlow<List<ReviewEntity>>(emptyList())
+    val userReviews: StateFlow<List<ReviewEntity>> = _userReviews.asStateFlow()
+
     val username: StateFlow<String> = userPrefs.username
     val avatarUrl: StateFlow<String?> = userPrefs.avatarUrl
 
     init {
         loadStats()
+        observeUserReviews()
+    }
+
+    private fun observeUserReviews() {
+        val uid = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            reviewRepository.observeReviewsByUser(uid).collect {
+                _userReviews.value = it
+            }
+        }
     }
 
     fun loadStats() {
@@ -108,6 +126,12 @@ class ProfileViewModel @Inject constructor(
     fun updateAvatarUrl(url: String) {
         viewModelScope.launch {
             userPrefs.updateAvatarUrl(url)
+        }
+    }
+
+    fun deleteReview(reviewId: String) {
+        viewModelScope.launch {
+            reviewRepository.deleteReview(reviewId)
         }
     }
 }

@@ -80,6 +80,7 @@ fun ProfileScreen(
     val username by viewModel.username.collectAsState()
     val avatarUrl by viewModel.avatarUrl.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val userReviews by viewModel.userReviews.collectAsState()
 
     var isEditingName by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf(username) }
@@ -248,6 +249,20 @@ fun ProfileScreen(
                 ) {
                     items(stats!!.recentlyWatched) { media ->
                         RecentlyWatchedItem(media, onClick = { onMediaClick(media.id) })
+                    }
+                }
+            }
+
+            // User Reviews
+            if (userReviews.isNotEmpty()) {
+                SectionHeader("YOUR REVIEWS")
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    userReviews.forEach { review ->
+                        ReviewItemSmall(
+                            review = review,
+                            onMediaClick = { onMediaClick(review.mediaId) },
+                            onDelete = { viewModel.deleteReview(review.id) }
+                        )
                     }
                 }
             }
@@ -454,6 +469,73 @@ private fun EmptyTasteProfile(
                     fontSize      = 12.sp,
                     letterSpacing = 1.sp
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewItemSmall(
+    review: com.example.watchorderengine.data.db.entity.ReviewEntity,
+    onMediaClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val theme = LocalAppTheme.current
+    Surface(
+        onClick = onMediaClick,
+        modifier = Modifier.padding(bottom = 8.dp).fillMaxWidth(),
+        color = theme.surface.copy(alpha = 0.3f),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    repeat(5) { index ->
+                        Icon(
+                            imageVector = if (index < review.rating) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = null,
+                            tint = if (index < review.rating) Color(0xFFFFD700) else Color.Gray,
+                            modifier = Modifier.size(10.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = review.mediaTitle,
+                        color = theme.textSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (review.reviewText.isNotBlank()) {
+                    Text(
+                        text = review.reviewText,
+                        color = theme.textPrimary,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+            if (review.mediaPosterUrl != null) {
+                AsyncImage(
+                    model = review.mediaPosterUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(32.dp, 48.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(Modifier.width(12.dp))
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Default.Delete, null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
             }
         }
     }

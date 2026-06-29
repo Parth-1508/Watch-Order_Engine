@@ -149,9 +149,9 @@ private fun DetailContent(
     val progress = if (totalEps > 0) (watchedCount.toFloat() / totalEps).coerceAtMost(1f) else 0f
 
     val tabs = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) {
-        listOf("chronology", "characters")
+        listOf("chronology", "characters", "reviews")
     } else {
-        listOf("episodes", "characters", "chronology")
+        listOf("episodes", "characters", "chronology", "reviews")
     }
 
     val listState = rememberLazyListState()
@@ -561,9 +561,214 @@ private fun DetailContent(
                         )
                     }
                 }
+                "reviews" -> {
+                    item {
+                        ReviewsTab(
+                            mediaId = detail.id,
+                            viewModel = viewModel
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun ReviewsTab(
+    mediaId: String,
+    viewModel: MediaDetailViewModel
+) {
+    val theme = LocalAppTheme.current
+    val reviews by viewModel.reviews.collectAsState()
+    var showReviewSheet by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.padding(16.dp)) {
+        Button(
+            onClick = { showReviewSheet = true },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
+        ) {
+            Icon(Icons.Default.RateReview, null, tint = Color.Black)
+            Spacer(Modifier.width(8.dp))
+            Text("WRITE A REVIEW", color = Color.Black, fontWeight = FontWeight.Black)
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        if (reviews.isEmpty()) {
+            Text(
+                "No reviews yet. Be the first to share your thoughts!",
+                color = Color.Gray,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp)
+            )
+        } else {
+            reviews.forEach { review ->
+                ReviewItem(
+                    review = review,
+                    onDelete = { viewModel.deleteReview(review.id) }
+                )
+            }
+        }
+    }
+
+    if (showReviewSheet) {
+        ReviewSubmissionDialog(
+            onDismiss = { showReviewSheet = false },
+            onSubmit = { rating, text, spoilers ->
+                viewModel.submitReview(mediaId, rating, text, spoilers)
+                showReviewSheet = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun ReviewItem(
+    review: com.example.watchorderengine.data.db.entity.ReviewEntity,
+    onDelete: () -> Unit
+) {
+    val theme = LocalAppTheme.current
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Surface(
+        modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth(),
+        color = theme.surface.copy(alpha = 0.3f),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    repeat(5) { index ->
+                        Icon(
+                            imageVector = if (index < review.rating) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = null,
+                            tint = if (index < review.rating) Color(0xFFFFD700) else Color.Gray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = String.format("%.1f", review.rating),
+                        color = Color(0xFFFFD700),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                
+                IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.Delete, null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                }
+            }
+
+            if (review.reviewText.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                if (review.hasSpoilers && !isExpanded) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .clickable { isExpanded = true }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.VisibilityOff, null, tint = theme.accent, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("REVIEW CONTAINS SPOILERS. TAP TO SHOW.", color = theme.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Text(
+                        text = review.reviewText,
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+            
+            Spacer(Modifier.height(8.dp))
+            val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+            Text(
+                text = "Posted on ${sdf.format(java.util.Date(review.createdAt))}",
+                color = Color.Gray,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReviewSubmissionDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (Float, String, Boolean) -> Unit
+) {
+    val theme = LocalAppTheme.current
+    var rating by remember { mutableFloatStateOf(4f) }
+    var text by remember { mutableStateOf("") }
+    var hasSpoilers by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = theme.surface,
+        title = { Text("Write a Review", fontWeight = FontWeight.Black) },
+        text = {
+            Column {
+                Text("Rating", fontSize = 12.sp, color = Color.Gray)
+                Slider(
+                    value = rating,
+                    onValueChange = { rating = it },
+                    valueRange = 0.5f..5f,
+                    steps = 8,
+                    colors = SliderDefaults.colors(thumbColor = theme.accent, activeTrackColor = theme.accent)
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    Text("${rating} Stars", fontWeight = FontWeight.Bold, color = theme.accent)
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= 2000) text = it },
+                    placeholder = { Text("Share your thoughts...", fontSize = 14.sp) },
+                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = theme.accent,
+                        unfocusedBorderColor = Color.Gray
+                    )
+                )
+                Text("${text.length}/2000", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.align(Alignment.End))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = hasSpoilers,
+                        onCheckedChange = { hasSpoilers = it },
+                        colors = CheckboxDefaults.colors(checkedColor = theme.accent)
+                    )
+                    Text("Contains spoilers", fontSize = 13.sp, color = theme.textPrimary)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(rating, text, hasSpoilers) }) {
+                Text("Submit", fontWeight = FontWeight.Bold, color = theme.accent)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color.Gray)
+            }
+        }
+    )
 }
 
 @Composable

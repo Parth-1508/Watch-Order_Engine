@@ -2,39 +2,51 @@ package com.example.watchorderengine.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.model.MediaSummary
+import com.example.watchorderengine.data.recommendation.Recommendation
+import com.example.watchorderengine.data.recommendation.RecommendationEngine
 import com.example.watchorderengine.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val repository: MediaRepository
+    private val repository: MediaRepository,
+    private val db: WatchOrderDatabase
 ) : ViewModel() {
 
     private val _watchingList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val watchingList: StateFlow<List<MediaSummary>> = _watchingList
+    val watchingList: StateFlow<List<MediaSummary>> = _watchingList.asStateFlow()
 
     private val _plannedList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val plannedList: StateFlow<List<MediaSummary>> = _plannedList
+    val plannedList: StateFlow<List<MediaSummary>> = _plannedList.asStateFlow()
 
     private val _completedList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val completedList: StateFlow<List<MediaSummary>> = _completedList
+    val completedList: StateFlow<List<MediaSummary>> = _completedList.asStateFlow()
 
     private val _droppedList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val droppedList: StateFlow<List<MediaSummary>> = _droppedList
+    val droppedList: StateFlow<List<MediaSummary>> = _droppedList.asStateFlow()
 
     private val _pausedList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val pausedList: StateFlow<List<MediaSummary>> = _pausedList
+    val pausedList: StateFlow<List<MediaSummary>> = _pausedList.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _trendingList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val trendingList: StateFlow<List<MediaSummary>> = _trendingList
+    val trendingList: StateFlow<List<MediaSummary>> = _trendingList.asStateFlow()
+
+    private val _recommendations = MutableStateFlow<List<Recommendation>>(emptyList())
+    val recommendations: StateFlow<List<Recommendation>> = _recommendations.asStateFlow()
+
+    private val _nextUp = MutableStateFlow<com.example.watchorderengine.ui.screens.home.NextUpItem?>(null)
+    val nextUp: StateFlow<com.example.watchorderengine.ui.screens.home.NextUpItem?> = _nextUp.asStateFlow()
 
     init {
         refresh()
@@ -58,9 +70,73 @@ class HomeViewModel @Inject constructor(
                 _pausedList.value = paused
                 _trendingList.value = trending
 
-                android.util.Log.d("HomeViewModel", "Refresh: watching=${watching.size}, planned=${planned.size}, completed=${completed.size}, dropped=${dropped.size}, paused=${paused.size}, trending=${trending.size}")
+                generateRecommendations()
+                updateNextUp(watching)
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    private fun updateNextUp(watching: List<com.example.watchorderengine.data.model.MediaSummary>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val mostRecent = watching.firstOrNull() ?: return@launch
+            val tmdbId = mostRecent.tmdbId
+            val mediaId = mostRecent.id
+            val isMovie = mostRecent.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE
+
+            if (isMovie) {
+                _nextUp.value = com.example.watchorderengine.ui.screens.home.NextUpItem(
+                    internalId = mediaId,
+                    showTitle = mostRecent.title,
+                    episodeLabel = "Movie",
+                    posterUrl = mostRecent.posterUrl,
+                    backdropUrl = mostRecent.backdropUrl,
+                    progressPercent = 0
+                )
+            } else {
+                // Find first unwatched episode
+                val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+                val watchedIds = db.episodeWatchedDao().getWatchedIds(mediaId).toSet()
+                val nextEp = episodes.find { it.id !in watchedIds }
+
+                if (nextEp != null) {
+                    _nextUp.value = com.example.watchorderengine.ui.screens.home.NextUpItem(
+                        internalId = mediaId,
+                        showTitle = mostRecent.title,
+                        episodeLabel = "S${nextEp.seasonNumber} E${nextEp.episodeNumber} — ${nextEp.title}",
+                        posterUrl = mostRecent.posterUrl,
+                        backdropUrl = nextEp.stillUrl ?: mostRecent.backdropUrl,
+                        progressPercent = (watchedIds.size * 100 / episodes.size.coerceAtLeast(1))
+                    )
+                } else {
+                    _nextUp.value = null
+                }
+            }
+        }
+    }
+
+    private fun generateRecommendations() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val trackedIds = repository.getAllTrackedMediaIds()
+                val trackedPairs = trackedIds.mapNotNull { id ->
+                    val entity = db.mediaDao().getById(id) ?: return@mapNotNull null
+                    val progress = db.userProgressDao().getByMediaId(id) ?: return@mapNotNull null
+                    entity to progress
+                }
+
+                val allMedia = db.mediaDao().getAll()
+                val candidates = allMedia.filter { it.id !in trackedIds }
+
+                val results = RecommendationEngine.generateRecommendations(
+                    completedMedia = trackedPairs,
+                    candidates = candidates,
+                    topK = 10
+                )
+                _recommendations.value = results
+            } catch (e: Exception) {
+                android.util.Log.e("HomeViewModel", "Error generating recommendations", e)
             }
         }
     }

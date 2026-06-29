@@ -8,6 +8,7 @@ import androidx.room.PrimaryKey
 object TaskType {
     const val NODE_COMPLETION = "NODE_COMPLETION"
     const val EPISODE_WATCHED = "EPISODE_WATCHED"
+    const val REVIEW_SUBMISSION = "REVIEW_SUBMISSION"
 }
 
 /**
@@ -35,6 +36,9 @@ data class PendingSyncTaskEntity(
     // -- EPISODE_WATCHED fields --
     val episodeId: String? = null,
     val mediaId: String? = null,
+
+    // -- REVIEW fields --
+    val reviewId: String? = null,
 
     // -- Generic fields --
     val payload: String = "{}",

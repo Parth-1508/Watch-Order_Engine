@@ -59,6 +59,7 @@ fun StatusBadge(type: String, modifier: Modifier = Modifier) {
         "canon" -> theme.statusCanon
         "filler" -> theme.statusFiller
         "mixed" -> theme.statusMixed
+        "recommended" -> theme.accent
         else -> Color.Gray
     }
 
