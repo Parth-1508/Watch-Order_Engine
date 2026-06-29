@@ -72,12 +72,12 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
                 `mediaPosterUrl` TEXT,
                 `userId`         TEXT NOT NULL,
                 `rating`         REAL NOT NULL,
-                `reviewText`     TEXT NOT NULL DEFAULT '',
-                `hasSpoilers`    INTEGER NOT NULL DEFAULT 0,
+                `reviewText`     TEXT NOT NULL,
+                `hasSpoilers`    INTEGER NOT NULL,
                 `watchedDate`    INTEGER,
                 `createdAt`      INTEGER NOT NULL,
                 `updatedAt`      INTEGER NOT NULL,
-                `isSynced`       INTEGER NOT NULL DEFAULT 0,
+                `isSynced`       INTEGER NOT NULL,
                 FOREIGN KEY(`mediaId`) REFERENCES `media`(`id`) ON DELETE CASCADE
             )
         """.trimIndent())
@@ -89,7 +89,60 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
 
 val MIGRATION_7_8 = object : Migration(7, 8) {
     override fun migrate(db: SupportSQLiteDatabase) {
+        // 1. Update pending_sync_tasks
         db.execSQL("ALTER TABLE pending_sync_tasks ADD COLUMN reviewId TEXT")
+
+        // 2. Re-create user_reviews to ensure it exactly matches the expected schema 
+        // (adding missing columns and removing default values that confuse Room).
+        // Since this is a new feature in the dev cycle, we drop and re-create.
+        db.execSQL("DROP TABLE IF EXISTS `user_reviews` ")
+        db.execSQL("""
+            CREATE TABLE `user_reviews` (
+                `id`             TEXT NOT NULL PRIMARY KEY,
+                `mediaId`        TEXT NOT NULL,
+                `mediaTitle`     TEXT NOT NULL,
+                `mediaPosterUrl` TEXT,
+                `userId`         TEXT NOT NULL,
+                `rating`         REAL NOT NULL,
+                `reviewText`     TEXT NOT NULL,
+                `hasSpoilers`    INTEGER NOT NULL,
+                `watchedDate`    INTEGER,
+                `createdAt`      INTEGER NOT NULL,
+                `updatedAt`      INTEGER NOT NULL,
+                `isSynced`       INTEGER NOT NULL,
+                FOREIGN KEY(`mediaId`) REFERENCES `media`(`id`) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_mediaId` ON `user_reviews` (`mediaId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_userId` ON `user_reviews` (`userId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_rating` ON `user_reviews` (`rating`)")
+    }
+}
+
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Force-fix user_reviews to match exactly what Room expects
+        db.execSQL("DROP TABLE IF EXISTS `user_reviews` ")
+        db.execSQL("""
+            CREATE TABLE `user_reviews` (
+                `id`             TEXT NOT NULL PRIMARY KEY,
+                `mediaId`        TEXT NOT NULL,
+                `mediaTitle`     TEXT NOT NULL,
+                `mediaPosterUrl` TEXT,
+                `userId`         TEXT NOT NULL,
+                `rating`         REAL NOT NULL,
+                `reviewText`     TEXT NOT NULL,
+                `hasSpoilers`    INTEGER NOT NULL,
+                `watchedDate`    INTEGER,
+                `createdAt`      INTEGER NOT NULL,
+                `updatedAt`      INTEGER NOT NULL,
+                `isSynced`       INTEGER NOT NULL,
+                FOREIGN KEY(`mediaId`) REFERENCES `media`(`id`) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_mediaId` ON `user_reviews` (`mediaId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_userId` ON `user_reviews` (`userId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_rating` ON `user_reviews` (`rating`)")
     }
 }
 
@@ -106,7 +159,7 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         PendingSyncTaskEntity::class,
         ReviewEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -131,7 +184,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
