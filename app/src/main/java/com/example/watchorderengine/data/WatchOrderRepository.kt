@@ -4,14 +4,24 @@ import com.example.watchorderengine.data.model.*
 import com.example.watchorderengine.network.gemini.GeminiEdge
 import com.example.watchorderengine.network.gemini.GeminiNode
 import com.example.watchorderengine.network.gemini.RawMediaItem
+import com.example.watchorderengine.data.db.WatchOrderDatabase
+import com.example.watchorderengine.data.db.entity.PendingSyncTaskEntity
+import com.example.watchorderengine.data.db.entity.TaskType
+import com.example.watchorderengine.data.prefs.UserPreferencesRepository
+import com.example.watchorderengine.data.sync.SyncWorker
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.toObject
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.util.Log
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -23,7 +33,9 @@ import javax.inject.Singleton
 @Singleton
 class WatchOrderRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val db: WatchOrderDatabase,
+    private val userPrefs: UserPreferencesRepository
 ) {
 
     // ─── Firestore Reference Helpers ─────────────────────────────────────────
@@ -48,6 +60,15 @@ class WatchOrderRepository @Inject constructor(
 
     private fun requireAuth() =
         auth.currentUser?.uid ?: error("Action requires an authenticated user.")
+
+    fun isNetworkAvailable(context: Context): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
 
     // ─── Real-time Read Flows ─────────────────────────────────────────────────
 
@@ -150,15 +171,54 @@ class WatchOrderRepository @Inject constructor(
     suspend fun setNodeCompletion(
         universeId: String,
         nodeId: String,
-        completed: Boolean
-    ): Result<Unit> = runCatching {
-        val uid = requireAuth()
-        val fieldUpdate = if (completed) {
-            FieldValue.arrayUnion(nodeId)
-        } else {
-            FieldValue.arrayRemove(nodeId)
+        completed: Boolean,
+        context: Context
+    ): Result<Unit> {
+        val syncEnabled = userPrefs.cloudSyncEnabled.first()
+        if (!syncEnabled) {
+            Log.d("WatchOrderRepo", "Cloud sync disabled — skipping Firestore write for $nodeId")
+            return Result.success(Unit)
         }
 
+        if (isNetworkAvailable(context)) {
+            return runCatching {
+                val uid = requireAuth()
+                val fieldUpdate = if (completed) FieldValue.arrayUnion(nodeId)
+                else FieldValue.arrayRemove(nodeId)
+                progressRef(universeId).set(
+                    mapOf(
+                        "user_id" to uid,
+                        "universe_id" to universeId,
+                        "completed_node_ids" to fieldUpdate,
+                        "last_updated" to FieldValue.serverTimestamp()
+                    ),
+                    SetOptions.merge()
+                ).await()
+            }
+        }
+
+        return runCatching {
+            db.pendingSyncTaskDao().insert(
+                PendingSyncTaskEntity(
+                    taskType = TaskType.NODE_COMPLETION,
+                    universeId = universeId,
+                    nodeId = nodeId,
+                    completed = completed
+                )
+            )
+            Log.i("WatchOrderRepo", "Queued offline mutation: NODE_COMPLETION $nodeId in $universeId")
+            SyncWorker.enqueue(context)
+        }
+    }
+
+    /** Called by SyncWorker — bypasses connectivity check, writes directly to Firestore. */
+    internal suspend fun setNodeCompletionDirect(
+        universeId: String,
+        nodeId: String,
+        completed: Boolean,
+    ): Result<Unit> = runCatching {
+        val uid = requireAuth()
+        val fieldUpdate = if (completed) FieldValue.arrayUnion(nodeId) else FieldValue.arrayRemove(nodeId)
         progressRef(universeId).set(
             mapOf(
                 "user_id" to uid,
@@ -168,6 +228,27 @@ class WatchOrderRepository @Inject constructor(
             ),
             SetOptions.merge()
         ).await()
+    }
+
+    /**
+     * Mirrors an episode watched/unwatched event to Firestore.
+     */
+    internal suspend fun mirrorEpisodeWatchedToFirestore(
+        episodeId: String,
+        mediaId: String,
+        watched: Boolean,
+    ): Result<Unit> = runCatching {
+        val uid = requireAuth()
+        firestore.collection("users").document(uid)
+            .collection("episode_progress").document(episodeId)
+            .set(
+                mapOf(
+                    "media_id" to mediaId,
+                    "watched" to watched,
+                    "updated_at" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).await()
     }
 
 

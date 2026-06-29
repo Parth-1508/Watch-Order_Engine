@@ -140,16 +140,21 @@ interface EpisodeWatchedDao {
     suspend fun getAllWatchedIds(): List<String>
 
     /**
-     * Accurate runtime summing that handles dual-ID mapping (legacy vs current).
-     * Prevents One Piece / Naruto stats from being missing or glitched.
+     * Accurate runtime summing that handles dual-ID mapping and duplicate episodes.
+     * Groups by normalized episode identifier (e.g. "123_s1e1") to ensure each 
+     * physical episode's runtime is only added once to the total.
      */
     @Query("""
-        SELECT COALESCE(SUM(e.runtime), 0) FROM episodes e
-        WHERE EXISTS (
-            SELECT 1 FROM episode_watched w 
-            WHERE w.episodeId = e.id 
-               OR w.episodeId = REPLACE(REPLACE(e.id, 'tmdb_m_', 'tmdb_'), 'tmdb_t_', 'tmdb_')
-               OR w.episodeId = REPLACE(REPLACE(e.id, 'tmdb_m_', ''), 'tmdb_t_', '')
+        SELECT COALESCE(SUM(runtime), 0) FROM (
+            SELECT MAX(e.runtime) as runtime 
+            FROM episodes e
+            INNER JOIN episode_watched w ON (
+                w.episodeId = e.id 
+                OR w.episodeId = REPLACE(REPLACE(e.id, 'tmdb_m_', 'tmdb_'), 'tmdb_t_', 'tmdb_')
+                OR w.episodeId = REPLACE(REPLACE(e.id, 'tmdb_m_', ''), 'tmdb_t_', '')
+            )
+            GROUP BY 
+                REPLACE(REPLACE(REPLACE(REPLACE(e.id, 'tmdb_m_', ''), 'tmdb_t_', ''), 'tmdb_', ''), 'anilist_', '')
         )
     """)
     suspend fun sumWatchedRuntimeMinutesTypeSafe(): Int

@@ -35,6 +35,7 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
     val currentThemeMode by viewModel.themeMode.collectAsState()
     val hideFiller by viewModel.hideFiller.collectAsState()
+    val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsState()
     val wipeGraphsState by viewModel.wipeGraphsState.collectAsState()
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showClearedToast by remember { mutableStateOf(false) }
@@ -145,37 +146,25 @@ fun SettingsScreen(
                 .then(ThemeBorderModifier()),
             color = theme.surface
         ) {
-            PreferenceToggleRow(
-                icon = Icons.Default.Shield,
-                title = "SPOILER WALL",
-                subtitle = if (hideFiller) "HIDING FILLER + UNSEEN EPISODES" else "HIDING UNSEEN EPISODES ONLY",
-                checked = hideFiller,
-                onCheckedChange = { viewModel.setHideFiller(it) }
-            )
-        }
-
-        // Account Section
-        SettingSectionTitle("ACCOUNT")
-        Surface(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth()
-                .then(ThemeBorderModifier()),
-            color = theme.surface
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.CloudDone, null, tint = theme.textPrimary)
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text("SYNCED TO THIS DEVICE", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
-                    Text(
-                        "Your progress is tied to this install — there's no account to log into elsewhere yet.",
-                        fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold
-                    )
-                }
+            Column {
+                PreferenceToggleRow(
+                    icon = Icons.Default.Shield,
+                    title = "SPOILER WALL",
+                    subtitle = if (hideFiller) "HIDING FILLER + UNSEEN EPISODES" else "HIDING UNSEEN EPISODES ONLY",
+                    checked = hideFiller,
+                    onCheckedChange = { viewModel.setHideFiller(it) }
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = theme.textPrimary.copy(alpha = 0.05f)
+                )
+                PreferenceToggleRow(
+                    icon = Icons.Default.CloudSync,
+                    title = "CLOUD SYNC",
+                    subtitle = if (cloudSyncEnabled) "PROGRESS SYNCED TO FIRESTORE" else "LOCAL ONLY — DATA STAYS ON DEVICE",
+                    checked = cloudSyncEnabled,
+                    onCheckedChange = { viewModel.setCloudSyncEnabled(it) }
+                )
             }
         }
 

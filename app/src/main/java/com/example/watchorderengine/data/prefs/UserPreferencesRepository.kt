@@ -30,6 +30,7 @@ class UserPreferencesRepository(private val context: Context) {
         val HIDE_FILLER = booleanPreferencesKey("hide_filler")
         val USERNAME = stringPreferencesKey("username")
         val AVATAR_URL = stringPreferencesKey("avatar_url")
+        val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
     }
 
     val username: StateFlow<String> = context.dataStore.data.map { preferences ->
@@ -53,6 +54,10 @@ class UserPreferencesRepository(private val context: Context) {
         preferences[PreferencesKeys.HIDE_FILLER] ?: false
     }
 
+    val cloudSyncEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.CLOUD_SYNC_ENABLED] ?: true
+    }
+
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { it[PreferencesKeys.THEME_MODE] = mode.name }
     }
@@ -63,6 +68,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setHideFiller(hide: Boolean) {
         context.dataStore.edit { it[PreferencesKeys.HIDE_FILLER] = hide }
+    }
+
+    suspend fun setCloudSyncEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.CLOUD_SYNC_ENABLED] = enabled }
     }
 
     suspend fun updateUsername(name: String) {

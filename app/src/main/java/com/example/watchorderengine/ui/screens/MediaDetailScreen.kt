@@ -146,7 +146,7 @@ private fun DetailContent(
 
     val watchedCount = detail.userProgress?.totalEpisodesWatched ?: 0
     val totalEps = detail.numberOfEpisodes ?: 0
-    val progress = if (totalEps > 0) watchedCount.toFloat() / totalEps else 0f
+    val progress = if (totalEps > 0) (watchedCount.toFloat() / totalEps).coerceAtMost(1f) else 0f
 
     val tabs = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) {
         listOf("chronology", "characters")

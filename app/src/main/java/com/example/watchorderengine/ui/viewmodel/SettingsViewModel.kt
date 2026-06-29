@@ -40,6 +40,9 @@ class SettingsViewModel @Inject constructor(
     val hideFiller: StateFlow<Boolean> = prefsRepository.hideFiller
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val cloudSyncEnabled: StateFlow<Boolean> = prefsRepository.cloudSyncEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     private val _wipeGraphsState = MutableStateFlow<WipeGraphsState>(WipeGraphsState.Idle)
     val wipeGraphsState: StateFlow<WipeGraphsState> = _wipeGraphsState.asStateFlow()
 
@@ -53,6 +56,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setHideFiller(hide: Boolean) {
         viewModelScope.launch { prefsRepository.setHideFiller(hide) }
+    }
+
+    fun setCloudSyncEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepository.setCloudSyncEnabled(enabled) }
     }
 
     fun clearCache() {

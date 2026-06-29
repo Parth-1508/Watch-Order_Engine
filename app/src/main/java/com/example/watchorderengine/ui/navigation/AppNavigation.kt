@@ -1,12 +1,13 @@
 package com.example.watchorderengine.ui.navigation
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -28,7 +29,7 @@ import com.example.watchorderengine.ui.screens.home.HomeScreenWrapper
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.TimelineScreen
 
-// ─── Navigation helper: ensures all mediaIds passed to Detail use the tmdb_ prefix ───
+// ─── Navigation helper ───
 private fun safeMediaId(raw: String): String =
     if (raw.startsWith("tmdb_") || raw.startsWith("anilist_")) raw else "tmdb_$raw"
 
@@ -45,8 +46,6 @@ sealed class Screen(val route: String) {
         fun route(mediaId: String) = "detail/$mediaId"
     }
     object CharacterDetail : Screen("character/{tmdbPersonId}/{characterName}/{showTitle}/{isAnime}/{anilistId}") {
-        // anilistId uses -1 as the "unknown/not available" sentinel since NavType.IntType
-        // doesn't support a nullable Int route argument.
         fun route(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean, anilistId: Int? = null): String {
             val encodedName = java.net.URLEncoder.encode(characterName, "UTF-8")
             val encodedTitle = java.net.URLEncoder.encode(showTitle, "UTF-8")
@@ -54,6 +53,80 @@ sealed class Screen(val route: String) {
         }
     }
 }
+
+private const val TAB_DURATION_MS   = 180
+private const val SLIDE_OFFSET_EXIT = 0.30f
+
+private val TAB_ROUTES = setOf(
+    Screen.Home.route,
+    Screen.Discovery.route,
+    Screen.Search.route,
+    Screen.Graph.route,
+    Screen.Community.route,
+    Screen.Profile.route
+)
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isBothTabs(): Boolean {
+    val from = initialState.destination.route
+    val to   = targetState.destination.route
+    return from in TAB_ROUTES && to in TAB_ROUTES
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.appEnterTransition()
+    : EnterTransition =
+    if (isBothTabs()) {
+        fadeIn(tween(TAB_DURATION_MS))
+    } else {
+        slideInHorizontally(
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness    = Spring.StiffnessMediumLow
+            ),
+            initialOffsetX = { fullWidth -> fullWidth }
+        ) + fadeIn(tween(TAB_DURATION_MS))
+    }
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.appExitTransition()
+    : ExitTransition =
+    if (isBothTabs()) {
+        fadeOut(tween(TAB_DURATION_MS))
+    } else {
+        slideOutHorizontally(
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness    = Spring.StiffnessMediumLow
+            ),
+            targetOffsetX = { fullWidth -> -(fullWidth * SLIDE_OFFSET_EXIT).toInt() }
+        ) + fadeOut(tween(TAB_DURATION_MS))
+    }
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.appPopEnterTransition()
+    : EnterTransition =
+    if (isBothTabs()) {
+        fadeIn(tween(TAB_DURATION_MS))
+    } else {
+        slideInHorizontally(
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness    = Spring.StiffnessMediumLow
+            ),
+            initialOffsetX = { fullWidth -> -(fullWidth * SLIDE_OFFSET_EXIT).toInt() }
+        ) + fadeIn(tween(TAB_DURATION_MS))
+    }
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.appPopExitTransition()
+    : ExitTransition =
+    if (isBothTabs()) {
+        fadeOut(tween(TAB_DURATION_MS))
+    } else {
+        slideOutHorizontally(
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness    = Spring.StiffnessMediumLow
+            ),
+            targetOffsetX = { fullWidth -> fullWidth }
+        ) + fadeOut(tween(TAB_DURATION_MS))
+    }
 
 @Composable
 fun AppNavigation() {
@@ -89,52 +162,58 @@ fun AppNavigation() {
         }
     ) { padding ->
         NavHost(
-            navController = navController,
+            navController    = navController,
             startDestination = Screen.Opening.route,
-            enterTransition = { fadeIn(tween(200)) },
-            exitTransition = { fadeOut(tween(200)) },
+            enterTransition  = { appEnterTransition() },
+            exitTransition   = { appExitTransition() },
+            popEnterTransition  = { appPopEnterTransition() },
+            popExitTransition   = { appPopExitTransition() },
             modifier = Modifier.padding(padding)
         ) {
-            composable(Screen.Opening.route) {
+            composable(
+                route           = Screen.Opening.route,
+                enterTransition = { fadeIn(tween(TAB_DURATION_MS)) },
+                exitTransition  = { fadeOut(tween(TAB_DURATION_MS)) }
+            ) {
                 OpeningScreen(
                     onEnter = { navController.navigate(Screen.Home.route) },
-                    onSkip = { navController.navigate(Screen.Home.route) }
+                    onSkip  = { navController.navigate(Screen.Home.route) }
                 )
             }
             composable(Screen.Home.route) {
                 HomeScreenWrapper(
-                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onSearchClick = { navController.navigate(Screen.Search.route) },
+                    onMediaClick    = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                    onSearchClick   = { navController.navigate(Screen.Search.route) },
                     onSettingsClick = { navController.navigate(Screen.Settings.route) }
                 )
             }
             composable(Screen.Search.route) {
                 SearchScreen(
                     onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onBack = { navController.popBackStack() }
+                    onBack       = { navController.popBackStack() }
                 )
             }
             composable(Screen.Discovery.route) {
                 DiscoveryScreen(
                     onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onBack = { navController.popBackStack() }
+                    onBack       = { navController.popBackStack() }
                 )
             }
             composable(Screen.Graph.route) {
                 com.example.watchorderengine.ui.universe.UniverseListScreen(
-                    onUniverseClick = { universeId -> 
+                    onUniverseClick = { universeId ->
                         navController.navigate("timeline/$universeId")
                     }
                 )
             }
             composable(
-                route = "timeline/{universeId}",
+                route     = "timeline/{universeId}",
                 arguments = listOf(navArgument("universeId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val universeId = backStackEntry.arguments?.getString("universeId") ?: ""
                 TimelineScreen(
-                    universeId = universeId,
-                    onBack = { navController.popBackStack() },
+                    universeId  = universeId,
+                    onBack      = { navController.popBackStack() },
                     onNodeDetail = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
                 )
             }
@@ -150,13 +229,13 @@ fun AppNavigation() {
                 SettingsScreen(onBack = { navController.popBackStack() })
             }
             composable(
-                route = Screen.Detail.route,
+                route     = Screen.Detail.route,
                 arguments = listOf(navArgument("mediaId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val mediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
                 MediaDetailScreen(
-                    mediaId = safeMediaId(mediaId),
-                    onBack = { navController.popBackStack() },
+                    mediaId         = safeMediaId(mediaId),
+                    onBack          = { navController.popBackStack() },
                     onUniverseClick = { universeId ->
                         navController.navigate("timeline/$universeId")
                     },
@@ -167,26 +246,25 @@ fun AppNavigation() {
                     }
                 )
             }
-
             composable(
                 route = Screen.CharacterDetail.route,
                 arguments = listOf(
-                    navArgument("tmdbPersonId") { type = NavType.IntType },
-                    navArgument("characterName") { type = NavType.StringType },
-                    navArgument("showTitle") { type = NavType.StringType },
-                    navArgument("isAnime") { type = NavType.BoolType },
-                    navArgument("anilistId") { type = NavType.IntType; defaultValue = -1 }
+                    navArgument("tmdbPersonId")   { type = NavType.IntType },
+                    navArgument("characterName")  { type = NavType.StringType },
+                    navArgument("showTitle")      { type = NavType.StringType },
+                    navArgument("isAnime")        { type = NavType.BoolType },
+                    navArgument("anilistId")      { type = NavType.IntType; defaultValue = -1 }
                 )
             ) { backStackEntry ->
                 val args = backStackEntry.arguments
                 CharacterDetailScreen(
-                    tmdbPersonId = args?.getInt("tmdbPersonId") ?: 0,
+                    tmdbPersonId  = args?.getInt("tmdbPersonId") ?: 0,
                     characterName = java.net.URLDecoder.decode(args?.getString("characterName") ?: "", "UTF-8"),
-                    showTitle = java.net.URLDecoder.decode(args?.getString("showTitle") ?: "", "UTF-8"),
-                    isAnime = args?.getBoolean("isAnime") ?: false,
-                    anilistId = args?.getInt("anilistId")?.takeIf { it > 0 },
-                    onBack = { navController.popBackStack() },
-                    onMediaClick = { mediaId ->
+                    showTitle     = java.net.URLDecoder.decode(args?.getString("showTitle") ?: "", "UTF-8"),
+                    isAnime       = args?.getBoolean("isAnime") ?: false,
+                    anilistId     = args?.getInt("anilistId")?.takeIf { it > 0 },
+                    onBack        = { navController.popBackStack() },
+                    onMediaClick  = { mediaId ->
                         navController.navigate(Screen.Detail.route(safeMediaId(mediaId)))
                     }
                 )
@@ -213,40 +291,40 @@ fun AppBottomBar(currentRoute: String?, onNavigate: (String) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BottomNavItem(
-                    label = "Home",
-                    icon = if (currentRoute == Screen.Home.route) Icons.Filled.Home else Icons.Outlined.Home,
+                    label      = "Home",
+                    icon       = if (currentRoute == Screen.Home.route) Icons.Filled.Home else Icons.Outlined.Home,
                     isSelected = currentRoute == Screen.Home.route,
-                    onClick = { onNavigate(Screen.Home.route) }
+                    onClick    = { onNavigate(Screen.Home.route) }
                 )
                 BottomNavItem(
-                    label = "Discover",
-                    icon = if (currentRoute == Screen.Discovery.route) Icons.Filled.Explore else Icons.Outlined.Explore,
+                    label      = "Discover",
+                    icon       = if (currentRoute == Screen.Discovery.route) Icons.Filled.Explore else Icons.Outlined.Explore,
                     isSelected = currentRoute == Screen.Discovery.route,
-                    onClick = { onNavigate(Screen.Discovery.route) }
+                    onClick    = { onNavigate(Screen.Discovery.route) }
                 )
                 BottomNavItem(
-                    label = "Search",
-                    icon = if (currentRoute == Screen.Search.route) Icons.Filled.Search else Icons.Outlined.Search,
+                    label      = "Search",
+                    icon       = if (currentRoute == Screen.Search.route) Icons.Filled.Search else Icons.Outlined.Search,
                     isSelected = currentRoute == Screen.Search.route,
-                    onClick = { onNavigate(Screen.Search.route) }
+                    onClick    = { onNavigate(Screen.Search.route) }
                 )
                 BottomNavItem(
-                    label = "Graph",
-                    icon = if (currentRoute == Screen.Graph.route) Icons.Filled.AccountTree else Icons.Outlined.AccountTree,
+                    label      = "Graph",
+                    icon       = if (currentRoute == Screen.Graph.route) Icons.Filled.AccountTree else Icons.Outlined.AccountTree,
                     isSelected = currentRoute == Screen.Graph.route,
-                    onClick = { onNavigate(Screen.Graph.route) }
+                    onClick    = { onNavigate(Screen.Graph.route) }
                 )
                 BottomNavItem(
-                    label = "Community",
-                    icon = if (currentRoute == Screen.Community.route) Icons.Filled.People else Icons.Outlined.People,
+                    label      = "Community",
+                    icon       = if (currentRoute == Screen.Community.route) Icons.Filled.People else Icons.Outlined.People,
                     isSelected = currentRoute == Screen.Community.route,
-                    onClick = { onNavigate(Screen.Community.route) }
+                    onClick    = { onNavigate(Screen.Community.route) }
                 )
                 BottomNavItem(
-                    label = "Profile",
-                    icon = if (currentRoute == Screen.Profile.route) Icons.Filled.Person else Icons.Outlined.Person,
+                    label      = "Profile",
+                    icon       = if (currentRoute == Screen.Profile.route) Icons.Filled.Person else Icons.Outlined.Person,
                     isSelected = currentRoute == Screen.Profile.route,
-                    onClick = { onNavigate(Screen.Profile.route) }
+                    onClick    = { onNavigate(Screen.Profile.route) }
                 )
             }
         }
@@ -264,17 +342,17 @@ fun BottomNavItem(label: String, icon: ImageVector, isSelected: Boolean, onClick
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = icon,
+            imageVector    = icon,
             contentDescription = label,
-            tint = if (isSelected) theme.accent else Color.Gray,
+            tint     = if (isSelected) theme.accent else Color.Gray,
             modifier = Modifier.size(22.dp)
         )
         Text(
-            text = label,
-            fontSize = 9.sp,
-            color = if (isSelected) theme.accent else Color.Gray,
+            text       = label,
+            fontSize   = 9.sp,
+            color      = if (isSelected) theme.accent else Color.Gray,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            maxLines = 1
+            maxLines   = 1
         )
     }
 }

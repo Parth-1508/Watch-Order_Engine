@@ -1,10 +1,15 @@
 package com.example.watchorderengine.data.repository
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.watchorderengine.data.WatchOrderRepository
 import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.db.entity.*
 import com.example.watchorderengine.data.model.*
+import com.example.watchorderengine.data.prefs.UserPreferencesRepository
+import com.example.watchorderengine.data.sync.SyncWorker
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbConfig
 import com.example.watchorderengine.network.gemini.GeminiResult
@@ -31,7 +36,8 @@ class MediaRepository @Inject constructor(
     private val moshi: Moshi,
     private val apiService: TmdbApiService,
     private val geminiService: GeminiService,
-    private val watchOrderRepository: WatchOrderRepository
+    private val watchOrderRepository: WatchOrderRepository,
+    private val userPrefs: UserPreferencesRepository
 ) {
     // ─── ID helpers ───────────────────────────────────────────────────────────
 
@@ -179,7 +185,11 @@ class MediaRepository @Inject constructor(
             }
         }.map { id -> 
             // Normalize ID by removing known prefixes to find truly unique episodes
-            id.removePrefix("tmdb_m_").removePrefix("tmdb_t_").removePrefix("tmdb_").removePrefix("anilist_")
+            // e.g. "tmdb_m_123_s1e1" and "tmdb_123_s1e1" both become "123_s1e1"
+            id.removePrefix("tmdb_m_")
+              .removePrefix("tmdb_t_")
+              .removePrefix("tmdb_")
+              .removePrefix("anilist_")
         }.toSet().size
         
         val totalEps = entity.numberOfEpisodes ?: 0
@@ -524,32 +534,45 @@ class MediaRepository @Inject constructor(
 
     suspend fun updateTrackingState(mediaId: String, state: TrackingState) =
         withContext(Dispatchers.IO) {
+            val tmdbId = extractTmdbId(mediaId)
+            val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
+            val legacyPrefix = "tmdb_$rawId"
+            
+            // Clean up other variants before setting new state to prevent duplicate "Watching" entries
+            val otherVariants = setOf("tmdb_m_$rawId", "tmdb_t_$rawId", legacyPrefix, rawId) - mediaId
+            otherVariants.forEach { db.userProgressDao().deleteByMediaId(it) }
+
             val current = db.userProgressDao().getProgress(mediaId)
             db.userProgressDao().upsert(UserProgressEntity(
                 mediaId = mediaId, trackingState = state.name,
                 userNotes    = current?.userNotes    ?: "",
                 priorityTag  = current?.priorityTag  ?: "NONE"
             ))
+            // FIX: If moving from Neutral to something else, don't clear.
+            // But if we're technically re-adding it, clear from skipped.
             db.discoverySkippedDao().removeSkipped(mediaId)
         }
 
     /** Removes a show from the user's watchlist by deleting its progress record and history. */
     suspend fun removeFromWatchlist(mediaId: String) = withContext(Dispatchers.IO) {
-        db.userProgressDao().deleteByMediaId(mediaId)
-        db.episodeWatchedDao().deleteByMediaId(mediaId)
-        
-        // Also clear for legacy ID formats to be thorough
+        // Resolve entity first to find its internal canonical ID which might differ from navigation ID
+        val entity = db.mediaDao().getById(mediaId) ?: run {
+            val tmdbId = extractTmdbId(mediaId)
+            val typedCategories = if (isMovieId(mediaId)) listOf("MOVIE") else listOf("TV_SHOW", "ANIME")
+            tmdbId?.let { db.mediaDao().getByTmdbIdAndCategory(it, typedCategories) }
+        }
+
+        // Clear progress across all possible ID variants
         val tmdbId = extractTmdbId(mediaId)
         val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
         val legacyPrefix = "tmdb_$rawId"
         
-        if (mediaId != legacyPrefix) {
-            db.userProgressDao().deleteByMediaId(legacyPrefix)
-            db.episodeWatchedDao().deleteByMediaId(legacyPrefix)
-        }
-        if (mediaId != rawId && legacyPrefix != rawId) {
-            db.userProgressDao().deleteByMediaId(rawId)
-            db.episodeWatchedDao().deleteByMediaId(rawId)
+        val idVariants = mutableSetOf(mediaId, legacyPrefix, rawId, "tmdb_m_$rawId", "tmdb_t_$rawId")
+        entity?.let { idVariants.add(it.id) }
+
+        idVariants.forEach { id ->
+            db.userProgressDao().deleteByMediaId(id)
+            db.episodeWatchedDao().deleteByMediaId(id)
         }
     }
 
@@ -615,13 +638,53 @@ class MediaRepository @Inject constructor(
 
     // ─── Episode watched ──────────────────────────────────────────────────────
 
-    suspend fun toggleEpisodeWatched(episodeId: String, mediaId: String): Boolean =
-        withContext(Dispatchers.IO) {
-            val isWatched = db.episodeWatchedDao().isWatched(episodeId)
-            if (isWatched) db.episodeWatchedDao().unmarkWatched(episodeId)
-            else db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(episodeId, mediaId))
-            !isWatched
+    suspend fun toggleEpisodeWatched(
+        episodeId: String,
+        mediaId: String,
+        context: Context
+    ): Boolean = withContext(Dispatchers.IO) {
+        val isWatched = db.episodeWatchedDao().isWatched(episodeId)
+        
+        // 1. Always commit to Room first
+        if (isWatched) db.episodeWatchedDao().unmarkWatched(episodeId)
+        else db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(episodeId, mediaId))
+        val nowWatched = !isWatched
+
+        // 2. Sync gate
+        val syncEnabled = userPrefs.cloudSyncEnabled.first()
+        if (!syncEnabled) return@withContext nowWatched
+
+        // 3. Online: mirror to Firestore immediately
+        if (watchOrderRepository.isNetworkAvailable(context)) {
+            watchOrderRepository.mirrorEpisodeWatchedToFirestore(episodeId, mediaId, nowWatched)
+                .onFailure { e ->
+                    Log.w(TAG, "Firestore episode mirror failed — queuing: ${e.message}")
+                    db.pendingSyncTaskDao().insert(
+                        PendingSyncTaskEntity(
+                            taskType  = TaskType.EPISODE_WATCHED,
+                            episodeId = episodeId,
+                            mediaId   = mediaId,
+                            completed = nowWatched
+                        )
+                    )
+                    SyncWorker.enqueue(context)
+                }
+        } else {
+            // 4. Offline: queue for later
+            db.pendingSyncTaskDao().insert(
+                PendingSyncTaskEntity(
+                    taskType   = TaskType.EPISODE_WATCHED,
+                    episodeId  = episodeId,
+                    mediaId    = mediaId,
+                    completed  = nowWatched
+                )
+            )
+            Log.i(TAG, "Queued offline mutation: EPISODE_WATCHED $episodeId")
+            SyncWorker.enqueue(context)
         }
+        
+        nowWatched
+    }
 
     suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int) =
         withContext(Dispatchers.IO) {

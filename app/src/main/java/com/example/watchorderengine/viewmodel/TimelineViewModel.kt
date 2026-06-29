@@ -1,5 +1,6 @@
 package com.example.watchorderengine.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.*
@@ -9,6 +10,7 @@ import com.example.watchorderengine.data.cache.TmdbMetadataCache
 import com.example.watchorderengine.data.graph.GraphEngine
 import com.example.watchorderengine.data.repository.TmdbRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -74,6 +76,7 @@ sealed interface TimelineEvent {
 
 @HiltViewModel
 class TimelineViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: WatchOrderRepository,
     private val tmdbRepo: TmdbRepository,
     private val tmdbCache: TmdbMetadataCache
@@ -253,12 +256,12 @@ class TimelineViewModel @Inject constructor(
         optimisticOverrides.update { it + (nodeId to newState) }
 
         viewModelScope.launch {
-            val result = repository.setNodeCompletion(currentUniverseId, nodeId, newState)
+            val result = repository.setNodeCompletion(currentUniverseId, nodeId, newState, context)
             optimisticOverrides.update { it - nodeId }
 
             if (result.isFailure) {
                 _events.send(
-                    TimelineEvent.ShowSnackbar("Couldn't save progress. Check your connection.")
+                    TimelineEvent.ShowSnackbar("Couldn't save progress. Queued for offline sync.")
                 )
             }
         }

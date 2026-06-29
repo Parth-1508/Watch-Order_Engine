@@ -1,5 +1,6 @@
 package com.example.watchorderengine.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.EpisodeItem
@@ -8,6 +9,7 @@ import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.repository.CharacterRepository
 import com.example.watchorderengine.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +19,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MediaDetailViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: MediaRepository,
     private val characterRepository: CharacterRepository
 ) : ViewModel() {
@@ -194,7 +197,7 @@ class MediaDetailViewModel @Inject constructor(
                 android.util.Log.d("BorutoDebug", "Toggling episode ${episode.id} for $sanitizedId. WasWatched=$wasWatched")
             }
 
-            repository.toggleEpisodeWatched(episode.id, sanitizedId)
+            repository.toggleEpisodeWatched(episode.id, sanitizedId, context)
             
             // If we just marked it as watched, check if there are previous unwatched episodes
             if (!wasWatched) {

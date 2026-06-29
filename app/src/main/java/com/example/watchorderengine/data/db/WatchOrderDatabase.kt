@@ -6,6 +6,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.watchorderengine.data.db.dao.*
 import com.example.watchorderengine.data.db.entity.*
+import com.example.watchorderengine.data.db.entity.PendingSyncTaskEntity
+import com.example.watchorderengine.data.db.dao.PendingSyncTaskDao
 
 // ─── Type Converters ──────────────────────────────────────────────────────────
 
@@ -40,6 +42,26 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `pending_sync_tasks` (
+                `id`           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                `taskType`     TEXT NOT NULL,
+                `universeId`   TEXT NOT NULL,
+                `nodeId`       TEXT,
+                `completed`    INTEGER NOT NULL DEFAULT 1,
+                `episodeId`    TEXT,
+                `mediaId`      TEXT,
+                `payload`      TEXT NOT NULL DEFAULT '{}',
+                `createdAt`    INTEGER NOT NULL,
+                `retryCount`   INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_pending_sync_tasks_taskType` ON `pending_sync_tasks` (`taskType`)")
+    }
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
@@ -49,9 +71,10 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         EpisodeEntity::class,
         UserProgressEntity::class,
         EpisodeWatchedEntity::class,
-        DiscoverySkippedEntity::class
+        DiscoverySkippedEntity::class,
+        PendingSyncTaskEntity::class
     ],
-    version = 5,           // ← bumped from 4
+    version = 6,           // ← bumped from 5
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -63,6 +86,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
     abstract fun userProgressDao(): UserProgressDao
     abstract fun episodeWatchedDao(): EpisodeWatchedDao
     abstract fun discoverySkippedDao(): DiscoverySkippedDao
+    abstract fun pendingSyncTaskDao(): PendingSyncTaskDao
 
     companion object {
         @Volatile private var INSTANCE: WatchOrderDatabase? = null
@@ -74,7 +98,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
