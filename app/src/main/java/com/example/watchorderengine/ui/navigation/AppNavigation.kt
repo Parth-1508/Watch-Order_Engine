@@ -34,14 +34,15 @@ private fun safeMediaId(raw: String): String =
     if (raw.startsWith("tmdb_") || raw.startsWith("anilist_")) raw else "tmdb_$raw"
 
 sealed class Screen(val route: String) {
-    object Opening   : Screen("opening")
-    object Home      : Screen("home")
-    object Discovery : Screen("discovery")
-    object Search    : Screen("search")
-    object Graph     : Screen("graph")
-    object Community : Screen("community")
-    object Profile   : Screen("profile")
-    object Settings  : Screen("settings")
+    object Opening            : Screen("opening")
+    object TasteProfileSetup  : Screen("taste_profile_setup")   // NEW: onboarding flow
+    object Home               : Screen("home")
+    object Discovery          : Screen("discovery")
+    object Search             : Screen("search")
+    object Graph              : Screen("graph")
+    object Community          : Screen("community")
+    object Profile            : Screen("profile")
+    object Settings           : Screen("settings")
     object Detail    : Screen("detail/{mediaId}") {
         fun route(mediaId: String) = "detail/$mediaId"
     }
@@ -176,8 +177,36 @@ fun AppNavigation() {
                 exitTransition  = { fadeOut(tween(TAB_DURATION_MS)) }
             ) {
                 OpeningScreen(
-                    onEnter = { navController.navigate(Screen.Home.route) },
-                    onSkip  = { navController.navigate(Screen.Home.route) }
+                    // "Start Engine" → guided taste-profile setup; cannot press back
+                    onEnter = {
+                        navController.navigate(Screen.TasteProfileSetup.route) {
+                            popUpTo(Screen.Opening.route) { inclusive = true }
+                        }
+                    },
+                    // "Skip" → clean dashboard; cannot press back to opening
+                    onSkip = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Opening.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            // ── Taste Profile Setup (onboarding) ────────────────────────────
+            // After completing (or skipping within) the setup, the user lands
+            // on Home and the entire onboarding backstack is cleared.
+            composable(Screen.TasteProfileSetup.route) {
+                TasteProfileSetupScreen(
+                    onComplete = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
+                        }
+                    },
+                    onSkip = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
+                        }
+                    }
                 )
             }
             composable(Screen.Home.route) {
@@ -222,7 +251,8 @@ fun AppNavigation() {
             }
             composable(Screen.Profile.route) {
                 ProfileScreen(
-                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
+                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                    onRateMediaClick = { navController.navigate(Screen.Discovery.route) }
                 )
             }
             composable(Screen.Settings.route) {

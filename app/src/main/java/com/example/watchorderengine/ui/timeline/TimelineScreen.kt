@@ -45,9 +45,15 @@ fun TimelineScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is TimelineEvent.NavigateToDetail -> onNodeDetail(event.mediaId)
-                is TimelineEvent.ShowSnackbar -> { /* Handle snackbar */ }
+                is TimelineEvent.ShowSnackbar     -> { /* Handle snackbar */ }
             }
         }
+    }
+
+    val isUniverseComplete = remember(uiState) {
+        (uiState as? TimelineUiState.Success)?.let { s ->
+            s.totalNodeCount > 0 && s.completedCount >= s.totalNodeCount
+        } ?: false
     }
 
     Box(
@@ -87,10 +93,132 @@ fun TimelineScreen(
                 onSpoilerToggle = { viewModel.toggleSpoilerShield() }
             )
 
+            CompletionBanner(visible = isUniverseComplete)
+
             when (val state = uiState) {
                 is TimelineUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = WatchOrderColors.AccentGold) }
                 is TimelineUiState.Success -> TimelineContent(state, viewModel)
                 is TimelineUiState.Error -> Text("Error: ${state.message}", color = Color.Red, modifier = Modifier.padding(16.dp))
+            }
+        }
+    }
+}
+
+// ─── Completion Banner ────────────────────────────────────────────────────────
+
+private const val AUTO_DISMISS_MS = 6_000L
+
+@Composable
+private fun CompletionBanner(visible: Boolean) {
+    var dismissed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(visible) {
+        if (visible) {
+            dismissed = false
+            kotlinx.coroutines.delay(AUTO_DISMISS_MS)
+            dismissed = true
+        }
+    }
+
+    val showBanner = visible && !dismissed
+
+    val shimmerOffset by rememberInfiniteTransition(label = "shimmer").animateFloat(
+        initialValue  = -1f,
+        targetValue   = 2f,
+        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing)),
+        label         = "shimmerOffset"
+    )
+
+    AnimatedVisibility(
+        visible = showBanner,
+        enter   = slideInVertically(
+            initialOffsetY = { -it },
+            animationSpec  = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness    = Spring.StiffnessMedium
+            )
+        ) + fadeIn(tween(300)),
+        exit    = slideOutVertically(
+            targetOffsetY = { -it },
+            animationSpec = tween(400)
+        ) + fadeOut(tween(300))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFF1A1200),
+                            Color(0xFF3D2B00),
+                            Color(0xFF1A1200)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.5.dp,
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            WatchOrderColors.AccentGold.copy(alpha = 0.4f),
+                            WatchOrderColors.AccentGold,
+                            WatchOrderColors.AccentGold.copy(alpha = 0.4f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                )
+                .padding(horizontal = 20.dp, vertical = 14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val bounce by rememberInfiniteTransition(label = "trophy_bounce").animateFloat(
+                    initialValue  = 0f,
+                    targetValue   = -6f,
+                    animationSpec = infiniteRepeatable(
+                        animation  = tween(600, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "bounce"
+                )
+                Text(
+                    text     = "🏆",
+                    fontSize = 28.sp,
+                    modifier = Modifier.offset(y = bounce.dp)
+                )
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text       = "UNIVERSE CONQUERED!",
+                        fontSize   = 15.sp,
+                        fontWeight = FontWeight.Black,
+                        color      = WatchOrderColors.AccentGold,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text     = "You've completed every entry in this timeline.",
+                        fontSize = 11.sp,
+                        color    = Color.White.copy(alpha = 0.65f),
+                        lineHeight = 16.sp
+                    )
+                }
+
+                IconButton(
+                    onClick  = { dismissed = true },
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(Color.White.copy(alpha = 0.06f), CircleShape)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint     = Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
         }
     }

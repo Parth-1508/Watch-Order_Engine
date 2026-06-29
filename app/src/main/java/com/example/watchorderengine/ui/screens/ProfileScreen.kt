@@ -22,8 +22,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,14 +46,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Copies a picker-selected image into app-private storage and returns a
- * stable file:// path. A raw content:// URI from the Photo Picker is only
- * guaranteed valid for the lifetime of the grant — persisting it directly
- * as the avatar URL risks it failing to load after the picker's underlying
- * permission is revoked (e.g. after some Android versions/OEMs reclaim
- * transient grants). Copying the bytes once, up front, avoids that entirely.
+ * stable file:// path.
  */
 private suspend fun copyImageToAppStorage(context: Context, sourceUri: Uri): String? =
     withContext(Dispatchers.IO) {
@@ -65,6 +70,7 @@ private suspend fun copyImageToAppStorage(context: Context, sourceUri: Uri): Str
 @Composable
 fun ProfileScreen(
     onMediaClick: (String) -> Unit,
+    onRateMediaClick: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -303,29 +309,151 @@ fun ProfileScreen(
                     }
                 }
             } else {
-                Box(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(theme.surface.copy(alpha = 0.5f))
-                        .padding(20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Add shows to your watchlist to build your taste profile!",
-                        color = theme.textSecondary,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                EmptyTasteProfile(
+                    accentColor   = theme.accent,
+                    onRateMedia   = onRateMediaClick
+                )
             }
         }
         
         if (isLoading) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = theme.accent)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyTasteProfile(
+    accentColor: Color,
+    onRateMedia: () -> Unit
+) {
+    val axisCount  = 6
+    val rings      = 4
+    val graphAlpha = 0.18f
+
+    Box(
+        modifier = Modifier
+            .padding(16.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(accentColor.copy(alpha = 0.05f))
+            .border(1.dp, accentColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(160.dp)
+                    .drawWithCache {
+                        onDrawBehind {
+                            val cx       = size.width  / 2f
+                            val cy       = size.height / 2f
+                            val maxR     = size.minDimension / 2f * 0.88f
+                            val angleStep = (2 * PI / axisCount).toFloat()
+
+                            for (ring in 1..rings) {
+                                val r    = maxR * (ring.toFloat() / rings)
+                                val path = Path()
+                                for (i in 0 until axisCount) {
+                                    val angle = -PI.toFloat() / 2f + i * angleStep
+                                    val x     = cx + r * cos(angle)
+                                    val y     = cy + r * sin(angle)
+                                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                                }
+                                path.close()
+                                drawPath(
+                                    path  = path,
+                                    color = accentColor.copy(alpha = graphAlpha),
+                                    style = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                            }
+
+                            for (i in 0 until axisCount) {
+                                val angle = -PI.toFloat() / 2f + i * angleStep
+                                drawLine(
+                                    color       = accentColor.copy(alpha = graphAlpha),
+                                    start       = Offset(cx, cy),
+                                    end         = Offset(cx + maxR * cos(angle).toFloat(), cy + maxR * sin(angle).toFloat()),
+                                    strokeWidth = 1.dp.toPx()
+                                )
+                            }
+
+                            val ghostValues = floatArrayOf(0.35f, 0.20f, 0.55f, 0.30f, 0.45f, 0.25f)
+                            val ghostPath   = Path()
+                            for (i in 0 until axisCount) {
+                                val angle = -PI.toFloat() / 2f + i * angleStep
+                                val r     = maxR * ghostValues[i]
+                                val x     = cx + r * cos(angle).toFloat()
+                                val y     = cy + r * sin(angle).toFloat()
+                                if (i == 0) ghostPath.moveTo(x, y) else ghostPath.lineTo(x, y)
+                            }
+                            ghostPath.close()
+
+                            drawPath(
+                                path  = ghostPath,
+                                color = accentColor.copy(alpha = 0.07f)
+                            )
+                            drawPath(
+                                path  = ghostPath,
+                                color = accentColor.copy(alpha = 0.25f),
+                                style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
+                            )
+
+                            drawCircle(
+                                color  = accentColor.copy(alpha = 0.3f),
+                                radius = 3.dp.toPx(),
+                                center = Offset(cx, cy)
+                            )
+                        }
+                    }
+            )
+
+            Text(
+                text       = "YOUR TASTE PROFILE\nIS EMPTY",
+                fontSize   = 16.sp,
+                fontWeight = FontWeight.Black,
+                fontStyle  = FontStyle.Italic,
+                color      = accentColor,
+                textAlign  = TextAlign.Center,
+                lineHeight = 22.sp,
+                letterSpacing = 1.sp
+            )
+            Text(
+                text      = "Rate shows and movies to reveal your genre radar\nand unlock personalised recommendations.",
+                fontSize  = 12.sp,
+                color     = Color.Gray,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp
+            )
+
+            Button(
+                onClick  = onRateMedia,
+                modifier = Modifier
+                    .fillMaxWidth(0.75f)
+                    .height(48.dp),
+                shape  = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+            ) {
+                Icon(
+                    Icons.Default.Star,
+                    contentDescription = null,
+                    tint     = Color.Black,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "START RATING MEDIA",
+                    color         = Color.Black,
+                    fontWeight    = FontWeight.Black,
+                    fontSize      = 12.sp,
+                    letterSpacing = 1.sp
+                )
             }
         }
     }

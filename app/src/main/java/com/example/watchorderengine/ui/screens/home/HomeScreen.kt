@@ -1,13 +1,11 @@
 package com.example.watchorderengine.ui.screens.home
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -28,10 +27,22 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.watchorderengine.ui.theme.LocalAppTheme
+
+// ─── "Next Up" data model ─────────────────────────────────────────────────────
+
+data class NextUpItem(
+    val internalId: String,
+    val showTitle: String,
+    val episodeLabel: String,
+    val posterUrl: String?,
+    val backdropUrl: String?,
+    val progressPercent: Int = 0,
+)
 
 @Composable
 fun HomeScreen(
@@ -40,7 +51,9 @@ fun HomeScreen(
     onSearchQueryChanged: (String) -> Unit,
     onSearchToggle: (Boolean) -> Unit,
     onShowClick: (MediaShowItem) -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    nextUpItem: NextUpItem? = null,
+    onResumeClick: (internalId: String) -> Unit = {}
 ) {
     val theme = LocalAppTheme.current
     val scrollState = rememberScrollState()
@@ -74,6 +87,21 @@ fun HomeScreen(
                 onToggleSearch = onSearchToggle,
                 onSettingsClick = onSettingsClick
             )
+
+            // "Next Up" Quick Resume Card
+            AnimatedVisibility(
+                visible = nextUpItem != null,
+                enter   = fadeIn() + expandVertically(),
+                exit    = fadeOut() + shrinkVertically()
+            ) {
+                nextUpItem?.let { item ->
+                    NextUpCard(
+                        item     = item,
+                        onResume = { onResumeClick(item.internalId) },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+            }
 
             // Category Tabs
             LazyRow(
@@ -173,6 +201,154 @@ fun HomeScreen(
                         MediaCard(show = show, onClick = { onShowClick(show) })
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun NextUpCard(
+    item: NextUpItem,
+    onResume: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "play_pulse")
+    val playScale by infiniteTransition.animateFloat(
+        initialValue  = 1f,
+        targetValue   = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation  = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "playScale"
+    )
+
+    val accentGold = Color(0xFFFFBF3C)
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape    = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors   = CardDefaults.cardColors(containerColor = Color(0xFF141B2D))
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+            ) {
+                AsyncImage(
+                    model              = item.backdropUrl ?: item.posterUrl,
+                    contentDescription = item.showTitle,
+                    modifier           = Modifier.fillMaxSize(),
+                    contentScale       = ContentScale.Crop
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0.0f to Color.Transparent,
+                                0.5f to Color.Black.copy(alpha = 0.2f),
+                                1.0f to Color.Black.copy(alpha = 0.85f)
+                            )
+                        )
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(12.dp),
+                    shape    = RoundedCornerShape(6.dp),
+                    color    = accentGold
+                ) {
+                    Row(
+                        modifier           = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment   = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint     = Color.Black,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            "NEXT UP",
+                            color         = Color.Black,
+                            fontSize      = 10.sp,
+                            fontWeight    = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text       = item.showTitle,
+                        color      = Color.White,
+                        fontSize   = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        fontStyle  = FontStyle.Italic,
+                        maxLines   = 1,
+                        overflow   = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text     = item.episodeLabel,
+                        color    = Color.White.copy(alpha = 0.75f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (item.progressPercent > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(Color.White.copy(alpha = 0.08f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(item.progressPercent / 100f)
+                            .fillMaxHeight()
+                            .background(accentGold)
+                    )
+                }
+            }
+
+            Button(
+                onClick  = onResume,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+                    .height(52.dp),
+                shape  = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = accentGold)
+            ) {
+                Icon(
+                    imageVector        = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint               = Color.Black,
+                    modifier           = Modifier
+                        .size(24.dp)
+                        .graphicsLayer { scaleX = playScale; scaleY = playScale }
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text          = "RESUME",
+                    color         = Color.Black,
+                    fontWeight    = FontWeight.Black,
+                    fontSize      = 16.sp,
+                    letterSpacing = 3.sp
+                )
             }
         }
     }

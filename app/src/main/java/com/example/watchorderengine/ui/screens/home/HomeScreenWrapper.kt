@@ -2,6 +2,8 @@ package com.example.watchorderengine.ui.screens.home
 
 import androidx.compose.runtime.*
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.watchorderengine.data.model.MediaCategory
+import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.ui.viewmodel.HomeViewModel
 
 @Composable
@@ -42,6 +44,22 @@ fun HomeScreenWrapper(
         state = state.copy(shows = realShows)
     }
 
+    val nextUpItem: NextUpItem? = remember(watching) {
+        watching.firstOrNull()?.let { media ->
+            NextUpItem(
+                internalId   = media.id,
+                showTitle    = media.title,
+                episodeLabel = when (media.mediaCategory) {
+                    MediaCategory.MOVIE -> "Movie"
+                    else                -> "Continue watching"
+                },
+                posterUrl   = media.posterUrl,
+                backdropUrl = media.backdropUrl,
+                progressPercent = 0
+            )
+        }
+    }
+
     HomeScreen(
         state = state,
         onCategorySelected = { state = state.copy(activeCategory = it) },
@@ -51,11 +69,13 @@ fun HomeScreenWrapper(
             else state = state.copy(isSearchOpen = false) 
         },
         onShowClick = { onMediaClick(it.internalId) },
-        onSettingsClick = onSettingsClick
+        onSettingsClick = onSettingsClick,
+        nextUpItem = nextUpItem,
+        onResumeClick = { onMediaClick(it) }
     )
 }
 
-private fun com.example.watchorderengine.data.model.MediaSummary.toMediaShowItem(status: String?) = MediaShowItem(
+private fun MediaSummary.toMediaShowItem(status: String?) = MediaShowItem(
     id = tmdbId,
     internalId = id,
     title = title,

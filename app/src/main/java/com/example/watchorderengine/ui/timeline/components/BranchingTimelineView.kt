@@ -1,11 +1,15 @@
 package com.example.watchorderengine.ui.timeline.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,32 +26,22 @@ import com.example.watchorderengine.viewmodel.TimelineRow
 
 // ─── Dimension Constants ──────────────────────────────────────────────────────
 
-/** Width of each node card column in the branching layout. */
 private val COLUMN_WIDTH: Dp = 100.dp
 private val COLUMN_GAP: Dp = 24.dp
 private val CONNECTOR_STRIP_HEIGHT: Dp = 80.dp
 private val ROW_VERTICAL_PADDING: Dp = 16.dp
 
-/** Stroke width for pending (uncompleted) connector lines. */
 private const val CONNECTOR_STROKE_IDLE = 1.5f
-
-/** Stroke width for completed connector lines. Slightly bolder for emphasis. */
 private const val CONNECTOR_STROKE_DONE = 2.5f
-
-/** Dash intervals for the pending dashed connector line: 10px on, 6px off. */
 private val DASH_INTERVALS = floatArrayOf(10f, 6f)
+
+// ─── Zoom constraints ─────────────────────────────────────────────────────────
+
+private const val ZOOM_MIN = 0.4f
+private const val ZOOM_MAX = 3.0f
 
 // ─── Main Composable ──────────────────────────────────────────────────────────
 
-/**
- * Renders the full branching timeline as a vertical list of rows.
- *
- * LAYOUT ALGORITHM:
- * Each [TimelineRow] occupies a horizontal "slot" in the LazyColumn. Within a
- * slot, [DisplayNode]s are arranged side-by-side according to their column index.
- * Between consecutive row slots, a [ConnectorStrip] Canvas draws smooth bezier
- * curves representing the DAG edges.
- */
 @Composable
 fun BranchingTimelineView(
     rows: List<TimelineRow>,
@@ -59,40 +53,84 @@ fun BranchingTimelineView(
     val columnWidthPx = with(density) { COLUMN_WIDTH.toPx() }
     val columnGapPx = with(density) { COLUMN_GAP.toPx() }
 
-    Box(
-        modifier = modifier.fillMaxSize()
-    ) {
-        val scrollState = rememberScrollState()
-        
-        LazyColumn(
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+        scale = (scale * zoomChange).coerceIn(ZOOM_MIN, ZOOM_MAX)
+        offset += panChange
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .horizontalScroll(scrollState),
-            contentPadding = PaddingValues(
-                start  = 32.dp,
-                end    = 32.dp,
-                top    = 16.dp,
-                bottom = 64.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
+                .transformable(state = transformableState)
         ) {
-            itemsIndexed(
-                items = rows,
-                key   = { _, row -> row.level }
-            ) { index, row ->
+            TransformableTimelineContent(
+                rows          = rows,
+                scale         = scale,
+                offset        = offset,
+                columnWidthPx = columnWidthPx,
+                columnGapPx   = columnGapPx,
+                onNodeToggle  = onNodeToggle,
+                onNodeClick   = onNodeClick,
+                modifier      = Modifier.fillMaxSize()
+            )
+        }
+
+        ZoomControls(
+            scale      = scale,
+            onZoomIn   = { scale = (scale * 1.25f).coerceIn(ZOOM_MIN, ZOOM_MAX) },
+            onZoomOut  = { scale = (scale / 1.25f).coerceIn(ZOOM_MIN, ZOOM_MAX) },
+            onReset    = { scale = 1f; offset = Offset.Zero },
+            modifier   = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+        )
+    }
+}
+
+@Composable
+private fun TransformableTimelineContent(
+    rows: List<TimelineRow>,
+    scale: Float,
+    offset: Offset,
+    columnWidthPx: Float,
+    columnGapPx: Float,
+    onNodeToggle: (DisplayNode) -> Unit,
+    onNodeClick: (DisplayNode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = offset.x
+                translationY = offset.y
+                transformOrigin = TransformOrigin(0.5f, 0f)
+            }
+    ) {
+        Column(
+            modifier = Modifier
+                .wrapContentSize(unbounded = true)
+                .padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 64.dp)
+        ) {
+            rows.forEachIndexed { index, row ->
                 TimelineRowView(
                     row          = row,
                     onNodeToggle = onNodeToggle,
                     onNodeClick  = onNodeClick
                 )
 
-                if ((index < rows.lastIndex) && row.outgoing.isNotEmpty()) {
+                if (index < rows.lastIndex && row.outgoing.isNotEmpty()) {
                     ConnectorStrip(
-                        connections  = row.outgoing,
-                        totalColumns = row.totalColumns,
+                        connections   = row.outgoing,
+                        totalColumns  = row.totalColumns,
                         columnWidthPx = columnWidthPx,
                         columnGapPx   = columnGapPx,
-                        modifier     = Modifier
+                        modifier      = Modifier
                             .fillMaxWidth()
                             .height(CONNECTOR_STRIP_HEIGHT)
                     )
@@ -105,6 +143,78 @@ fun BranchingTimelineView(
 }
 
 // ─── Row View ─────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ZoomControls(
+    scale: Float,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onReset: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier  = modifier,
+        shape     = RoundedCornerShape(14.dp),
+        color     = WatchOrderColors.ElevatedSurface.copy(alpha = 0.92f),
+        tonalElevation = 4.dp
+    ) {
+        Column(
+            modifier            = Modifier.padding(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            IconButton(
+                onClick  = onZoomIn,
+                enabled  = scale < ZOOM_MAX,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Zoom in",
+                    tint     = if (scale < ZOOM_MAX) WatchOrderColors.TextPrimary else WatchOrderColors.TextSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Text(
+                text     = "${(scale * 100).toInt()}%",
+                color    = WatchOrderColors.TextSecondary,
+                style    = androidx.compose.material3.MaterialTheme.typography.labelSmall
+            )
+
+            IconButton(
+                onClick  = onZoomOut,
+                enabled  = scale > ZOOM_MIN,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.Remove,
+                    contentDescription = "Zoom out",
+                    tint     = if (scale > ZOOM_MIN) WatchOrderColors.TextPrimary else WatchOrderColors.TextSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            HorizontalDivider(
+                modifier  = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                color     = WatchOrderColors.CardBorder,
+                thickness = 0.5.dp
+            )
+
+            IconButton(
+                onClick  = onReset,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.CenterFocusStrong,
+                    contentDescription = "Reset view",
+                    tint     = WatchOrderColors.AccentGold,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun TimelineRowView(
