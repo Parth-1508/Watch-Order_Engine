@@ -103,6 +103,9 @@ interface UserProgressDao {
     @Query("SELECT * FROM user_progress ORDER BY updatedAt DESC")
     suspend fun getAll(): List<UserProgressEntity>
 
+    @Query("SELECT * FROM user_progress WHERE mediaId = :mediaId LIMIT 1")
+    suspend fun getByMediaId(mediaId: String): UserProgressEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: UserProgressEntity)
 
@@ -176,6 +179,33 @@ interface EpisodeWatchedDao {
 
     @Query("SELECT watchedAt FROM episode_watched ORDER BY watchedAt DESC")
     suspend fun getAllWatchedTimestamps(): List<Long>
+}
+
+// ─── ReviewDao ───────────────────────────────────────────────────────────────
+
+@Dao
+interface ReviewDao {
+
+    @Query("SELECT * FROM user_reviews WHERE mediaId = :mediaId ORDER BY createdAt DESC")
+    fun observeReviewsForMedia(mediaId: String): Flow<List<ReviewEntity>>
+
+    @Query("SELECT * FROM user_reviews WHERE userId = :userId ORDER BY updatedAt DESC")
+    fun observeReviewsByUser(userId: String): Flow<List<ReviewEntity>>
+
+    @Query("SELECT * FROM user_reviews WHERE isSynced = 0")
+    suspend fun getPendingSyncReviews(): List<ReviewEntity>
+
+    @Query("SELECT AVG(rating) FROM user_reviews WHERE mediaId = :mediaId")
+    suspend fun getAverageRating(mediaId: String): Float?
+
+    @Upsert
+    suspend fun upsert(entity: ReviewEntity)
+
+    @Query("UPDATE user_reviews SET isSynced = 1 WHERE id = :reviewId")
+    suspend fun markSynced(reviewId: String)
+
+    @Query("DELETE FROM user_reviews WHERE id = :reviewId")
+    suspend fun deleteById(reviewId: String)
 }
 
 // ─── DiscoverySkippedDao ─────────────────────────────────────────────────────

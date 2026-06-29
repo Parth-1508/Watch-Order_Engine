@@ -1,0 +1,114 @@
+package com.example.watchorderengine.data.recommendation
+
+import com.example.watchorderengine.data.db.entity.MediaEntity
+import com.example.watchorderengine.data.db.entity.UserProgressEntity
+import com.example.watchorderengine.data.model.TrackingState
+import kotlin.math.ln
+import kotlin.math.sqrt
+
+data class Recommendation(
+    val media: MediaEntity,
+    val score: Double,
+    val matchedGenres: List<String>,
+)
+
+private val STATE_WEIGHT = mapOf(
+    TrackingState.COMPLETED to 1.0,
+    TrackingState.WATCHING   to 0.75,
+    TrackingState.PAUSED     to 0.4,
+    TrackingState.PLANNED    to 0.2,
+    TrackingState.DROPPED    to -0.5,
+)
+
+private fun ratingMultiplier(userRating: Float?): Double {
+    if (userRating == null) return 1.0
+    return 0.5 + (userRating / 5.0) * 1.0
+}
+
+object RecommendationEngine {
+
+    fun generateRecommendations(
+        completedMedia: List<Pair<MediaEntity, UserProgressEntity>>,
+        candidates: List<MediaEntity>,
+        topK: Int = 20,
+        minCandidateVotes: Int = 50,
+    ): List<Recommendation> {
+
+        if (completedMedia.isEmpty()) return emptyList()
+
+        val tasteVector = mutableMapOf<String, Double>()
+
+        for ((media, progress) in completedMedia) {
+            val stateWeight  = STATE_WEIGHT[TrackingState.valueOf(progress.trackingState)] ?: 0.0
+            val ratingBoost  = ratingMultiplier(progress.userRating)
+            val itemWeight   = stateWeight * ratingBoost
+
+            if (itemWeight == 0.0) continue
+
+            for (genre in media.genres) {
+                tasteVector[genre] = (tasteVector[genre] ?: 0.0) + itemWeight
+            }
+        }
+
+        if (tasteVector.isEmpty()) return emptyList()
+
+        val totalTracked = completedMedia.size.toDouble()
+        val genreDocFrequency = mutableMapOf<String, Int>()
+        for ((media, _) in completedMedia) {
+            for (genre in media.genres) {
+                genreDocFrequency[genre] = (genreDocFrequency[genre] ?: 0) + 1
+            }
+        }
+        for ((genre, rawWeight) in tasteVector) {
+            val df  = genreDocFrequency[genre] ?: 1
+            val idf = ln(totalTracked / df + 1.0)
+            tasteVector[genre] = rawWeight * idf
+        }
+
+        val norm = l2Norm(tasteVector.values)
+        if (norm == 0.0) return emptyList()
+        for (key in tasteVector.keys) { tasteVector[key] = tasteVector[key]!! / norm }
+
+        val eligibleCandidates = candidates.filter { it.voteCount >= minCandidateVotes }
+
+        val scored = eligibleCandidates.map { candidate ->
+            val candidateVector = candidate.genres.associateWith { 1.0 }
+            val similarity = dotProduct(tasteVector, candidateVector)
+            val qualityBoost = (candidate.voteAverage / 10.0).coerceIn(0.0, 1.0)
+            val finalScore   = (similarity * 0.8) + (qualityBoost * 0.2)
+            val matchedGenres = candidate.genres.filter { tasteVector.containsKey(it) }
+
+            Triple(candidate, finalScore, matchedGenres)
+        }
+
+        return scored
+            .filter { (_, score, _) -> score > 0.0 }
+            .sortedByDescending { (_, score, _) -> score }
+            .take(topK)
+            .map { (media, score, genres) ->
+                Recommendation(
+                    media        = media,
+                    score        = score,
+                    matchedGenres = genres.take(3),
+                )
+            }
+    }
+
+    private fun dotProduct(a: Map<String, Double>, b: Map<String, Double>): Double {
+        val (smaller, larger) = if (a.size <= b.size) a to b else b to a
+        return smaller.entries.sumOf { (key, value) -> value * (larger[key] ?: 0.0) }
+    }
+
+    private fun l2Norm(values: Collection<Double>): Double =
+        sqrt(values.sumOf { it * it })
+
+    fun buildReasonLabel(matchedGenres: List<String>): String {
+        if (matchedGenres.isEmpty()) return "Trending in your region"
+        val genreStr = when (matchedGenres.size) {
+            1    -> matchedGenres[0]
+            2    -> "${matchedGenres[0]} & ${matchedGenres[1]}"
+            else -> "${matchedGenres.dropLast(1).joinToString(", ")} & ${matchedGenres.last()}"
+        }
+        return "Because you like $genreStr"
+    }
+}

@@ -62,6 +62,29 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `user_reviews` (
+                `id`          TEXT NOT NULL PRIMARY KEY,
+                `mediaId`     TEXT NOT NULL,
+                `userId`      TEXT NOT NULL,
+                `rating`      REAL NOT NULL,
+                `reviewText`  TEXT NOT NULL DEFAULT '',
+                `hasSpoilers` INTEGER NOT NULL DEFAULT 0,
+                `watchedDate` INTEGER,
+                `createdAt`   INTEGER NOT NULL,
+                `updatedAt`   INTEGER NOT NULL,
+                `isSynced`    INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(`mediaId`) REFERENCES `media`(`id`) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_mediaId` ON `user_reviews` (`mediaId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_userId` ON `user_reviews` (`userId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_reviews_rating` ON `user_reviews` (`rating`)")
+    }
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
@@ -72,9 +95,10 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         UserProgressEntity::class,
         EpisodeWatchedEntity::class,
         DiscoverySkippedEntity::class,
-        PendingSyncTaskEntity::class
+        PendingSyncTaskEntity::class,
+        ReviewEntity::class
     ],
-    version = 6,           // ← bumped from 5
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -87,6 +111,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
     abstract fun episodeWatchedDao(): EpisodeWatchedDao
     abstract fun discoverySkippedDao(): DiscoverySkippedDao
     abstract fun pendingSyncTaskDao(): PendingSyncTaskDao
+    abstract fun reviewDao(): ReviewDao
 
     companion object {
         @Volatile private var INSTANCE: WatchOrderDatabase? = null
@@ -98,7 +123,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

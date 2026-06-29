@@ -255,6 +255,12 @@ data class TmdbWatchProviderResults(
 )
 
 @JsonClass(generateAdapter = true)
+data class TmdbWatchProvidersResponse(
+    @Json(name = "id")      val id: Int,
+    @Json(name = "results") val results: Map<String, TmdbWatchProviderCountry>?
+)
+
+@JsonClass(generateAdapter = true)
 data class TmdbWatchProviderCountry(
     @Json(name = "link")     val link: String?,
     @Json(name = "flatrate") val flatrate: List<TmdbWatchProvider>? = emptyList(),

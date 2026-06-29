@@ -94,8 +94,21 @@ class MediaRepository @Inject constructor(
         }
     }
 
+    private val wpType      = Types.newParameterizedType(List::class.java, WatchProviderItem::class.java)
+    private val wpAdapter   by lazy { moshi.adapter<List<WatchProviderItem>>(wpType) }
+    private val arcsType    = Types.newParameterizedType(List::class.java, StoryArc::class.java)
+    private val arcsAdapter by lazy { moshi.adapter<List<StoryArc>>(arcsType) }
     private val castType    = Types.newParameterizedType(List::class.java, CastMember::class.java)
     private val castAdapter by lazy { moshi.adapter<List<CastMember>>(castType) }
+
+    suspend fun getCachedWatchProviders(mediaId: String): List<WatchProviderItem> {
+        val entity = db.mediaDao().getById(mediaId) ?: return emptyList()
+        return try {
+            wpAdapter.fromJson(entity.watchProvidersJson) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 
     // ─── Media Detail flow ────────────────────────────────────────────────────
 
@@ -195,15 +208,9 @@ class MediaRepository @Inject constructor(
         val totalEps = entity.numberOfEpisodes ?: 0
         val finalWatchedCount = if (totalEps > 0) watchedCount.coerceAtMost(totalEps) else watchedCount
 
-        val cast  = runCatching { castAdapter.fromJson(entity.castJson) }.getOrDefault(emptyList())
-
-        val arcsType    = Types.newParameterizedType(List::class.java, StoryArc::class.java)
-        val arcsAdapter = moshi.adapter<List<StoryArc>>(arcsType)
-        val arcs        = runCatching { arcsAdapter.fromJson(entity.arcsJson) }.getOrDefault(emptyList())
-
-        val wpType      = Types.newParameterizedType(List::class.java, WatchProviderItem::class.java)
-        val wpAdapter   = moshi.adapter<List<WatchProviderItem>>(wpType)
-        val providers   = runCatching { wpAdapter.fromJson(entity.watchProvidersJson) }.getOrDefault(emptyList())
+        val cast = runCatching { castAdapter.fromJson(entity.castJson) }.getOrDefault(emptyList<CastMember>())
+        val arcs = runCatching { arcsAdapter.fromJson(entity.arcsJson) }.getOrDefault(emptyList<StoryArc>())
+        val providers = runCatching { wpAdapter.fromJson(entity.watchProvidersJson) }.getOrDefault(emptyList<WatchProviderItem>())
 
         return MediaDetail(
             id               = entity.id,
@@ -899,8 +906,6 @@ class MediaRepository @Inject constructor(
             ?.maxByOrNull { it.publishedAt ?: "" }?.key
 
         val providers     = resolveWatchProviders(watchProviders?.results)
-        val wpType        = Types.newParameterizedType(List::class.java, WatchProviderItem::class.java)
-        val wpAdapter     = moshi.adapter<List<WatchProviderItem>>(wpType)
         val providersJson = runCatching { wpAdapter.toJson(providers) }.getOrDefault("[]")
 
         return MediaEntity(

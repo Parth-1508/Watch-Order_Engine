@@ -142,6 +142,18 @@ interface TmdbApiService {
         @Query("sort_by") sortBy: String = "popularity.desc",
         @Query("page") page: Int = 1
     ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
+
+    /**
+     * Fetches watch providers for a movie.
+     */
+    @GET("movie/{movieId}/watch/providers")
+    suspend fun getMovieWatchProviders(@Path("movieId") movieId: Int): Response<com.example.watchorderengine.network.model.TmdbWatchProvidersResponse>
+
+    /**
+     * Fetches watch providers for a TV show.
+     */
+    @GET("tv/{tvId}/watch/providers")
+    suspend fun getTvWatchProviders(@Path("tvId") tvId: Int): Response<com.example.watchorderengine.network.model.TmdbWatchProvidersResponse>
 }
 
 // ─── OkHttp Auth Interceptor ──────────────────────────────────────────────────
