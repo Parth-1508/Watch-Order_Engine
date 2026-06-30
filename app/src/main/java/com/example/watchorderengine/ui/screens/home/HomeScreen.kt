@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.watchorderengine.data.recommendation.Recommendation
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 
 // ─── "Next Up" data model ─────────────────────────────────────────────────────
@@ -53,7 +54,8 @@ fun HomeScreen(
     onShowClick: (MediaShowItem) -> Unit,
     onSettingsClick: () -> Unit,
     nextUpItem: NextUpItem? = null,
-    onResumeClick: (internalId: String) -> Unit = {}
+    onResumeClick: (internalId: String) -> Unit = {},
+    recommendations: List<Recommendation> = emptyList()
 ) {
     val theme = LocalAppTheme.current
     val scrollState = rememberScrollState()
@@ -85,7 +87,8 @@ fun HomeScreen(
                 query = state.searchQuery,
                 onQueryChanged = onSearchQueryChanged,
                 onToggleSearch = onSearchToggle,
-                onSettingsClick = onSettingsClick
+                onSettingsClick = onSettingsClick,
+                profilePictureUrl = state.profilePictureUrl
             )
 
             // "Next Up" Quick Resume Card
@@ -187,25 +190,29 @@ fun HomeScreen(
                     }
                 }
 
-                // DISCOVER Section
-                Spacer(modifier = Modifier.height(32.dp))
-                Text(
-                    "DISCOVER",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color.Gray,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Discovery horizontal row
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(bottom = 32.dp)
-                ) {
-                    items(state.shows.filter { it.watchlistStatus == null }.take(10)) { show ->
-                        MediaCard(show = show, onClick = { onShowClick(show) })
+                // RECOMMENDED FOR YOU Section
+                if (recommendations.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Text(
+                        "RECOMMENDED FOR YOU",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.Gray,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(bottom = 32.dp)
+                    ) {
+                        items(recommendations, key = { it.media.id }) { recommendation ->
+                            MediaCard(
+                                show = recommendation.toMediaShowItem(),
+                                onClick = { onShowClick(recommendation.toMediaShowItem()) }
+                            )
+                        }
                     }
                 }
             }
@@ -367,7 +374,8 @@ fun Header(
     query: String,
     onQueryChanged: (String) -> Unit,
     onToggleSearch: (Boolean) -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    profilePictureUrl: String? = null
 ) {
     val theme = LocalAppTheme.current
     
@@ -386,19 +394,35 @@ fun Header(
             },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar (Left)
+        // Avatar (Left) — tapping navigates to Settings
         Box(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
                 .border(2.dp, theme.textPrimary, CircleShape)
+                .clickable(onClickLabel = "Open settings") { onSettingsClick() }
         ) {
-            AsyncImage(
-                model = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?crop=faces&fit=crop&w=100&h=100",
-                contentDescription = "Avatar",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
+            if (profilePictureUrl.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(theme.surface),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AccountCircle,
+                        contentDescription = "Avatar",
+                        tint = theme.textSecondary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            } else {
+                AsyncImage(
+                    model = profilePictureUrl,
+                    contentDescription = "Avatar",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
+                )
+            }
         }
 
         // Title or Search Bar (Center/Expanded)
@@ -463,6 +487,17 @@ fun Header(
         }
     }
 }
+
+// Adapts a recommendation engine result into the MediaShowItem shape that MediaCard renders.
+private fun Recommendation.toMediaShowItem(): MediaShowItem = MediaShowItem(
+    id = media.tmdbId,
+    internalId = media.id,
+    title = media.title,
+    imageUrl = media.posterUrl ?: "",
+    genres = media.genres,
+    badge = "RECOMMENDED",
+    watchlistStatus = "Recommended"
+)
 
 @Composable
 fun SearchOverlay(

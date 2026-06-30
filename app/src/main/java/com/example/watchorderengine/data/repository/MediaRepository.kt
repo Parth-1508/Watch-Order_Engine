@@ -386,7 +386,7 @@ class MediaRepository @Inject constructor(
                     absoluteEpisodeNumber = offset + idx + 1,
                     title = ep.name ?: "Episode ${ep.episodeNumber}",
                     overview = ep.overview ?: "", airDate = ep.airDate, runtime = ep.runtime,
-                    stillUrl = TmdbConfig.buildImageUrl(ep.stillPath, TmdbConfig.PosterSize.SMALL),
+                    stillUrl = TmdbConfig.buildImageUrl(ep.stillPath, TmdbConfig.PosterSize.HD),
                     voteAverage = ep.voteAverage?.toFloat() ?: 0f,
                     episodeType = existing?.episodeType ?: "CANON",
                     arcName = existing?.arcName

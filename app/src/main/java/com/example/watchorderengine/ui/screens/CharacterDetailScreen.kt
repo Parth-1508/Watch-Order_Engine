@@ -74,7 +74,8 @@ fun CharacterDetailScreen(
                 photoIndex = photoIndex,
                 onPhotoSelect = viewModel::setPhotoIndex,
                 onBack = onBack,
-                onMediaClick = onMediaClick
+                onMediaClick = onMediaClick,
+                isAnime = isAnime
             )
         }
     }
@@ -154,7 +155,8 @@ private fun CharacterDetailBody(
     photoIndex: Int,
     onPhotoSelect: (Int) -> Unit,
     onBack: () -> Unit,
-    onMediaClick: (String) -> Unit
+    onMediaClick: (String) -> Unit,
+    isAnime: Boolean
 ) {
     val theme = LocalAppTheme.current
     val scrollState = rememberScrollState()
@@ -356,7 +358,7 @@ private fun CharacterDetailBody(
 
         Crossfade(targetState = activeTab, label = "character_tab") { tab ->
             when (tabs.getOrNull(tab)) {
-                "Character" -> CharacterTab(detail)
+                "Character" -> CharacterTab(detail, isAnime)
                 "Actor" -> ActorTab(detail)
                 "Appearances" -> AppearancesTab(detail)
                 "Filmography" -> FilmographyTab(detail, onMediaClick)
@@ -394,14 +396,18 @@ private fun QuickStat(label: String, value: String, modifier: Modifier = Modifie
 // ─── Tab 0: Character ───────────────────────────────────────────────────────────
 
 @Composable
-private fun CharacterTab(detail: CharacterDetail) {
+private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
     val theme = LocalAppTheme.current
     Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
         if (detail.characterDescription.isNotBlank()) {
             SectionHeader("About this character")
-            InfoCard {
-                Text(detail.characterDescription, color = theme.textSecondary, fontSize = 13.sp, lineHeight = 19.sp)
+            if (detail.characterDescription.length > 200) {
+                WikiLoreCard(lore = detail.characterDescription)
+            } else {
+                InfoCard {
+                    Text(detail.characterDescription, color = theme.textSecondary, fontSize = 13.sp, lineHeight = 19.sp)
+                }
             }
         } else {
             InfoCard {
@@ -458,16 +464,20 @@ private fun CharacterTab(detail: CharacterDetail) {
             }
         }
 
-        val displayArt = remember(detail) {
-            val fictional = detail.characterPhotos.filter { it.isNotBlank() }
-            if (fictional.isEmpty() && !detail.characterImageUrl.isNullOrBlank()) {
-                listOf(detail.characterImageUrl).filter { it.isNotBlank() }
+        val displayArt = remember(detail, isAnime) {
+            if (!isAnime) {
+                emptyList()
             } else {
-                fictional
+                val fictional = detail.characterPhotos.filter { it.isNotBlank() }
+                if (fictional.isEmpty() && !detail.characterImageUrl.isNullOrBlank()) {
+                    listOf(detail.characterImageUrl).filter { it.isNotBlank() }
+                } else {
+                    fictional
+                }
             }
         }
 
-        if (displayArt.isNotEmpty()) {
+        if (isAnime && displayArt.isNotEmpty()) {
             SectionHeader("Fictional Art")
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

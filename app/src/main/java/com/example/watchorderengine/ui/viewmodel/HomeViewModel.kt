@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.model.MediaSummary
+import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.recommendation.Recommendation
 import com.example.watchorderengine.data.recommendation.RecommendationEngine
 import com.example.watchorderengine.data.repository.MediaRepository
@@ -12,13 +13,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: MediaRepository,
-    private val db: WatchOrderDatabase
+    private val db: WatchOrderDatabase,
+    private val userPrefs: UserPreferencesRepository
 ) : ViewModel() {
 
     private val _watchingList = MutableStateFlow<List<MediaSummary>>(emptyList())
@@ -47,6 +51,12 @@ class HomeViewModel @Inject constructor(
 
     private val _nextUp = MutableStateFlow<com.example.watchorderengine.ui.screens.home.NextUpItem?>(null)
     val nextUp: StateFlow<com.example.watchorderengine.ui.screens.home.NextUpItem?> = _nextUp.asStateFlow()
+
+    val avatarUrl: StateFlow<String?> = userPrefs.avatarUrl.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
 
     init {
         refresh()
@@ -111,12 +121,17 @@ class HomeViewModel @Inject constructor(
                     }
 
                 if (nextEp != null) {
+                    // UPGRADE IMAGE QUALITY: If the stored stillUrl is low-res (w185), 
+                    // swap it for HD (w780) specifically for this prominent home card.
+                    val highResBackdrop = nextEp.stillUrl?.replace("/w185/", "/w780/") 
+                        ?: mostRecent.backdropUrl
+
                     _nextUp.value = com.example.watchorderengine.ui.screens.home.NextUpItem(
                         internalId = mediaId,
                         showTitle = mostRecent.title,
                         episodeLabel = "S${nextEp.seasonNumber} E${nextEp.episodeNumber} — ${nextEp.title}",
                         posterUrl = mostRecent.posterUrl,
-                        backdropUrl = nextEp.stillUrl ?: mostRecent.backdropUrl,
+                        backdropUrl = highResBackdrop,
                         progressPercent = (watchedNormalized.size * 100 / episodes
                             .filter { it.seasonNumber > 0 }
                             .size.coerceAtLeast(1))

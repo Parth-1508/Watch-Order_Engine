@@ -90,32 +90,38 @@ class CharacterRepository @Inject constructor(
             val validWikiImg = wikiImageUrl?.takeIf { TmdbConfig.isValidImageUrl(it) }
             validWikiImg?.let { if (!fictionalArt.contains(it)) fictionalArt.add(it) }
 
-            // TMDB "tagged images" tied to THIS specific production
-            person.taggedImages?.results.orEmpty()
-                .filter { it.imageType == "still" || it.imageType == null }
-                .filter { tagged ->
-                    val mediaTitle = tagged.media?.title ?: tagged.media?.name
-                    mediaTitle != null && (
-                        mediaTitle.equals(cleanShowTitle, ignoreCase = true) ||
-                        mediaTitle.contains(cleanShowTitle, ignoreCase = true) ||
-                        cleanShowTitle.contains(mediaTitle, ignoreCase = true)
-                    )
-                }
-                .sortedByDescending { it.voteAverage ?: 0.0 }
-                .take(6)
-                .mapNotNull { TmdbConfig.buildImageUrl(it.filePath, TmdbConfig.PosterSize.CARD) }
-                .filter { TmdbConfig.isValidImageUrl(it) }
-                .forEach { url -> if (!fictionalArt.contains(url)) fictionalArt.add(url) }
+            // Fictional/in-character art (AniList renders, TMDB tagged stills) is only
+            // reliable for anime — for live-action, TMDB "tagged images" frequently
+            // resolve to broken or mismatched placeholders, so we skip them entirely
+            // and fall back strictly to the actor's real profile photo instead.
+            if (isAnime) {
+                // TMDB "tagged images" tied to THIS specific production
+                person.taggedImages?.results.orEmpty()
+                    .filter { it.imageType == "still" || it.imageType == null }
+                    .filter { tagged ->
+                        val mediaTitle = tagged.media?.title ?: tagged.media?.name
+                        mediaTitle != null && (
+                            mediaTitle.equals(cleanShowTitle, ignoreCase = true) ||
+                            mediaTitle.contains(cleanShowTitle, ignoreCase = true) ||
+                            cleanShowTitle.contains(mediaTitle, ignoreCase = true)
+                        )
+                    }
+                    .sortedByDescending { it.voteAverage ?: 0.0 }
+                    .take(6)
+                    .mapNotNull { TmdbConfig.buildImageUrl(it.filePath, TmdbConfig.PosterSize.CARD) }
+                    .filter { TmdbConfig.isValidImageUrl(it) }
+                    .forEach { url -> if (!fictionalArt.contains(url)) fictionalArt.add(url) }
 
-            media?.relations?.edges.orEmpty()
-                .filter { edge -> 
-                    edge.node?.characters?.edges?.any { charEdge -> 
-                        nameMatches(charEdge.node?.name?.full, cleanCharName)
-                    } == true 
-                }
-                .mapNotNull { it.node?.coverImage?.extraLarge ?: it.node?.coverImage?.large }
-                .filter { TmdbConfig.isValidImageUrl(it) }
-                .forEach { url -> if (!fictionalArt.contains(url)) fictionalArt.add(url) }
+                media?.relations?.edges.orEmpty()
+                    .filter { edge -> 
+                        edge.node?.characters?.edges?.any { charEdge -> 
+                            nameMatches(charEdge.node?.name?.full, cleanCharName)
+                        } == true 
+                    }
+                    .mapNotNull { it.node?.coverImage?.extraLarge ?: it.node?.coverImage?.large }
+                    .filter { TmdbConfig.isValidImageUrl(it) }
+                    .forEach { url -> if (!fictionalArt.contains(url)) fictionalArt.add(url) }
+            }
 
             val actorGenderStr = when (person.gender) {
                 1 -> "Female"; 2 -> "Male"; 3 -> "Non-binary"; else -> null

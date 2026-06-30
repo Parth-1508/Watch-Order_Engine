@@ -22,6 +22,7 @@ fun HomeScreenWrapper(
     val trending by viewModel.trendingList.collectAsStateWithLifecycle()
     val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
     val nextUpItem by viewModel.nextUp.collectAsStateWithLifecycle()
+    val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
 
     var state by remember {
         mutableStateOf(
@@ -29,6 +30,10 @@ fun HomeScreenWrapper(
                 shows = emptyList()
             )
         )
+    }
+
+    LaunchedEffect(avatarUrl) {
+        state = state.copy(profilePictureUrl = avatarUrl)
     }
 
     val realShows = remember(watching, planned, completed, dropped, paused, trending, recommendations) {
@@ -70,7 +75,8 @@ fun HomeScreenWrapper(
         onShowClick = { onMediaClick(it.internalId) },
         onSettingsClick = onSettingsClick,
         nextUpItem = nextUpItem,
-        onResumeClick = { onMediaClick(it) }
+        onResumeClick = { onMediaClick(it) },
+        recommendations = recommendations
     )
 }
 

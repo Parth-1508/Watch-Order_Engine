@@ -18,5 +18,6 @@ data class HomeUiState(
     val searchQuery: String = "",
     val isSearchOpen: Boolean = false,
     val shows: List<MediaShowItem> = emptyList(),
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val profilePictureUrl: String? = null
 )

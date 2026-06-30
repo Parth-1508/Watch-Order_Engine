@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -254,11 +255,19 @@ private fun TimelineHeader(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = WatchOrderColors.TextPrimary)
             }
             Spacer(modifier = Modifier.width(8.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f, fill = false)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Share, null, tint = WatchOrderColors.AccentGold, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(universeName, color = WatchOrderColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        universeName,
+                        color = WatchOrderColors.TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
                 }
                 Text("Progress Tracker", color = WatchOrderColors.TextSecondary, fontSize = 10.sp)
             }
