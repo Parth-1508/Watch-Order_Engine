@@ -314,5 +314,6 @@ data class UserStats(
     // ERROR #4 new fields
     val recentlyWatched: List<MediaSummary> = emptyList(),
     val favoriteGenre: String? = null,
-    val streakDays: Int = 0
+    val streakDays: Int = 0,
+    val profileScore: Int = 0
 )

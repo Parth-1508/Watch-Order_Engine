@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
@@ -29,6 +30,8 @@ import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.theme.WatchOrderColors
 import com.example.watchorderengine.ui.timeline.components.BranchingTimelineView
 import com.example.watchorderengine.viewmodel.*
+
+private data class Star(val x: Float, val y: Float, val alpha: Float, val radius: Float)
 
 @Composable
 fun TimelineScreen(
@@ -60,29 +63,34 @@ fun TimelineScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(WatchOrderColors.DeepSpace)
-            .drawBehind {
+            .drawWithCache {
                 val random = java.util.Random(42)
-                repeat(100) {
-                    val x = random.nextFloat() * size.width
-                    val y = random.nextFloat() * size.height
+                val stars = List(100) {
+                    val x = random.nextFloat()
+                    val y = random.nextFloat()
                     val alpha = 0.1f + random.nextFloat() * 0.4f
-                    val radius = 0.5.dp.toPx() + random.nextFloat() * 1.5.dp.toPx()
-                    drawCircle(
-                        color = Color.White.copy(alpha = alpha),
-                        radius = radius,
-                        center = Offset(x, y)
-                    )
+                    val radius = (0.5f + random.nextFloat() * 1.5f).dp.toPx()
+                    Star(x, y, alpha, radius)
                 }
-                
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(WatchOrderColors.AccentGold.copy(alpha = 0.05f), Color.Transparent),
+                onDrawBehind {
+                    stars.forEach { star ->
+                        drawCircle(
+                            color = Color.White.copy(alpha = star.alpha),
+                            radius = star.radius,
+                            center = Offset(star.x * size.width, star.y * size.height)
+                        )
+                    }
+
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(WatchOrderColors.AccentGold.copy(alpha = 0.05f), Color.Transparent),
+                            center = Offset(size.width * 0.8f, size.height * 0.2f),
+                            radius = size.width * 0.6f
+                        ),
                         center = Offset(size.width * 0.8f, size.height * 0.2f),
                         radius = size.width * 0.6f
-                    ),
-                    center = Offset(size.width * 0.8f, size.height * 0.2f),
-                    radius = size.width * 0.6f
-                )
+                    )
+                }
             }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {

@@ -72,6 +72,29 @@ class MediaRepository @Inject constructor(
     private fun isMovieId(mediaId: String): Boolean = mediaId.contains("_m_")
     private fun isTvId(mediaId: String):    Boolean = mediaId.contains("_t_")
 
+    /**
+     * Returns a set of normalized episode IDs that the user has watched for this show,
+     * including history recovered from legacy ID formats.
+     */
+    suspend fun getNormalizedWatchedIds(mediaId: String): Set<String> = withContext(Dispatchers.IO) {
+        val tmdbId = extractTmdbId(mediaId)
+        val rawId    = tmdbId?.toString() ?: mediaId.substringAfterLast("_")
+        val legacyPrefix = "tmdb_$rawId"
+
+        buildSet {
+            addAll(db.episodeWatchedDao().getWatchedIds(mediaId))
+            addAll(db.episodeWatchedDao().getWatchedIds(legacyPrefix))
+            addAll(db.episodeWatchedDao().getWatchedIds(rawId))
+            // Also include current entity ID if different
+            db.mediaDao().getById(mediaId)?.let { addAll(db.episodeWatchedDao().getWatchedIds(it.id)) }
+        }.map { id ->
+            id.removePrefix("tmdb_m_")
+              .removePrefix("tmdb_t_")
+              .removePrefix("tmdb_")
+              .removePrefix("anilist_")
+        }.toSet()
+    }
+
     fun findUniversesForMedia(tmdbId: Int) = watchOrderRepository.findUniversesForMedia(tmdbId)
 
     suspend fun backfillMissingUniversePosters(universes: List<Universe>) {
@@ -303,10 +326,24 @@ class MediaRepository @Inject constructor(
             db.mediaDao().upsert(entity)
 
             if (body.seasons != null) {
+                // Pre-calculate season offsets for absolute episode numbering to ensure
+                // deterministic order regardless of which season-refresh finishes first.
+                val seasonOffsets = mutableMapOf<Int, Int>()
+                var cumulativeCount = 0
+                body.seasons.sortedBy { it.seasonNumber }.forEach { s ->
+                    if (s.seasonNumber > 0) {
+                        seasonOffsets[s.seasonNumber] = cumulativeCount
+                        cumulativeCount += s.episodeCount
+                    }
+                }
+
                 supervisorScope {
                     body.seasons
                         .map { season ->
-                            async { refreshSeasonEpisodes(tmdbId, mediaId, season.seasonNumber, season.episodeCount) }
+                            async { 
+                                val offset = seasonOffsets[season.seasonNumber] ?: 0
+                                refreshSeasonEpisodes(tmdbId, mediaId, season.seasonNumber, season.episodeCount, offset) 
+                            }
                         }
                         .forEach { it.await() }
                 }
@@ -322,7 +359,7 @@ class MediaRepository @Inject constructor(
     }
 
     private suspend fun refreshSeasonEpisodes(
-        tmdbId: Int, mediaId: String, seasonNumber: Int, episodeCount: Int
+        tmdbId: Int, mediaId: String, seasonNumber: Int, episodeCount: Int, offset: Int
     ) {
         try {
             val response = apiService.getTvSeason(tmdbId, seasonNumber)
@@ -337,8 +374,6 @@ class MediaRepository @Inject constructor(
                 airDate = seasonBody.airDate, episodeCount = episodeCount
             )))
 
-            val previousEpisodes = db.episodeDao()
-                .getEpisodesInRange(mediaId, 0, (seasonNumber - 1) * 1000).size
             val existingEpisodes = db.episodeDao().getEpisodesBySeason(seasonId)
                 .associateBy { it.episodeNumber }
 
@@ -348,7 +383,7 @@ class MediaRepository @Inject constructor(
                     id = "${mediaId}_s${seasonNumber}e${ep.episodeNumber}",
                     seasonId = seasonId, mediaId = mediaId,
                     episodeNumber = ep.episodeNumber, seasonNumber = seasonNumber,
-                    absoluteEpisodeNumber = previousEpisodes + idx + 1,
+                    absoluteEpisodeNumber = offset + idx + 1,
                     title = ep.name ?: "Episode ${ep.episodeNumber}",
                     overview = ep.overview ?: "", airDate = ep.airDate, runtime = ep.runtime,
                     stillUrl = TmdbConfig.buildImageUrl(ep.stillPath, TmdbConfig.PosterSize.SMALL),
@@ -434,18 +469,77 @@ class MediaRepository @Inject constructor(
         } catch (e: Exception) { emptyList() }
     }
 
-    // ─── generateWatchOrder ───────────────────────────────────────────────────
+    // ─── generateWatchOrder ───────────────────────────────────────────────────────
 
     suspend fun generateWatchOrder(mediaId: String): String? = withContext(Dispatchers.IO) {
         val entity = db.mediaDao().getById(mediaId) ?: return@withContext "Show not found."
         val isMovie = entity.mediaCategory == "MOVIE"
 
-        // ── Step 1: RAW DATA FIRST. Build the item list from real, already-cached
-        // TMDB metadata (SeasonEntity.name/overview/episodeCount) — never from
-        // free-text the model has to "remember". Gemini never sees this show
-        // until this list already exists.
+        // ── Step 1: RAW DATA FIRST — build the FULL franchise item list ──────────
+        // For movies: expand to the entire TMDB Collection so Gemini can sort all
+        // films in a franchise (Toy Story, MCU Infinity Saga, etc.) instead of
+        // receiving a single node and producing a degenerate single-hexagon graph.
+        // For TV: seasons are already a list; no change needed.
         val rawItems: List<com.example.watchorderengine.network.gemini.RawMediaItem> = if (isMovie) {
-            listOf(
+
+            // ── Franchise expansion ───────────────────────────────────────────────
+            val collectionItems: List<com.example.watchorderengine.network.gemini.RawMediaItem>? = try {
+                // 1. Re-fetch the movie to get belongs_to_collection (may not be in Room)
+                val detailResponse = apiService.getMovie(entity.tmdbId)
+                val collectionId = detailResponse.body()?.belongsToCollection?.id
+
+                if (collectionId != null && collectionId > 0) {
+                    Log.d(TAG, "Expanding franchise via collection $collectionId for ${entity.title}")
+                    val collectionResponse = apiService.getMovieCollection(collectionId)
+                    collectionResponse.body()?.parts
+                        ?.filter { !it.releaseDate.isNullOrBlank() }  // skip unannounced entries
+                        ?.sortedBy { it.releaseDate }                  // chronological seed
+                        ?.map { part ->
+                            val partMediaId = buildMediaId(part.id, "movie")
+                            // Pre-cache a minimal entity so timeline navigation works instantly;
+                            // full detail is fetched on demand when the user taps the node.
+                            if (db.mediaDao().getById(partMediaId) == null) {
+                                db.mediaDao().upsert(
+                                    com.example.watchorderengine.data.db.entity.MediaEntity(
+                                        id = partMediaId,            tmdbId = part.id,
+                                        anilistId = null,
+                                        title = part.title,          originalTitle = part.title,
+                                        overview = part.overview ?: "", tagline = "", status = "",
+                                        posterUrl   = TmdbConfig.buildImageUrl(part.posterPath),
+                                        backdropUrl = null,
+                                        mediaCategory = "MOVIE",
+                                        genres = emptyList(),        ageRating = "NR",
+                                        voteAverage = part.voteAverage?.toFloat() ?: 0f,
+                                        voteCount = 0,               runtime = null,
+                                        numberOfSeasons = null,      numberOfEpisodes = null,
+                                        releaseDate = part.releaseDate,
+                                        releaseYear = part.releaseDate?.take(4) ?: "",
+                                        trailerKey = null,
+                                        castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
+                                    )
+                                )
+                            }
+                            com.example.watchorderengine.network.gemini.RawMediaItem(
+                                itemId      = partMediaId,
+                                title       = part.title,
+                                overview    = part.overview ?: "",
+                                contentType = "MOVIE",
+                                releaseDate = part.releaseDate,
+                                tmdbId      = part.id,
+                                source      = "TMDB_COLLECTION"
+                            )
+                        }
+                } else {
+                    Log.d(TAG, "No collection found for ${entity.title} — using single-item list")
+                    null
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Collection fetch failed for ${entity.title}: ${e.message}")
+                null
+            }
+
+            // Fall back to the original single-item list for truly standalone movies
+            collectionItems?.takeIf { it.isNotEmpty() } ?: listOf(
                 com.example.watchorderengine.network.gemini.RawMediaItem(
                     itemId      = mediaId,
                     title       = entity.title,
@@ -456,7 +550,9 @@ class MediaRepository @Inject constructor(
                     source      = "TMDB_MOVIE"
                 )
             )
+
         } else {
+            // TV / Anime: map seasons (unchanged from original)
             db.seasonDao().getSeasonsByMedia(mediaId).sortedBy { it.seasonNumber }.map { season ->
                 com.example.watchorderengine.network.gemini.RawMediaItem(
                     itemId       = season.id,
@@ -476,19 +572,17 @@ class MediaRepository @Inject constructor(
             return@withContext "No season data cached yet for this show — open it once before generating a watch order."
         }
 
-        // ── Step 2: Gemini SORTS the real data. It returns the same item_ids
-        // back, only with ordering/phase/filler metadata attached.
+        // ── Step 2: Gemini SORTS the real data ──────────────────────────────────
         val result = geminiService.generateWatchOrder(showTitle = entity.title, rawItems = rawItems)
 
         when (result) {
-            is GeminiResult.Error -> result.message
-            is GeminiResult.Success -> {
+            is com.example.watchorderengine.network.gemini.GeminiResult.Error -> result.message
+            is com.example.watchorderengine.network.gemini.GeminiResult.Success -> {
                 val sortedNodes = result.watchOrder.nodes
                 val sortedEdges = result.watchOrder.edges
                 Log.d(TAG, "SORTED: ${sortedNodes.size} nodes (of ${rawItems.size} raw items), ${sortedEdges.size} edges")
 
-                // ── Step 3: Publish. Every node's title/overview/tmdb_id comes from
-                // rawItems (real TMDB data) — Gemini only supplied ordering/phase/filler.
+                // ── Step 3: Publish ──────────────────────────────────────────────
                 watchOrderRepository.clearGeneratedUniverse(mediaId)
                 val publishResult = watchOrderRepository.publishSortedUniverse(
                     universeId    = mediaId,
@@ -498,10 +592,6 @@ class MediaRepository @Inject constructor(
                     sortedNodes   = sortedNodes,
                     sortedEdges   = sortedEdges,
                     resolveMediaId = { raw ->
-                        // A season of THIS show always maps back onto the show's own
-                        // page; buildMediaId stays available for future raw-item
-                        // sources (e.g. AniList relations) that point at a different
-                        // tmdb_id entirely.
                         if (raw.tmdbId == entity.tmdbId) {
                             mediaId to (if (isMovie) "movie" else "tv")
                         } else {
@@ -514,8 +604,7 @@ class MediaRepository @Inject constructor(
                     return@withContext "Firestore push failed: ${publishResult.exceptionOrNull()?.message}"
                 }
 
-                // ── Step 4: Tag this show's own cached episodes CANON/FILLER per
-                // season, using Gemini's classification of that season's raw item.
+                // ── Step 4: Tag episodes CANON/FILLER ───────────────────────────
                 supervisorScope {
                     sortedNodes.forEach { node ->
                         val raw = rawItems.find { it.itemId == node.itemId } ?: return@forEach

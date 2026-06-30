@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.watchorderengine.data.model.WatchProviderItem
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -54,22 +55,22 @@ fun MediaDetailScreen(
     viewModel: MediaDetailViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
-    val media by viewModel.mediaDetail.collectAsState()
-    val universes by viewModel.universes.collectAsState()
-    val isAnalyzing by viewModel.isAnalyzing.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isEpisodesLoading by viewModel.isEpisodesLoading.collectAsState()
-    val generationError by viewModel.generationError.collectAsState()
-    val generationSuccess by viewModel.generationSuccess.collectAsState()
+    val media by viewModel.mediaDetail.collectAsStateWithLifecycle()
+    val universes by viewModel.universes.collectAsStateWithLifecycle()
+    val isAnalyzing by viewModel.isAnalyzing.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val isEpisodesLoading by viewModel.isEpisodesLoading.collectAsStateWithLifecycle()
+    val generationError by viewModel.generationError.collectAsStateWithLifecycle()
+    val generationSuccess by viewModel.generationSuccess.collectAsStateWithLifecycle()
 
     LaunchedEffect(mediaId) {
         android.util.Log.d("MediaDetail", "Loading mediaId: $mediaId")
         viewModel.loadMediaDetail(mediaId)
     }
     
-    val episodesBySeason by viewModel.episodes.collectAsState()
-    val bulkMarkPrompt by viewModel.bulkMarkPrompt.collectAsState()
-    val showWelcomeTip by viewModel.showWelcomeTip.collectAsState()
+    val episodesBySeason by viewModel.episodes.collectAsStateWithLifecycle()
+    val bulkMarkPrompt by viewModel.bulkMarkPrompt.collectAsStateWithLifecycle()
+    val showWelcomeTip by viewModel.showWelcomeTip.collectAsStateWithLifecycle()
 
     Box(
         modifier = Modifier
@@ -580,7 +581,7 @@ private fun ReviewsTab(
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
-    val reviews by viewModel.reviews.collectAsState()
+    val reviews by viewModel.reviews.collectAsStateWithLifecycle()
     var showReviewSheet by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.padding(16.dp)) {
@@ -1040,7 +1041,7 @@ private fun CharactersTab(
     viewModel: MediaDetailViewModel
 ) {
     val isAnime = detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME
-    val characterArt by viewModel.characterArt.collectAsState()
+    val characterArt by viewModel.characterArt.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.padding(16.dp)) {
         detail.cast.take(10).forEach { cast ->

@@ -78,27 +78,37 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun updateNextUp(watching: List<com.example.watchorderengine.data.model.MediaSummary>) {
+    private fun updateNextUp(watching: List<MediaSummary>) {
         viewModelScope.launch(Dispatchers.IO) {
             val mostRecent = watching.firstOrNull() ?: return@launch
-            val tmdbId = mostRecent.tmdbId
             val mediaId = mostRecent.id
             val isMovie = mostRecent.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE
 
             if (isMovie) {
                 _nextUp.value = com.example.watchorderengine.ui.screens.home.NextUpItem(
-                    internalId = mediaId,
-                    showTitle = mostRecent.title,
-                    episodeLabel = "Movie",
-                    posterUrl = mostRecent.posterUrl,
-                    backdropUrl = mostRecent.backdropUrl,
+                    internalId      = mediaId,
+                    showTitle       = mostRecent.title,
+                    episodeLabel    = "Movie",
+                    posterUrl       = mostRecent.posterUrl,
+                    backdropUrl     = mostRecent.backdropUrl,
                     progressPercent = 0
                 )
             } else {
-                // Find first unwatched episode
                 val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
-                val watchedIds = db.episodeWatchedDao().getWatchedIds(mediaId).toSet()
-                val nextEp = episodes.find { it.id !in watchedIds }
+                val watchedNormalized = repository.getNormalizedWatchedIds(mediaId)
+
+                // FIX: Exclude Season 0 (Specials / OVAs / Trailers) so they are
+                // never surfaced as the "next" episode before S1E1 proper.
+                val nextEp = episodes
+                    .filter { it.seasonNumber > 0 }
+                    .find { ep ->
+                        val normalizedId = ep.id
+                            .removePrefix("tmdb_m_")
+                            .removePrefix("tmdb_t_")
+                            .removePrefix("tmdb_")
+                            .removePrefix("anilist_")
+                        normalizedId !in watchedNormalized
+                    }
 
                 if (nextEp != null) {
                     _nextUp.value = com.example.watchorderengine.ui.screens.home.NextUpItem(
@@ -107,7 +117,9 @@ class HomeViewModel @Inject constructor(
                         episodeLabel = "S${nextEp.seasonNumber} E${nextEp.episodeNumber} — ${nextEp.title}",
                         posterUrl = mostRecent.posterUrl,
                         backdropUrl = nextEp.stillUrl ?: mostRecent.backdropUrl,
-                        progressPercent = (watchedIds.size * 100 / episodes.size.coerceAtLeast(1))
+                        progressPercent = (watchedNormalized.size * 100 / episodes
+                            .filter { it.seasonNumber > 0 }
+                            .size.coerceAtLeast(1))
                     )
                 } else {
                     _nextUp.value = null
@@ -119,22 +131,37 @@ class HomeViewModel @Inject constructor(
     private fun generateRecommendations() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // PRIMARY filter: exact Room ID match
                 val trackedIds = repository.getAllTrackedMediaIds()
+
+                // SECONDARY filter: tmdbId-level match to catch legacy/typed ID mismatches.
+                // e.g. progress stored as "tmdb_123" would NOT block "tmdb_m_123" from
+                // appearing in candidates without this cross-reference.
+                val trackedTmdbIds: Set<Int> = trackedIds
+                    .mapNotNull { id -> db.mediaDao().getById(id)?.tmdbId }
+                    .toSet()
+
+                // Build the "taste profile" from what the user is actively tracking
                 val trackedPairs = trackedIds.mapNotNull { id ->
-                    val entity = db.mediaDao().getById(id) ?: return@mapNotNull null
+                    val entity   = db.mediaDao().getById(id)             ?: return@mapNotNull null
                     val progress = db.userProgressDao().getByMediaId(id) ?: return@mapNotNull null
                     entity to progress
                 }
 
-                val allMedia = db.mediaDao().getAll()
-                val candidates = allMedia.filter { it.id !in trackedIds }
+                // Candidates: exclude by both ID string AND raw tmdbId
+                val allMedia   = db.mediaDao().getAll()
+                val candidates = allMedia.filter { media ->
+                    media.id    !in trackedIds    &&
+                    media.tmdbId !in trackedTmdbIds
+                }
 
                 val results = RecommendationEngine.generateRecommendations(
                     completedMedia = trackedPairs,
-                    candidates = candidates,
-                    topK = 10
+                    candidates     = candidates,
+                    topK           = 10
                 )
                 _recommendations.value = results
+
             } catch (e: Exception) {
                 android.util.Log.e("HomeViewModel", "Error generating recommendations", e)
             }

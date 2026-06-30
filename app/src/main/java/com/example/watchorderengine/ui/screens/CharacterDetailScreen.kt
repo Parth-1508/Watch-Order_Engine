@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.CharacterDetail
 import com.example.watchorderengine.data.model.CreditItem
@@ -53,8 +54,8 @@ fun CharacterDetailScreen(
     viewModel: CharacterDetailViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
-    val state by viewModel.state.collectAsState()
-    val photoIndex by viewModel.photoIndex.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val photoIndex by viewModel.photoIndex.collectAsStateWithLifecycle()
 
     LaunchedEffect(tmdbPersonId, characterName) {
         viewModel.load(tmdbPersonId, characterName, showTitle, isAnime, anilistId)

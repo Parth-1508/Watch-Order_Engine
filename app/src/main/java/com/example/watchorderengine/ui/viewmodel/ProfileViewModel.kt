@@ -96,6 +96,14 @@ class ProfileViewModel @Inject constructor(
                 // Recently watched: union of Watching and Completed, sorted by updated date (implied by repository)
                 val recentlyWatched = (watching + completed).take(6)
 
+                // ── Profile score ────────────────────────────────────────────────
+                // "universesCompleted" uses completed.size as a local proxy since
+                // full universe-completion data lives in Firestore, not Room.
+                val score = computeProfileScore(
+                    totalEpisodesWatched = totalWatched,
+                    universesCompleted   = completed.size
+                )
+
                 _stats.value = UserStats(
                     totalMinutesWatched  = totalMinutes.toLong(),
                     totalEpisodesWatched = totalWatched,
@@ -109,12 +117,34 @@ class ProfileViewModel @Inject constructor(
                     averageRating        = avgRating,
                     recentlyWatched      = recentlyWatched,
                     favoriteGenre        = topGenres.firstOrNull(),
-                    streakDays           = streak
+                    streakDays           = streak,
+                    profileScore         = score
                 )
             } finally {
                 _isLoading.value = false
             }
         }
+    }
+
+    /**
+     * Gamified profile score.
+     *
+     * Formula:
+     *   10 pts × every episode marked watched
+     *  100 pts × every show/universe fully completed
+     *
+     * Adjust the constants in the companion object to re-balance scoring
+     * without touching the calculation logic.
+     */
+    private fun computeProfileScore(
+        totalEpisodesWatched : Int,
+        universesCompleted   : Int
+    ): Int = (totalEpisodesWatched * POINTS_PER_EPISODE) +
+            (universesCompleted   * POINTS_PER_UNIVERSE)
+
+    companion object {
+        private const val POINTS_PER_EPISODE  = 10
+        private const val POINTS_PER_UNIVERSE = 100
     }
 
     fun updateUsername(newName: String) {

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -33,10 +34,10 @@ fun SettingsScreen(
 ) {
     val theme = LocalAppTheme.current
     val scrollState = rememberScrollState()
-    val currentThemeMode by viewModel.themeMode.collectAsState()
-    val hideFiller by viewModel.hideFiller.collectAsState()
-    val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsState()
-    val wipeGraphsState by viewModel.wipeGraphsState.collectAsState()
+    val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val hideFiller by viewModel.hideFiller.collectAsStateWithLifecycle()
+    val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsStateWithLifecycle()
+    val wipeGraphsState by viewModel.wipeGraphsState.collectAsStateWithLifecycle()
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showClearedToast by remember { mutableStateOf(false) }
     var showWipeGraphsDialog by remember { mutableStateOf(false) }

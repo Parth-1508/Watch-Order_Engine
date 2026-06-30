@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -52,28 +53,34 @@ fun OpeningScreen(
         contentAlignment = Alignment.Center
     ) {
         // Replica DAG Background (Simplified for Compose)
-        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-            val random = java.util.Random(42)
-            val points = List(15) { Offset(random.nextFloat() * size.width, random.nextFloat() * size.height) }
-            
-            points.forEachIndexed { i, p1 ->
-                points.forEachIndexed { j, p2 ->
-                    if (i < j && (p1 - p2).getDistance() < 400f) {
-                        drawLine(
-                            color = engineAccent.copy(alpha = 0.1f),
-                            start = p1,
-                            end = p2,
-                            strokeWidth = 1.dp.toPx()
-                        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawWithCache {
+                    val random = java.util.Random(42)
+                    val normalizedPoints = List(15) { Offset(random.nextFloat(), random.nextFloat()) }
+                    onDrawBehind {
+                        val points = normalizedPoints.map { Offset(it.x * size.width, it.y * size.height) }
+                        points.forEachIndexed { i, p1 ->
+                            points.forEachIndexed { j, p2 ->
+                                if (i < j && (p1 - p2).getDistance() < 400f) {
+                                    drawLine(
+                                        color = engineAccent.copy(alpha = 0.1f),
+                                        start = p1,
+                                        end = p2,
+                                        strokeWidth = 1.dp.toPx()
+                                    )
+                                }
+                            }
+                            drawCircle(
+                                color = engineAccent.copy(alpha = 0.2f),
+                                radius = 4.dp.toPx(),
+                                center = p1
+                            )
+                        }
                     }
                 }
-                drawCircle(
-                    color = engineAccent.copy(alpha = 0.2f),
-                    radius = 4.dp.toPx(),
-                    center = p1
-                )
-            }
-        }
+        )
 
         Column(
             modifier = Modifier

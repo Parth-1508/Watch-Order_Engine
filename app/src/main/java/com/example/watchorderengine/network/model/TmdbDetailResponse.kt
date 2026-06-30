@@ -41,6 +41,7 @@ data class TmdbDetailResponse(
     @Json(name = "release_dates")        val releaseDates: TmdbReleaseDates?,        // Movies
     @Json(name = "keywords")             val keywords: TmdbKeywords?,
     @Json(name = "watch/providers")      val watchProviders: TmdbWatchProviderResults?,
+    @Json(name = "belongs_to_collection") val belongsToCollection: TmdbBelongsToCollection? = null,
 ) {
     fun toDomainModel(): TmdbMediaDetail = TmdbMediaDetail(
         tmdbId = id,
@@ -248,6 +249,33 @@ data class TmdbKeyword(
 )
 
 // ─── Watch Providers ──────────────────────────────────────────────────────────
+
+// ─── TMDB Collection (franchise expansion) ───────────────────────────────────
+
+@JsonClass(generateAdapter = true)
+data class TmdbBelongsToCollection(
+    @Json(name = "id")          val id: Int,
+    @Json(name = "name")        val name: String,
+    @Json(name = "poster_path") val posterPath: String?,
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbCollectionResponse(
+    @Json(name = "id")       val id: Int,
+    @Json(name = "name")     val name: String,
+    @Json(name = "overview") val overview: String?,
+    @Json(name = "parts")    val parts: List<TmdbCollectionPart>?,
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbCollectionPart(
+    @Json(name = "id")           val id: Int,
+    @Json(name = "title")        val title: String,
+    @Json(name = "overview")     val overview: String?,
+    @Json(name = "poster_path")  val posterPath: String?,
+    @Json(name = "release_date") val releaseDate: String?,
+    @Json(name = "vote_average") val voteAverage: Double?,
+)
 
 @JsonClass(generateAdapter = true)
 data class TmdbWatchProviderResults(

@@ -1,6 +1,7 @@
 package com.example.watchorderengine.ui.screens.home
 
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.watchorderengine.data.model.MediaCategory
 import com.example.watchorderengine.data.model.MediaSummary
@@ -13,14 +14,14 @@ fun HomeScreenWrapper(
     onSettingsClick: () -> Unit
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
-    val watching by viewModel.watchingList.collectAsState()
-    val planned by viewModel.plannedList.collectAsState()
-    val completed by viewModel.completedList.collectAsState()
-    val dropped by viewModel.droppedList.collectAsState()
-    val paused by viewModel.pausedList.collectAsState()
-    val trending by viewModel.trendingList.collectAsState()
-    val recommendations by viewModel.recommendations.collectAsState()
-    val nextUpItem by viewModel.nextUp.collectAsState()
+    val watching by viewModel.watchingList.collectAsStateWithLifecycle()
+    val planned by viewModel.plannedList.collectAsStateWithLifecycle()
+    val completed by viewModel.completedList.collectAsStateWithLifecycle()
+    val dropped by viewModel.droppedList.collectAsStateWithLifecycle()
+    val paused by viewModel.pausedList.collectAsStateWithLifecycle()
+    val trending by viewModel.trendingList.collectAsStateWithLifecycle()
+    val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
+    val nextUpItem by viewModel.nextUp.collectAsStateWithLifecycle()
 
     var state by remember {
         mutableStateOf(

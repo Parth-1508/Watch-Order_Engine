@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.watchorderengine.data.prefs.ThemeMode
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.watchorderengine.ui.navigation.AppNavigation
 import com.example.watchorderengine.ui.theme.AppThemeMode
 import com.example.watchorderengine.ui.theme.WatchOrderEngineTheme
@@ -31,7 +32,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val themeMode by settingsViewModel.themeMode.collectAsState()
+            val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
             
             val appThemeMode = when (themeMode) {
                 ThemeMode.DEFAULT -> AppThemeMode.DEFAULT

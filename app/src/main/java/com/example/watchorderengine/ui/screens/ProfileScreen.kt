@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.UserStats
@@ -76,11 +77,11 @@ fun ProfileScreen(
     val theme = LocalAppTheme.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val stats by viewModel.stats.collectAsState()
-    val username by viewModel.username.collectAsState()
-    val avatarUrl by viewModel.avatarUrl.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val userReviews by viewModel.userReviews.collectAsState()
+    val stats by viewModel.stats.collectAsStateWithLifecycle()
+    val username by viewModel.username.collectAsStateWithLifecycle()
+    val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val userReviews by viewModel.userReviews.collectAsStateWithLifecycle()
 
     var isEditingName by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf(username) }
@@ -232,9 +233,15 @@ fun ProfileScreen(
                     modifier = Modifier.weight(1f)
                 )
                 StatCard(
-                    label = "Score",
+                    label = "Rating",
                     value = String.format("%.1f", stats?.averageRating ?: 0f),
                     icon = Icons.Default.Star,
+                    modifier = Modifier.weight(1f)
+                )
+                StatCard(
+                    label = "Points",
+                    value = stats?.profileScore?.toString() ?: "0",
+                    icon = Icons.Default.EmojiEvents,
                     modifier = Modifier.weight(1f)
                 )
             }

@@ -158,6 +158,22 @@ interface TmdbApiService {
      */
     @GET("tv/{tvId}/watch/providers")
     suspend fun getTvWatchProviders(@Path("tvId") tvId: Int): Response<com.example.watchorderengine.network.model.TmdbWatchProvidersResponse>
+
+    /**
+     * Fetches all parts of a TMDB movie collection (franchise).
+     *
+     * Endpoint: GET /3/collection/{collection_id}
+     * Docs: https://developer.themoviedb.org/reference/collection-details
+     *
+     * Used by [MediaRepository.generateWatchOrder] to expand a single movie
+     * into its full franchise tree before passing the list to Gemini.
+     * e.g. movie 862 ("Toy Story") → collection 10194 → 4 movies returned.
+     */
+    @GET("collection/{collectionId}")
+    suspend fun getMovieCollection(
+        @Path("collectionId") collectionId: Int,
+        @Query("language")    language: String = "en-US"
+    ): Response<com.example.watchorderengine.network.model.TmdbCollectionResponse>
 }
 
 // ─── OkHttp Auth Interceptor ──────────────────────────────────────────────────

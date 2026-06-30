@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.network.TmdbConfig
@@ -42,10 +43,10 @@ fun DiscoveryScreen(
     viewModel: DiscoveryViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
-    val deck by viewModel.discoveryDeck.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val activeCategory by viewModel.activeCategory.collectAsState()
-    val platformFilter by viewModel.platformFilter.collectAsState()
+    val deck by viewModel.discoveryDeck.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val activeCategory by viewModel.activeCategory.collectAsStateWithLifecycle()
+    val platformFilter by viewModel.platformFilter.collectAsStateWithLifecycle()
 
     Box(
         modifier = Modifier

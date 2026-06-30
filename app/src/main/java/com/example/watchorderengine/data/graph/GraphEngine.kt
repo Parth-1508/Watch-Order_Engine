@@ -92,21 +92,31 @@ object GraphEngine {
             if (queue.isEmpty()) {
                 // ── CYCLE RECOVERY ───────────────────────────────────────────
                 // If the queue is empty but we haven't processed all nodes, a 
-                // cycle exists. To prevent a hard crash, we'll pick the best 
-                // candidate node to "break" the cycle.
+                // cycle exists. To prevent a hard crash, pick the best candidate 
+                // node to "break" the cycle.
                 cycleDetected = true
                 val remainingIds = allIds - sortedIds.toSet()
                 
-                // Candidate: node with the lowest current inDegree among remaining nodes.
-                // If there's a tie, use chrono_order (earlier first).
-                val candidate = remainingIds.minByOrNull { id ->
-                    val degree = inDegree[id] ?: 0
-                    val chrono = nodes.find { it.id == id }?.chrono_order ?: 0f
-                    // Pack degree and chrono into a comparable pair
-                    degree.toFloat() * 1000000f + chrono
-                } ?: break
+                // FIX: The original float-pack trick (degree * 1_000_000f + chrono)
+                // loses precision for long anime (1000+ episodes) because a Float
+                // only has ~7 decimal digits of precision. A show with chrono_order
+                // of 1001+ will silently collide with one at 1000, corrupting the
+                // topological sort.
+                //
+                // compareBy uses Comparable directly — no float packing, no precision
+                // loss, exact tie-breaking at any episode count.
+                //
+                // Build a node lookup once here to avoid O(n²) find() calls inside
+                // the comparator.
+                val remainingNodeMap = nodes.associateBy { it.id }
+                val candidate = remainingIds.minWithOrNull(
+                    compareBy(
+                        { inDegree[it] ?: 0 },
+                        { remainingNodeMap[it]?.chrono_order ?: 0f }
+                    )
+                ) ?: break
                 
-                // Force-clear inDegree and ensure it has a level
+                // Force-clear inDegree and ensure the candidate has a level
                 inDegree[candidate] = 0
                 if (candidate !in levelMap) {
                     levelMap[candidate] = (levelMap.values.maxOrNull() ?: -1) + 1
