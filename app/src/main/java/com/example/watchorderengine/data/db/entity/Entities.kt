@@ -102,8 +102,8 @@ data class EpisodeEntity(
 
 @Entity(tableName = "user_progress", indices = [Index("trackingState")])
 data class UserProgressEntity(
-    @PrimaryKey val mediaId: String,
-    val trackingState: String,           // TrackingState.name
+    @PrimaryKey val mediaId: String = "",
+    val trackingState: String = "PLANNED",           // TrackingState.name
     val currentSeasonNumber: Int = 0,
     val currentEpisodeNumber: Int = 0,
     val userRating: Float? = null,

@@ -61,6 +61,9 @@ class MediaDetailViewModel @Inject constructor(
     private val _bulkMarkPrompt = MutableStateFlow<EpisodeItem?>(null)
     val bulkMarkPrompt: StateFlow<EpisodeItem?> = _bulkMarkPrompt.asStateFlow()
 
+    private val _isBulkSyncing = MutableStateFlow(false)
+    val isBulkSyncing: StateFlow<Boolean> = _isBulkSyncing.asStateFlow()
+
     private val _showWelcomeTip = MutableStateFlow(true)
     val showWelcomeTip: StateFlow<Boolean> = _showWelcomeTip.asStateFlow()
 
@@ -202,16 +205,21 @@ class MediaDetailViewModel @Inject constructor(
 
     fun updateTrackingState(mediaId: String, state: TrackingState?) {
         viewModelScope.launch {
-            if (state == null) {
-                repository.removeFromWatchlist(mediaId)
-            } else {
-                repository.updateTrackingState(mediaId, state)
-                if (state == TrackingState.COMPLETED) {
-                    repository.markAllAsWatched(mediaId)
+            try {
+                if (state == TrackingState.COMPLETED) _isBulkSyncing.value = true
+                if (state == null) {
+                    repository.removeFromWatchlist(mediaId)
+                } else {
+                    repository.updateTrackingState(mediaId, state)
+                    if (state == TrackingState.COMPLETED) {
+                        repository.markAllAsWatched(mediaId)
+                    }
                 }
+                // Reload to reflect changes
+                loadMediaDetail(mediaId, forceRefresh = true)
+            } finally {
+                _isBulkSyncing.value = false
             }
-            // Reload to reflect changes
-            loadMediaDetail(mediaId, forceRefresh = true)
         }
     }
 
@@ -244,10 +252,15 @@ class MediaDetailViewModel @Inject constructor(
     fun confirmBulkMark(mediaId: String) {
         val episode = _bulkMarkPrompt.value ?: return
         viewModelScope.launch {
-            repository.markPreviousEpisodesAsWatchedSequentially(mediaId, episode.seasonNumber, episode.episodeNumber)
-            _bulkMarkPrompt.value = null
-            loadMediaDetail(mediaId, forceRefresh = true)
-            checkAutoCompletion(mediaId)
+            try {
+                _isBulkSyncing.value = true
+                repository.markPreviousEpisodesAsWatchedSequentially(mediaId, episode.seasonNumber, episode.episodeNumber)
+                _bulkMarkPrompt.value = null
+                loadMediaDetail(mediaId, forceRefresh = true)
+                checkAutoCompletion(mediaId)
+            } finally {
+                _isBulkSyncing.value = false
+            }
         }
     }
 
@@ -261,18 +274,28 @@ class MediaDetailViewModel @Inject constructor(
 
     fun markSeasonAsWatched(mediaId: String, seasonNumber: Int) {
         viewModelScope.launch {
-            repository.markSeasonAsWatched(mediaId, seasonNumber)
-            loadMediaDetail(mediaId, forceRefresh = true)
-            checkAutoCompletion(mediaId)
+            try {
+                _isBulkSyncing.value = true
+                repository.markSeasonAsWatched(mediaId, seasonNumber)
+                loadMediaDetail(mediaId, forceRefresh = true)
+                checkAutoCompletion(mediaId)
+            } finally {
+                _isBulkSyncing.value = false
+            }
         }
     }
 
     fun unmarkSeasonAsWatched(mediaId: String, seasonNumber: Int) {
         viewModelScope.launch {
-            repository.unmarkSeasonAsWatched(mediaId, seasonNumber)
-            loadMediaDetail(mediaId, forceRefresh = true)
-            // If we unmark, it shouldn't be completed anymore
-            checkAutoCompletion(mediaId)
+            try {
+                _isBulkSyncing.value = true
+                repository.unmarkSeasonAsWatched(mediaId, seasonNumber)
+                loadMediaDetail(mediaId, forceRefresh = true)
+                // If we unmark, it shouldn't be completed anymore
+                checkAutoCompletion(mediaId)
+            } finally {
+                _isBulkSyncing.value = false
+            }
         }
     }
 

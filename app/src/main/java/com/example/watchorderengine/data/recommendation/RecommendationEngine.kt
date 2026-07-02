@@ -30,14 +30,19 @@ object RecommendationEngine {
     fun generateRecommendations(
         completedMedia: List<Pair<MediaEntity, UserProgressEntity>>,
         candidates: List<MediaEntity>,
+        preferredGenres: Set<String> = emptySet(),
         topK: Int = 20,
         minCandidateVotes: Int = 50,
     ): List<Recommendation> {
 
-        if (completedMedia.isEmpty()) return emptyList()
-
         val tasteVector = mutableMapOf<String, Double>()
 
+        // 1. Initial boost from onboarding choices
+        preferredGenres.forEach { genre ->
+            tasteVector[genre] = 2.0 // Strong initial weight
+        }
+
+        // 2. Adjust based on real behavior
         for ((media, progress) in completedMedia) {
             val stateWeight  = STATE_WEIGHT[TrackingState.valueOf(progress.trackingState)] ?: 0.0
             val ratingBoost  = ratingMultiplier(progress.userRating)
@@ -50,15 +55,29 @@ object RecommendationEngine {
             }
         }
 
-        if (tasteVector.isEmpty()) return emptyList()
+        if (tasteVector.isEmpty()) {
+            // Absolute fallback: return highest rated candidates from cache
+            return candidates
+                .filter { it.voteCount >= minCandidateVotes }
+                .sortedByDescending { it.voteAverage }
+                .take(topK)
+                .map { Recommendation(it, it.voteAverage.toDouble(), emptyList()) }
+        }
 
-        val totalTracked = completedMedia.size.toDouble()
+        val totalTracked = completedMedia.size.toDouble() + (if (preferredGenres.isNotEmpty()) 1.0 else 0.0)
         val genreDocFrequency = mutableMapOf<String, Int>()
+        
+        // Count frequencies in watchlist
         for ((media, _) in completedMedia) {
             for (genre in media.genres) {
                 genreDocFrequency[genre] = (genreDocFrequency[genre] ?: 0) + 1
             }
         }
+        // Also count onboarding genres as "1" occurrence to smooth IDF
+        preferredGenres.forEach { genre ->
+            genreDocFrequency[genre] = (genreDocFrequency[genre] ?: 0) + 1
+        }
+
         for ((genre, rawWeight) in tasteVector) {
             val df  = genreDocFrequency[genre] ?: 1
             val idf = ln(totalTracked / df + 1.0)

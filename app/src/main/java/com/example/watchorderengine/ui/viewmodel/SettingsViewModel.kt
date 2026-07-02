@@ -9,12 +9,14 @@ import com.example.watchorderengine.data.prefs.ThemeMode
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Outcome of the Danger Zone "wipe my cloud graphs" action, surfaced to the UI as a one-shot result. */
@@ -66,12 +68,15 @@ class SettingsViewModel @Inject constructor(
 
     fun signOut() {
         viewModelScope.launch {
-            // 1. Reset onboarding flag
+            // 1. Reset onboarding flags and local taste profile
             prefsRepository.setTasteProfileCompleted(false)
+            prefsRepository.setSelectedGenres(emptySet())
             // 2. Sign out from Firebase
             auth.signOut()
             // 3. Clear local cache for security/privacy if desired
-            db.clearAllTables()
+            withContext(Dispatchers.IO) {
+                db.clearAllTables()
+            }
         }
     }
 
@@ -82,7 +87,9 @@ class SettingsViewModel @Inject constructor(
 
     fun clearCache() {
         viewModelScope.launch {
-            db.clearAllTables()
+            withContext(Dispatchers.IO) {
+                db.clearAllTables()
+            }
         }
     }
 

@@ -42,6 +42,7 @@ fun TimelineScreen(
     viewModel: TimelineViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
 
     LaunchedEffect(universeId) { viewModel.initialize(universeId) }
 
@@ -109,6 +110,42 @@ fun TimelineScreen(
                 is TimelineUiState.Success -> TimelineContent(state, viewModel)
                 is TimelineUiState.Error -> Text("Error: ${state.message}", color = Color.Red, modifier = Modifier.padding(16.dp))
             }
+        }
+
+        if (isSyncing) {
+            SyncingOverlay()
+        }
+    }
+}
+
+@Composable
+fun SyncingOverlay() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(enabled = false) { },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(
+                color = WatchOrderColors.AccentGold,
+                modifier = Modifier.size(48.dp),
+                strokeWidth = 4.dp
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Syncing timeline progress...",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Text(
+                "Updating your watchlist and cloud sync",
+                color = Color.Gray,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }

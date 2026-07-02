@@ -60,6 +60,7 @@ fun MediaDetailScreen(
     val isAnalyzing by viewModel.isAnalyzing.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isEpisodesLoading by viewModel.isEpisodesLoading.collectAsStateWithLifecycle()
+    val isBulkSyncing by viewModel.isBulkSyncing.collectAsStateWithLifecycle()
     val generationError by viewModel.generationError.collectAsStateWithLifecycle()
     val generationSuccess by viewModel.generationSuccess.collectAsStateWithLifecycle()
 
@@ -102,6 +103,10 @@ fun MediaDetailScreen(
                 )
             }
         }
+
+        if (isBulkSyncing) {
+            SyncingOverlay()
+        }
         
         if (isLoading && media == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -113,6 +118,39 @@ fun MediaDetailScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Failed to load details for $mediaId", color = theme.textPrimary)
             }
+        }
+    }
+}
+
+@Composable
+fun SyncingOverlay() {
+    val theme = LocalAppTheme.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(enabled = false) { },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(
+                color = theme.accent,
+                modifier = Modifier.size(48.dp),
+                strokeWidth = 4.dp
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Syncing progress to cloud...",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Text(
+                "This might take a moment",
+                color = Color.Gray,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }

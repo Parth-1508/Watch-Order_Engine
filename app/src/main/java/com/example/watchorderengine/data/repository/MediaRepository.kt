@@ -17,7 +17,9 @@ import com.example.watchorderengine.network.gemini.GeminiService
 import com.example.watchorderengine.network.model.TmdbWatchProvider
 import com.example.watchorderengine.network.model.TmdbWatchProviderCountry
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import kotlinx.coroutines.Dispatchers
@@ -683,15 +685,13 @@ class MediaRepository @Inject constructor(
 
             // SYNC TO FIRESTORE: Save watchlist progress
             if (userPrefs.cloudSyncEnabled.first()) {
-                launch {
-                    try {
-                        val uid = auth.currentUser?.uid ?: return@launch
-                        firestore.collection("users").document(uid)
-                            .collection("watchlist").document(mediaId)
-                            .set(entity)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to sync watchlist to cloud: ${e.message}")
-                    }
+                try {
+                    val uid = auth.currentUser?.uid ?: return@withContext
+                    firestore.collection("users").document(uid)
+                        .collection("watchlist").document(mediaId)
+                        .set(entity).await()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to sync watchlist to cloud: ${e.message}")
                 }
             }
 
@@ -735,6 +735,20 @@ class MediaRepository @Inject constructor(
             db.episodeWatchedDao().deleteByMediaId(id)
         }
 
+        // SYNC TO FIRESTORE: Remove from cloud watchlist
+        if (userPrefs.cloudSyncEnabled.first()) {
+            try {
+                val uid = auth.currentUser?.uid
+                if (uid != null) {
+                    firestore.collection("users").document(uid)
+                        .collection("watchlist").document(mediaId)
+                        .delete().await()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to sync watchlist removal: ${e.message}")
+            }
+        }
+
         // SYNC TO GRAPH: Unmark in any universes containing this media
         if (tmdbId != null) {
             try {
@@ -776,7 +790,25 @@ class MediaRepository @Inject constructor(
             val watchlistSnap = firestore.collection("users").document(uid)
                 .collection("watchlist").get().await()
             val watchlist = watchlistSnap.documents.mapNotNull { it.toObject(UserProgressEntity::class.java) }
+            Log.d(TAG, "Sync: found ${watchlist.size} watchlist items in cloud")
             watchlist.forEach { db.userProgressDao().upsert(it) }
+
+            // 1.5 Backfill missing media metadata from TMDB in parallel
+            supervisorScope {
+                watchlist.filter { db.mediaDao().getById(it.mediaId) == null }
+                    .map { progress ->
+                        async {
+                            val tmdbId = extractTmdbId(progress.mediaId)
+                            if (tmdbId != null) {
+                                if (isMovieId(progress.mediaId)) {
+                                    fetchAndCacheMovie(tmdbId, progress.mediaId)
+                                } else {
+                                    fetchAndCacheTv(tmdbId, progress.mediaId)
+                                }
+                            }
+                        }
+                    }.forEach { it.await() }
+            }
 
             // 2. Sync Episode Progress
             val episodeSnap = firestore.collection("users").document(uid)
@@ -787,6 +819,7 @@ class MediaRepository @Inject constructor(
                 val watched = doc.getBoolean("watched") ?: false
                 if (watched) EpisodeWatchedEntity(epId, mediaId) else null
             }
+            Log.d(TAG, "Sync: found ${episodes.size} watched episodes in cloud")
             episodes.forEach { db.episodeWatchedDao().markWatched(it) }
 
             // 3. Sync Profile Data (Streak, Taste Completion)
@@ -797,14 +830,17 @@ class MediaRepository @Inject constructor(
                 val isTasteDone = profileSnap.getBoolean("is_taste_profile_completed") ?: false
                 val lastActive = profileSnap.getLong("last_active_date") ?: 0L
                 val streak = profileSnap.getLong("current_streak")?.toInt() ?: 0
+                val genres = profileSnap.get("selected_genres") as? List<String> ?: emptyList()
                 
+                Log.d(TAG, "Sync: profile metadata found (tasteDone=$isTasteDone, streak=$streak)")
                 userPrefs.setTasteProfileCompleted(isTasteDone)
                 userPrefs.updateStreak(lastActive, streak)
+                userPrefs.setSelectedGenres(genres.toSet())
             }
 
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Sync from cloud failed: ${e.message}")
+            Log.e(TAG, "Sync from cloud failed: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -831,20 +867,25 @@ class MediaRepository @Inject constructor(
         sortSummaries(summaries, sortType)
     }
 
-    suspend fun getWatchingList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> =
+    suspend fun getWatchingList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> = withContext(Dispatchers.IO) {
         getListByState(TrackingState.WATCHING, sortType)
+    }
 
-    suspend fun getPlannedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> =
+    suspend fun getPlannedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> = withContext(Dispatchers.IO) {
         getListByState(TrackingState.PLANNED, sortType)
+    }
 
-    suspend fun getCompletedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> =
+    suspend fun getCompletedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> = withContext(Dispatchers.IO) {
         getListByState(TrackingState.COMPLETED, sortType)
+    }
 
-    suspend fun getDroppedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> =
+    suspend fun getDroppedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> = withContext(Dispatchers.IO) {
         getListByState(TrackingState.DROPPED, sortType)
+    }
 
-    suspend fun getPausedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> =
+    suspend fun getPausedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> = withContext(Dispatchers.IO) {
         getListByState(TrackingState.PAUSED, sortType)
+    }
 
     fun observeCompletedMediaIds(): Flow<Set<String>> =
         db.userProgressDao().observeCompletedMediaIds().map { it.toSet() }
@@ -908,33 +949,69 @@ class MediaRepository @Inject constructor(
 
     suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int) =
         withContext(Dispatchers.IO) {
-            db.episodeDao().getAllEpisodesByMedia(mediaId)
+            val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
                 .filter { it.absoluteEpisodeNumber < upToAbsoluteNumber }
-                .forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+            
+            episodes.forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+            syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
         }
 
     suspend fun markPreviousEpisodesAsWatchedSequentially(
         mediaId: String, targetSeason: Int, targetEpisode: Int
     ) = withContext(Dispatchers.IO) {
-        db.episodeDao().getAllEpisodesByMedia(mediaId)
+        val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
             .filter { it.seasonNumber < targetSeason ||
                 (it.seasonNumber == targetSeason && it.episodeNumber < targetEpisode) }
-            .forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+        
+        episodes.forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+        syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
     }
 
     suspend fun markAllAsWatched(mediaId: String) = withContext(Dispatchers.IO) {
-        db.episodeDao().getAllEpisodesByMedia(mediaId)
-            .forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+        val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+        episodes.forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+        syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
     }
 
     suspend fun markSeasonAsWatched(mediaId: String, seasonNumber: Int) = withContext(Dispatchers.IO) {
         val seasonId = "${mediaId}_s$seasonNumber"
-        db.episodeDao().getEpisodesBySeason(seasonId)
-            .forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+        val episodes = db.episodeDao().getEpisodesBySeason(seasonId)
+        episodes.forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+        syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
     }
 
     suspend fun unmarkSeasonAsWatched(mediaId: String, seasonNumber: Int) = withContext(Dispatchers.IO) {
+        val seasonId = "${mediaId}_s$seasonNumber"
+        val episodes = db.episodeDao().getEpisodesBySeason(seasonId)
         db.episodeWatchedDao().unmarkSeasonWatched(mediaId, "${mediaId}_s${seasonNumber}e%")
+        syncEpisodesToFirestore(mediaId, episodes.map { it.id }, false)
+    }
+
+    private suspend fun syncEpisodesToFirestore(mediaId: String, episodeIds: List<String>, watched: Boolean) {
+        val uid = auth.currentUser?.uid ?: return
+        if (!userPrefs.cloudSyncEnabled.first()) return
+
+        try {
+            supervisorScope {
+                episodeIds.chunked(500).map { batchIds ->
+                    async {
+                        val batch = firestore.batch()
+                        batchIds.forEach { epId ->
+                            val docRef = firestore.collection("users").document(uid)
+                                .collection("episode_progress").document(epId)
+                            batch.set(docRef, mapOf(
+                                "media_id" to mediaId,
+                                "watched" to watched,
+                                "updated_at" to FieldValue.serverTimestamp()
+                            ), SetOptions.merge())
+                        }
+                        batch.commit().await()
+                    }
+                }.awaitAll()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Bulk episode sync failed: ${e.message}")
+        }
     }
 
     suspend fun hasUnwatchedEpisodesBefore(
@@ -971,40 +1048,39 @@ class MediaRepository @Inject constructor(
     suspend fun discoverByGenre(
         category: TmdbConfig.DiscoveryCategory,
         providerIds: Set<Int> = emptySet()
-    ): List<MediaSummary> =
-        withContext(Dispatchers.IO) {
-            try {
-                val providersStr = providerIds.joinToString("|").takeIf { it.isNotBlank() }
-                
-                val movieResponse = apiService.discoverMovies(
-                    genreId = category.movieGenreId,
-                    providerIds = providersStr
-                )
-                val tvResponse = apiService.discoverTvShows(
-                    genreId = category.tvGenreId,
-                    providerIds = providersStr
-                )
-                val movies = if (movieResponse.isSuccessful) movieResponse.body()?.results ?: emptyList() else emptyList()
-                val shows  = if (tvResponse.isSuccessful)    tvResponse.body()?.results    ?: emptyList() else emptyList()
+    ): List<MediaSummary> = withContext(Dispatchers.IO) {
+        try {
+            val providersStr = providerIds.joinToString("|").takeIf { it.isNotBlank() }
+            
+            val movieResponse = apiService.discoverMovies(
+                genreId = category.movieGenreId,
+                providerIds = providersStr
+            )
+            val tvResponse = apiService.discoverTvShows(
+                genreId = category.tvGenreId,
+                providerIds = providersStr
+            )
+            val movies = if (movieResponse.isSuccessful) movieResponse.body()?.results ?: emptyList() else emptyList()
+            val shows  = if (tvResponse.isSuccessful)    tvResponse.body()?.results    ?: emptyList() else emptyList()
 
-                movies.forEach { result ->
-                    val id = buildMediaId(result.id, "movie")
-                    if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = true))
-                }
-                shows.forEach { result ->
-                    val id = buildMediaId(result.id, "tv")
-                    if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = false))
-                }
-
-                val movieSummaries = movies.mapNotNull { it.toSummary(explicitIsMovie = true) }
-                val tvSummaries    = shows.mapNotNull  { it.toSummary(explicitIsMovie = false) }
-                movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
-                    movieSummaries.drop(tvSummaries.size) + tvSummaries.drop(movieSummaries.size)
-            } catch (e: Exception) {
-                Log.w(TAG, "discoverByGenre failed for ${category.label}: ${e.message}")
-                emptyList()
+            movies.forEach { result ->
+                val id = buildMediaId(result.id, "movie")
+                if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = true))
             }
+            shows.forEach { result ->
+                val id = buildMediaId(result.id, "tv")
+                if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = false))
+            }
+
+            val movieSummaries = movies.mapNotNull { it.toSummary(explicitIsMovie = true) }
+            val tvSummaries    = shows.mapNotNull  { it.toSummary(explicitIsMovie = false) }
+            movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
+                movieSummaries.drop(tvSummaries.size) + tvSummaries.drop(movieSummaries.size)
+        } catch (e: Exception) {
+            Log.w(TAG, "discoverByGenre failed for ${category.label}: ${e.message}")
+            emptyList()
         }
+    }
 
     // ─── Profile / stats ──────────────────────────────────────────────────────
 
@@ -1044,16 +1120,21 @@ class MediaRepository @Inject constructor(
         }
     }
 
-    suspend fun syncProfileToCloud(isTasteDone: Boolean, lastActive: Long, streak: Int) {
+    suspend fun syncProfileToCloud(isTasteDone: Boolean, lastActive: Long, streak: Int, genres: Set<String> = emptySet()) {
         val uid = auth.currentUser?.uid ?: return
         try {
+            val data = mutableMapOf<String, Any>(
+                "is_taste_profile_completed" to isTasteDone,
+                "last_active_date" to lastActive,
+                "current_streak" to streak
+            )
+            if (genres.isNotEmpty()) {
+                data["selected_genres"] = genres.toList()
+            }
+
             firestore.collection("users").document(uid)
                 .collection("profile").document("metadata")
-                .set(mapOf(
-                    "is_taste_profile_completed" to isTasteDone,
-                    "last_active_date" to lastActive,
-                    "current_streak" to streak
-                ), SetOptions.merge())
+                .set(data, SetOptions.merge())
         } catch (e: Exception) {
             Log.w(TAG, "Failed to sync profile to cloud: ${e.message}")
         }
@@ -1205,7 +1286,7 @@ class MediaRepository @Inject constructor(
             backdropUrl = TmdbConfig.buildImageUrl(backdropPath, TmdbConfig.PosterSize.HD),
             mediaCategory = if (isMovie) "MOVIE" else "TV_SHOW",
             genres = genresList, ageRating = "NR",
-            voteAverage = voteAverage?.toFloat() ?: 0f, voteCount = 0,
+            voteAverage = voteAverage?.toFloat() ?: 0f, voteCount = voteCount ?: 0,
             runtime = null, numberOfSeasons = null, numberOfEpisodes = null,
             releaseDate = releaseDate ?: firstAirDate,
             releaseYear = (releaseDate ?: firstAirDate)?.take(4) ?: "",

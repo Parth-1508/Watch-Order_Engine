@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 import kotlinx.coroutines.flow.first
@@ -64,6 +65,17 @@ class HomeViewModel @Inject constructor(
     init {
         refresh()
         updateDailyStreak()
+        observeTasteProfile()
+    }
+
+    private fun observeTasteProfile() {
+        viewModelScope.launch {
+            userPrefs.selectedGenres.collect {
+                // Re-generate recommendations whenever the taste profile changes
+                // (e.g. after finishing onboarding)
+                generateRecommendations()
+            }
+        }
     }
 
     private fun updateDailyStreak() {
@@ -90,30 +102,47 @@ class HomeViewModel @Inject constructor(
             val yesterdayMillis = yesterday.timeInMillis
 
             val isTasteDone = userPrefs.isTasteProfileCompleted.first()
+            val genres = userPrefs.selectedGenres.first()
 
             when {
                 lastActive == yesterdayMillis -> {
                     userPrefs.updateStreak(todayMillis, currentStreak + 1)
-                    repository.syncProfileToCloud(isTasteDone, todayMillis, currentStreak + 1)
+                    repository.syncProfileToCloud(isTasteDone, todayMillis, currentStreak + 1, genres)
                 }
                 lastActive < yesterdayMillis -> {
                     userPrefs.updateStreak(todayMillis, 1)
-                    repository.syncProfileToCloud(isTasteDone, todayMillis, 1)
+                    repository.syncProfileToCloud(isTasteDone, todayMillis, 1, genres)
                 }
             }
         }
     }
 
+    private var hasAttemptedSync = false
+
     fun refresh() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val watching = repository.getWatchingList()
-                val planned = repository.getPlannedList()
-                val completed = repository.getCompletedList()
-                val dropped = repository.getDroppedList()
-                val paused = repository.getPausedList()
-                val trending = repository.getTrending()
+                var watching = withContext(Dispatchers.IO) { repository.getWatchingList() }
+                var planned = withContext(Dispatchers.IO) { repository.getPlannedList() }
+                var completed = withContext(Dispatchers.IO) { repository.getCompletedList() }
+                var dropped = withContext(Dispatchers.IO) { repository.getDroppedList() }
+                var paused = withContext(Dispatchers.IO) { repository.getPausedList() }
+                var trending = withContext(Dispatchers.IO) { repository.getTrending() }
+
+                // If everything is empty but user is logged in, try a sync once
+                if (!hasAttemptedSync && watching.isEmpty() && planned.isEmpty() && completed.isEmpty()) {
+                    hasAttemptedSync = true
+                    repository.syncAllFromCloud()
+                    
+                    // Fetch again after sync
+                    watching = withContext(Dispatchers.IO) { repository.getWatchingList() }
+                    planned = withContext(Dispatchers.IO) { repository.getPlannedList() }
+                    completed = withContext(Dispatchers.IO) { repository.getCompletedList() }
+                    dropped = withContext(Dispatchers.IO) { repository.getDroppedList() }
+                    paused = withContext(Dispatchers.IO) { repository.getPausedList() }
+                    trending = withContext(Dispatchers.IO) { repository.getTrending() }
+                }
 
                 _watchingList.value = watching
                 _plannedList.value = planned
@@ -122,8 +151,9 @@ class HomeViewModel @Inject constructor(
                 _pausedList.value = paused
                 _trendingList.value = trending
 
-                generateRecommendations()
                 updateNextUp(watching)
+            } catch (e: Exception) {
+                android.util.Log.e("HomeViewModel", "Refresh failed", e)
             } finally {
                 _isLoading.value = false
             }
@@ -188,12 +218,12 @@ class HomeViewModel @Inject constructor(
     private fun generateRecommendations() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val preferredGenres = userPrefs.selectedGenres.first()
+                
                 // PRIMARY filter: exact Room ID match
                 val trackedIds = repository.getAllTrackedMediaIds()
 
                 // SECONDARY filter: tmdbId-level match to catch legacy/typed ID mismatches.
-                // e.g. progress stored as "tmdb_123" would NOT block "tmdb_m_123" from
-                // appearing in candidates without this cross-reference.
                 val trackedTmdbIds: Set<Int> = trackedIds
                     .mapNotNull { id -> db.mediaDao().getById(id)?.tmdbId }
                     .toSet()
@@ -213,9 +243,10 @@ class HomeViewModel @Inject constructor(
                 }
 
                 val results = RecommendationEngine.generateRecommendations(
-                    completedMedia = trackedPairs,
-                    candidates     = candidates,
-                    topK           = 10
+                    completedMedia  = trackedPairs,
+                    candidates      = candidates,
+                    preferredGenres = preferredGenres,
+                    topK            = 10
                 )
                 _recommendations.value = results
 

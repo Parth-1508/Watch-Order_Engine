@@ -86,6 +86,9 @@ class TimelineViewModel @Inject constructor(
 
     private val optimisticOverrides = MutableStateFlow<Map<String, Boolean>>(emptyMap())
 
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
     private val _uiState = MutableStateFlow<TimelineUiState>(TimelineUiState.Loading)
     val uiState: StateFlow<TimelineUiState> = _uiState.asStateFlow()
 
@@ -282,25 +285,31 @@ class TimelineViewModel @Inject constructor(
         val resolvedMediaId = targetNode?.let { resolveMediaId(it) }
 
         viewModelScope.launch {
-            // 1. Sync to Firestore (Watch Order status)
-            val result = repository.setNodeCompletion(currentUniverseId, nodeId, newState, context)
-            
-            // 2. Sync to Room (Media Tracking status)
-            resolvedMediaId?.let { mediaId ->
-                if (newState) {
-                    mediaRepository.updateTrackingState(mediaId, TrackingState.COMPLETED)
-                    mediaRepository.markAllAsWatched(mediaId)
-                } else {
-                    mediaRepository.removeFromWatchlist(mediaId)
+            try {
+                if (newState) _isSyncing.value = true
+                
+                // 1. Sync to Firestore (Watch Order status)
+                val result = repository.setNodeCompletion(currentUniverseId, nodeId, newState, context)
+                
+                // 2. Sync to Room (Media Tracking status)
+                resolvedMediaId?.let { mediaId ->
+                    if (newState) {
+                        mediaRepository.updateTrackingState(mediaId, TrackingState.COMPLETED)
+                        mediaRepository.markAllAsWatched(mediaId)
+                    } else {
+                        mediaRepository.removeFromWatchlist(mediaId)
+                    }
                 }
-            }
 
-            optimisticOverrides.update { it - nodeId }
+                optimisticOverrides.update { it - nodeId }
 
-            if (result.isFailure) {
-                _events.send(
-                    TimelineEvent.ShowSnackbar("Couldn't save progress. Queued for offline sync.")
-                )
+                if (result.isFailure) {
+                    _events.send(
+                        TimelineEvent.ShowSnackbar("Couldn't save progress. Queued for offline sync.")
+                    )
+                }
+            } finally {
+                _isSyncing.value = false
             }
         }
     }

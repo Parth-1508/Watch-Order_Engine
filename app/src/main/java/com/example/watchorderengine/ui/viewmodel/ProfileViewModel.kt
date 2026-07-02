@@ -37,11 +37,21 @@ class ProfileViewModel @Inject constructor(
     val avatarUrl: StateFlow<String?> = userPrefs.avatarUrl
 
     private val _liveAverageRating = MutableStateFlow<Float?>(null)
+    private var hasAttemptedSync = false
 
     init {
         loadStats()
         observeUserReviews()
         observeLiveAverageRating()
+        observeTasteProfile()
+    }
+
+    private fun observeTasteProfile() {
+        viewModelScope.launch {
+            userPrefs.selectedGenres.collect {
+                loadStats()
+            }
+        }
     }
 
     private fun observeLiveAverageRating() {
@@ -84,16 +94,34 @@ class ProfileViewModel @Inject constructor(
                 val dropped   = droppedDef.await()
                 val paused    = pausedDef.await()
                 
+                // If everything is empty but user is logged in, try a sync once
+                if (!hasAttemptedSync && watching.isEmpty() && completed.isEmpty() && planned.isEmpty()) {
+                    hasAttemptedSync = true
+                    repository.syncAllFromCloud()
+                    // Re-run this function to pick up synced data
+                    loadStats()
+                    return@launch
+                }
+
                 val totalWatched = totalWatchedDef.await()
                 val totalMinutes = totalMinutesDef.await()
                 val streak       = streakDef.await()
 
-                // Top genres from all tracked media
+                // Top genres from all tracked media + onboarding choices
+                val preferredGenres = userPrefs.selectedGenres.first()
                 val allMedia = watching + completed + planned + paused + dropped
-                val topGenres = allMedia.flatMap { it.genres }
+                
+                val genreCounts = allMedia.flatMap { it.genres }
                     .groupingBy { it }
                     .eachCount()
-                    .entries
+                    .toMutableMap()
+                
+                // Onboarding genres get a virtual "weight" so they show up even with empty watchlist
+                preferredGenres.forEach { genre ->
+                    genreCounts[genre] = (genreCounts[genre] ?: 0) + 5 
+                }
+
+                val topGenres = genreCounts.entries
                     .sortedByDescending { it.value }
                     .take(3)
                     .map { it.key }
@@ -102,8 +130,6 @@ class ProfileViewModel @Inject constructor(
                 val recentlyWatched = (watching + completed).take(6)
 
                 // ── Profile score ────────────────────────────────────────────────
-                // "universesCompleted" uses completed.size as a local proxy since
-                // full universe-completion data lives in Firestore, not Room.
                 val score = computeProfileScore(
                     totalEpisodesWatched = totalWatched,
                     universesCompleted   = completed.size
@@ -131,16 +157,6 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Gamified profile score.
-     *
-     * Formula:
-     *   10 pts × every episode marked watched
-     *  100 pts × every show/universe fully completed
-     *
-     * Adjust the constants in the companion object to re-balance scoring
-     * without touching the calculation logic.
-     */
     private fun computeProfileScore(
         totalEpisodesWatched : Int,
         universesCompleted   : Int

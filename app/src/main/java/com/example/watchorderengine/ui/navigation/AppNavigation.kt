@@ -190,6 +190,13 @@ fun AppNavigation() {
                     onEnter = {
                         scope.launch {
                             val isLoggedIn = auth.currentUser != null
+                            
+                            if (isLoggedIn) {
+                                // Background sync to hydrate cache if it was cleared
+                                mediaRepository.syncAllFromCloud()
+                                reviewRepository.syncReviewsFromFirestore()
+                            }
+
                             val isTasteDone = userPrefs.isTasteProfileCompleted.first()
                             
                             val target = when {
@@ -234,16 +241,6 @@ fun AppNavigation() {
                 TasteProfileSetupScreen(
                     onComplete = { genres ->
                         onboardingViewModel.saveSelectedGenres(genres)
-                        // Mark as completed in DataStore
-                        scope.launch {
-                            userPrefs.setTasteProfileCompleted(true)
-                            // Sync to Firestore
-                            mediaRepository.syncProfileToCloud(
-                                isTasteDone = true,
-                                lastActive = System.currentTimeMillis(),
-                                streak = 1 // Starting fresh on first onboarding
-                            )
-                        }
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
                         }
