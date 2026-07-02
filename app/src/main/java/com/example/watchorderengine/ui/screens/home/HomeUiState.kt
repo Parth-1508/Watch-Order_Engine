@@ -13,7 +13,7 @@ data class MediaShowItem(
 )
 
 data class HomeUiState(
-    val categories: List<String> = listOf("Watching", "Recommended", "Planned", "Completed", "Paused", "Dropped"),
+    val categories: List<String> = listOf("Watching", "Planned", "Completed", "Paused", "Dropped"),
     val activeCategory: String = "Watching",
     val searchQuery: String = "",
     val isSearchOpen: Boolean = false,

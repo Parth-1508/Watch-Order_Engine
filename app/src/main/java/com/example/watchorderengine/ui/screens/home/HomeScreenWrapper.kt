@@ -44,19 +44,7 @@ fun HomeScreenWrapper(
         val mappedPaused = paused.map { it.toMediaShowItem("Paused") }
         val mappedTrending = trending.map { it.toMediaShowItem(null) }
 
-        val mappedRecs = recommendations.map { rec ->
-            MediaShowItem(
-                id = rec.media.tmdbId,
-                internalId = rec.media.id,
-                title = rec.media.title,
-                imageUrl = rec.media.posterUrl ?: "",
-                genres = rec.media.genres,
-                badge = "RECOMMENDED",
-                watchlistStatus = "Recommended"
-            )
-        }
-
-        (mappedWatching + mappedPlanned + mappedCompleted + mappedDropped + mappedPaused + mappedTrending + mappedRecs)
+        (mappedWatching + mappedPlanned + mappedCompleted + mappedDropped + mappedPaused + mappedTrending)
             .distinctBy { it.internalId }
     }
 

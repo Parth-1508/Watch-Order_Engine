@@ -141,10 +141,20 @@ class GeminiService @Inject constructor() {
             return@withContext GeminiResult.Error("No raw TMDB/AniList items supplied to sort.")
         }
 
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isBlank()) {
+        val allKeys = listOfNotNull(
+            BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_1.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_2.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_3.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_4.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_5.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_6.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_7.takeIf { it.isNotBlank() }
+        ).distinct()
+
+        if (allKeys.isEmpty()) {
             return@withContext GeminiResult.Error(
-                "GEMINI_API_KEY is not set. Add it to local.properties."
+                "No Gemini API keys found. Add them to local.properties."
             )
         }
 
@@ -177,37 +187,45 @@ class GeminiService @Inject constructor() {
         )
         val requestJson = moshi.adapter(GeminiRequestBody::class.java).toJson(requestBody)
 
-        val request = Request.Builder()
-            .url("$ENDPOINT?key=$apiKey")
-            .post(requestJson.toRequestBody(mediaTypeJson))
-            .header("Content-Type", "application/json")
-            .build()
+        var lastError: String? = null
 
-        return@withContext try {
-            android.util.Log.d("GeminiService", "Sending sort request to Gemini for ${rawItems.size} raw items...")
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext GeminiResult.Error(
-                "Empty response from Gemini (HTTP ${response.code})"
-            )
-            android.util.Log.d("GeminiService", "Received response: ${response.code}")
+        // Cycle through keys until one works or all fail
+        for (apiKey in allKeys) {
+            val request = Request.Builder()
+                .url("$ENDPOINT?key=$apiKey")
+                .post(requestJson.toRequestBody(mediaTypeJson))
+                .header("Content-Type", "application/json")
+                .build()
 
-            if (!response.isSuccessful) {
-                android.util.Log.e("GeminiService", "Gemini error body: $body")
-                return@withContext GeminiResult.Error("Gemini error HTTP ${response.code}")
+            try {
+                android.util.Log.d("GeminiService", "Sending sort request to Gemini (Key starts with: ${apiKey.take(6)}...)")
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: continue
+                
+                if (response.isSuccessful) {
+                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
+                    val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                        ?: return@withContext GeminiResult.Error("Gemini returned an empty response body.")
+
+                    val parsed = moshi.adapter(GeminiWatchOrder::class.java).fromJson(rawJson)
+                        ?: return@withContext GeminiResult.Error("Failed to parse Gemini response.")
+
+                    return@withContext GeminiResult.Success(sanitizeAgainstRawItems(parsed, rawItems))
+                } else {
+                    lastError = "Gemini error HTTP ${response.code}: $body"
+                    android.util.Log.e("GeminiService", "Key failed (${response.code}). Trying next key if available...")
+                    // If 401 or 429, we definitely want to try the next key
+                    if (response.code == 401 || response.code == 429) continue
+                    else break // For other errors, maybe stop? Actually let's try all keys anyway.
+                }
+            } catch (e: Exception) {
+                lastError = "Network error: ${e.message}"
+                android.util.Log.e("GeminiService", "Network error with key. Trying next...")
+                continue
             }
-
-            val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
-            val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: return@withContext GeminiResult.Error("Gemini returned an empty response body.")
-
-            val parsed = moshi.adapter(GeminiWatchOrder::class.java).fromJson(rawJson)
-                ?: return@withContext GeminiResult.Error("Failed to parse Gemini response.")
-
-            GeminiResult.Success(sanitizeAgainstRawItems(parsed, rawItems))
-
-        } catch (e: Exception) {
-            GeminiResult.Error("Network error calling Gemini: ${e.message}")
         }
+
+        GeminiResult.Error(lastError ?: "Failed to generate watch order after trying all API keys.")
     }
 
     private fun sanitizeAgainstRawItems(
