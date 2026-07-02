@@ -47,6 +47,7 @@ val HexagonShape = object : Shape {
 /**
  * The individual node card rendered in the timeline.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TimelineNodeCard(
     displayNode: DisplayNode,
@@ -91,7 +92,11 @@ fun TimelineNodeCard(
         modifier = modifier
             .scale(scale)
             .padding(4.dp)
-            .clickable(onClick = onCardClick, enabled = !displayNode.isSpoilerBlurred),
+            .combinedClickable(
+                onClick = onCardClick,
+                onLongClick = onCheckToggle,
+                enabled = !displayNode.isSpoilerBlurred
+            ),
         contentAlignment = Alignment.Center
     ) {
         // Hexagonal background for skill-tree feel

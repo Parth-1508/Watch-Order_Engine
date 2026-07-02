@@ -100,6 +100,9 @@ interface UserProgressDao {
     @Query("SELECT * FROM user_progress WHERE trackingState = :state ORDER BY updatedAt DESC")
     suspend fun getByState(state: String): List<UserProgressEntity>
 
+    @Query("SELECT mediaId FROM user_progress WHERE trackingState = 'COMPLETED'")
+    fun observeCompletedMediaIds(): Flow<List<String>>
+
     @Query("SELECT * FROM user_progress ORDER BY updatedAt DESC")
     suspend fun getAll(): List<UserProgressEntity>
 

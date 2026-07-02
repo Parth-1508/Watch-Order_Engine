@@ -781,6 +781,9 @@ class MediaRepository @Inject constructor(
     suspend fun getPausedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> =
         getListByState(TrackingState.PAUSED, sortType)
 
+    fun observeCompletedMediaIds(): Flow<Set<String>> =
+        db.userProgressDao().observeCompletedMediaIds().map { it.toSet() }
+
     private fun sortSummaries(list: List<MediaSummary>, sortType: SortType) = when (sortType) {
         SortType.ALPHABETICAL            -> list.sortedBy { it.title }
         SortType.USER_RATING,

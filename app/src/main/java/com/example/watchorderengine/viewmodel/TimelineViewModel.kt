@@ -116,9 +116,10 @@ class TimelineViewModel @Inject constructor(
                 graphDataFlow,
                 repository.getUserProgress(universeId),
                 repository.getContextTags(universeId),
+                mediaRepository.observeCompletedMediaIds(),
                 optimisticOverrides
-            ) { (universe, nodes, edges), progress, tags, overrides ->
-                DataSnapshot(universe, nodes, edges, progress, tags, overrides)
+            ) { (universe, nodes, edges), progress, tags, localCompleted, overrides ->
+                DataSnapshot(universe, nodes, edges, progress, tags, localCompleted, overrides)
             }
                 .flatMapLatest { snapshot ->
                     flow {
@@ -146,12 +147,13 @@ class TimelineViewModel @Inject constructor(
         val edges: List<Edge>,
         val progress: UserProgress,
         val tags: List<ContextTag>,
+        val localCompleted: Set<String>,
         val overrides: Map<String, Boolean>
     )
 
     private fun computeUiState(snapshot: DataSnapshot) = computeUiState(
         snapshot.universe, snapshot.nodes, snapshot.edges,
-        snapshot.progress, snapshot.tags, snapshot.overrides
+        snapshot.progress, snapshot.tags, snapshot.localCompleted, snapshot.overrides
     )
 
     // ─── Core Computation ─────────────────────────────────────────────────────
@@ -162,6 +164,7 @@ class TimelineViewModel @Inject constructor(
         edges: List<Edge>,
         progress: UserProgress,
         tags: List<ContextTag>,
+        localCompleted: Set<String>,
         overrides: Map<String, Boolean>
     ): TimelineUiState {
         if (nodes.isEmpty()) {
@@ -193,6 +196,8 @@ class TimelineViewModel @Inject constructor(
 
         val effectiveCompleted = buildEffectiveCompleted(
             firestoreCompleted = progress.completed_node_ids.toSet(),
+            localCompleted = localCompleted,
+            nodes = nodes,
             overrides = overrides
         )
 
@@ -243,9 +248,23 @@ class TimelineViewModel @Inject constructor(
 
     private fun buildEffectiveCompleted(
         firestoreCompleted: Set<String>,
+        localCompleted: Set<String>,
+        nodes: List<MediaNode>,
         overrides: Map<String, Boolean>
     ): Set<String> = buildSet {
+        // 1. Start with Firestore state
         addAll(firestoreCompleted)
+
+        // 2. Add anything that is marked COMPLETED in local Room DB.
+        // We check both the node.id (Firestore) and resolveMediaId(node) (Room).
+        nodes.forEach { node ->
+            val resolvedId = resolveMediaId(node)
+            if (node.id in localCompleted || resolvedId in localCompleted) {
+                add(node.id)
+            }
+        }
+
+        // 3. Apply optimistic UI overrides
         overrides.forEach { (id, isCompleted) ->
             if (isCompleted) add(id) else remove(id)
         }
