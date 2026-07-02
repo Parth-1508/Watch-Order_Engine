@@ -16,6 +16,8 @@ import com.example.watchorderengine.network.gemini.GeminiResult
 import com.example.watchorderengine.network.gemini.GeminiService
 import com.example.watchorderengine.network.model.TmdbWatchProvider
 import com.example.watchorderengine.network.model.TmdbWatchProviderCountry
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +25,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -37,7 +40,9 @@ class MediaRepository @Inject constructor(
     private val apiService: TmdbApiService,
     private val geminiService: GeminiService,
     private val watchOrderRepository: WatchOrderRepository,
-    private val userPrefs: UserPreferencesRepository
+    private val userPrefs: UserPreferencesRepository,
+    private val firestore: FirebaseFirestore,
+    private val auth: FirebaseAuth
 ) {
     // ─── ID helpers ───────────────────────────────────────────────────────────
 
@@ -669,11 +674,26 @@ class MediaRepository @Inject constructor(
             otherVariants.forEach { db.userProgressDao().deleteByMediaId(it) }
 
             val current = db.userProgressDao().getProgress(mediaId)
-            db.userProgressDao().upsert(UserProgressEntity(
+            val entity = UserProgressEntity(
                 mediaId = mediaId, trackingState = state.name,
                 userNotes    = current?.userNotes    ?: "",
                 priorityTag  = current?.priorityTag  ?: "NONE"
-            ))
+            )
+            db.userProgressDao().upsert(entity)
+
+            // SYNC TO FIRESTORE: Save watchlist progress
+            if (userPrefs.cloudSyncEnabled.first()) {
+                launch {
+                    try {
+                        val uid = auth.currentUser?.uid ?: return@launch
+                        firestore.collection("users").document(uid)
+                            .collection("watchlist").document(mediaId)
+                            .set(entity)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to sync watchlist to cloud: ${e.message}")
+                    }
+                }
+            }
 
             // SYNC TO GRAPH: If completed, mark in any universes containing this media
             if (state == TrackingState.COMPLETED && tmdbId != null) {
@@ -742,6 +762,51 @@ class MediaRepository @Inject constructor(
 
     suspend fun clearSkipped() = withContext(Dispatchers.IO) {
         db.discoverySkippedDao().clearAllSkipped()
+    }
+
+    /**
+     * Synchronizes all user data from Firestore to the local Room database.
+     * Call this after a successful login.
+     */
+    suspend fun syncAllFromCloud(): Result<Unit> = withContext(Dispatchers.IO) {
+        val uid = auth.currentUser?.uid ?: return@withContext Result.failure(Exception("Not authenticated"))
+        
+        try {
+            // 1. Sync Watchlist
+            val watchlistSnap = firestore.collection("users").document(uid)
+                .collection("watchlist").get().await()
+            val watchlist = watchlistSnap.documents.mapNotNull { it.toObject(UserProgressEntity::class.java) }
+            watchlist.forEach { db.userProgressDao().upsert(it) }
+
+            // 2. Sync Episode Progress
+            val episodeSnap = firestore.collection("users").document(uid)
+                .collection("episode_progress").get().await()
+            val episodes = episodeSnap.documents.mapNotNull { doc ->
+                val epId = doc.id
+                val mediaId = doc.getString("media_id") ?: ""
+                val watched = doc.getBoolean("watched") ?: false
+                if (watched) EpisodeWatchedEntity(epId, mediaId) else null
+            }
+            episodes.forEach { db.episodeWatchedDao().markWatched(it) }
+
+            // 3. Sync Profile Data (Streak, Taste Completion)
+            val profileSnap = firestore.collection("users").document(uid)
+                .collection("profile").document("metadata").get().await()
+            
+            if (profileSnap.exists()) {
+                val isTasteDone = profileSnap.getBoolean("is_taste_profile_completed") ?: false
+                val lastActive = profileSnap.getLong("last_active_date") ?: 0L
+                val streak = profileSnap.getLong("current_streak")?.toInt() ?: 0
+                
+                userPrefs.setTasteProfileCompleted(isTasteDone)
+                userPrefs.updateStreak(lastActive, streak)
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Sync from cloud failed: ${e.message}")
+            Result.failure(e)
+        }
     }
 
     suspend fun getListByState(
@@ -976,6 +1041,21 @@ class MediaRepository @Inject constructor(
             db.userProgressDao().upsert(UserProgressEntity(
                 mediaId = mediaId, trackingState = "PLANNED", userRating = rating
             ))
+        }
+    }
+
+    suspend fun syncProfileToCloud(isTasteDone: Boolean, lastActive: Long, streak: Int) {
+        val uid = auth.currentUser?.uid ?: return
+        try {
+            firestore.collection("users").document(uid)
+                .collection("profile").document("metadata")
+                .set(mapOf(
+                    "is_taste_profile_completed" to isTasteDone,
+                    "last_active_date" to lastActive,
+                    "current_streak" to streak
+                ), SetOptions.merge())
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to sync profile to cloud: ${e.message}")
         }
     }
 

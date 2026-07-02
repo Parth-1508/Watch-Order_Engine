@@ -22,7 +22,7 @@ class MediaDetailViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: MediaRepository,
     private val characterRepository: CharacterRepository,
-    private val reviewRepository: ReviewRepository
+    val reviewRepository: ReviewRepository
 ) : ViewModel() {
 
     private val _mediaDetail = MutableStateFlow<MediaDetail?>(null)

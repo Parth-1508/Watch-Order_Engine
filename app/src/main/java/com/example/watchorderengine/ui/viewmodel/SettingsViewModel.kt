@@ -7,6 +7,7 @@ import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.prefs.LayoutStyle
 import com.example.watchorderengine.data.prefs.ThemeMode
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,7 +29,8 @@ sealed interface WipeGraphsState {
 class SettingsViewModel @Inject constructor(
     val prefsRepository: UserPreferencesRepository,
     private val watchOrderRepository: WatchOrderRepository,
-    private val db: WatchOrderDatabase
+    private val db: WatchOrderDatabase,
+    private val auth: FirebaseAuth
 ) : ViewModel() {
 
     val themeMode: StateFlow<ThemeMode> = prefsRepository.themeMode
@@ -60,6 +62,22 @@ class SettingsViewModel @Inject constructor(
 
     fun setCloudSyncEnabled(enabled: Boolean) {
         viewModelScope.launch { prefsRepository.setCloudSyncEnabled(enabled) }
+    }
+
+    fun signOut() {
+        viewModelScope.launch {
+            // 1. Reset onboarding flag
+            prefsRepository.setTasteProfileCompleted(false)
+            // 2. Sign out from Firebase
+            auth.signOut()
+            // 3. Clear local cache for security/privacy if desired
+            db.clearAllTables()
+        }
+    }
+
+    fun changePassword(newPassword: String) {
+        val user = auth.currentUser ?: return
+        user.updatePassword(newPassword)
     }
 
     fun clearCache() {

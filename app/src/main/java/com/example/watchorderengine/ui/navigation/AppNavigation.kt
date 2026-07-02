@@ -30,6 +30,8 @@ import com.example.watchorderengine.ui.screens.*
 import com.example.watchorderengine.ui.screens.home.HomeScreenWrapper
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.TimelineScreen
+import com.example.watchorderengine.data.repository.MediaRepository
+import com.example.watchorderengine.data.repository.ReviewRepository
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -142,6 +144,8 @@ fun AppNavigation() {
     val currentRoute = navBackStackEntry?.destination?.route
     val settingsViewModel: com.example.watchorderengine.ui.viewmodel.SettingsViewModel = hiltViewModel()
     val userPrefs = settingsViewModel.prefsRepository
+    val mediaRepository: MediaRepository = hiltViewModel<com.example.watchorderengine.ui.viewmodel.HomeViewModel>().repository
+    val reviewRepository: ReviewRepository = hiltViewModel<com.example.watchorderengine.ui.viewmodel.MediaDetailViewModel>().reviewRepository
     val auth = FirebaseAuth.getInstance()
     val scope = rememberCoroutineScope()
 
@@ -210,6 +214,10 @@ fun AppNavigation() {
                 LoginScreen(
                     onLoginSuccess = {
                         scope.launch {
+                            // Run global data sync
+                            mediaRepository.syncAllFromCloud()
+                            reviewRepository.syncReviewsFromFirestore()
+                            
                             val isTasteDone = userPrefs.isTasteProfileCompleted.first()
                             val target = if (isTasteDone) Screen.Home.route else Screen.TasteProfileSetup.route
                             navController.navigate(target) {
@@ -229,6 +237,12 @@ fun AppNavigation() {
                         // Mark as completed in DataStore
                         scope.launch {
                             userPrefs.setTasteProfileCompleted(true)
+                            // Sync to Firestore
+                            mediaRepository.syncProfileToCloud(
+                                isTasteDone = true,
+                                lastActive = System.currentTimeMillis(),
+                                streak = 1 // Starting fresh on first onboarding
+                            )
                         }
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
@@ -288,7 +302,14 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.Settings.route) {
-                SettingsScreen(onBack = { navController.popBackStack() })
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onLogout = {
+                        navController.navigate(Screen.Opening.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                )
             }
             composable(
                 route     = Screen.Detail.route,

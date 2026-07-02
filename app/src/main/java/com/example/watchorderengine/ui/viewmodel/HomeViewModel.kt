@@ -23,7 +23,7 @@ import java.util.Calendar
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val repository: MediaRepository,
+    val repository: MediaRepository,
     private val db: WatchOrderDatabase,
     private val userPrefs: UserPreferencesRepository
 ) : ViewModel() {
@@ -89,9 +89,17 @@ class HomeViewModel @Inject constructor(
             yesterday.add(Calendar.DATE, -1)
             val yesterdayMillis = yesterday.timeInMillis
 
+            val isTasteDone = userPrefs.isTasteProfileCompleted.first()
+
             when {
-                lastActive == yesterdayMillis -> userPrefs.updateStreak(todayMillis, currentStreak + 1)
-                lastActive < yesterdayMillis -> userPrefs.updateStreak(todayMillis, 1)
+                lastActive == yesterdayMillis -> {
+                    userPrefs.updateStreak(todayMillis, currentStreak + 1)
+                    repository.syncProfileToCloud(isTasteDone, todayMillis, currentStreak + 1)
+                }
+                lastActive < yesterdayMillis -> {
+                    userPrefs.updateStreak(todayMillis, 1)
+                    repository.syncProfileToCloud(isTasteDone, todayMillis, 1)
+                }
             }
         }
     }

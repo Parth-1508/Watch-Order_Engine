@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,6 +31,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onLogout: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -39,8 +41,56 @@ fun SettingsScreen(
     val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsStateWithLifecycle()
     val wipeGraphsState by viewModel.wipeGraphsState.collectAsStateWithLifecycle()
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var newPassword by remember { mutableStateOf("") }
     var showClearedToast by remember { mutableStateOf(false) }
     var showWipeGraphsDialog by remember { mutableStateOf(false) }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Log Out?", fontWeight = FontWeight.Black) },
+            text = { Text("You will be signed out and redirected to the opening screen. Your local cache will be cleared.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.signOut()
+                    showLogoutDialog = false
+                    onLogout()
+                }) { Text("Log Out", fontWeight = FontWeight.Bold, color = Color(0xFFFF4500)) }
+            },
+            dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    if (showChangePasswordDialog) {
+        AlertDialog(
+            onDismissRequest = { showChangePasswordDialog = false },
+            title = { Text("Change Password", fontWeight = FontWeight.Black) },
+            text = {
+                Column {
+                    Text("Enter your new password below.")
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it },
+                        label = { Text("New Password") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newPassword.length >= 6) {
+                        viewModel.changePassword(newPassword)
+                        showChangePasswordDialog = false
+                        newPassword = ""
+                    }
+                }) { Text("Update", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { showChangePasswordDialog = false }) { Text("Cancel") } }
+        )
+    }
 
     if (showClearCacheDialog) {
         AlertDialog(
@@ -204,6 +254,54 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text("Cache cleared.", modifier = Modifier.padding(12.dp), color = Color(0xFF4ADE80), fontWeight = FontWeight.Bold)
+            }
+        }
+
+        // Account Section
+        SettingSectionTitle("ACCOUNT")
+        Surface(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .height(64.dp)
+                .then(ThemeBorderModifier())
+                .clickable { showLogoutDialog = true },
+            color = theme.surface
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Logout, null, tint = theme.textPrimary)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text("LOG OUT", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
+                    Text("Sign out of Firebase and reset account", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .height(64.dp)
+                .then(ThemeBorderModifier())
+                .clickable { showChangePasswordDialog = true },
+            color = theme.surface
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Password, null, tint = theme.textPrimary)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text("CHANGE PASSWORD", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
+                    Text("Update your account security", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
