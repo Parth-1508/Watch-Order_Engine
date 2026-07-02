@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import kotlinx.coroutines.flow.first
+import java.util.Calendar
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: MediaRepository,
@@ -60,6 +63,37 @@ class HomeViewModel @Inject constructor(
 
     init {
         refresh()
+        updateDailyStreak()
+    }
+
+    private fun updateDailyStreak() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val lastActive = userPrefs.lastActiveDate.first()
+            val currentStreak = userPrefs.currentStreak.first()
+            
+            val today = Calendar.getInstance()
+            today.set(Calendar.HOUR_OF_DAY, 0)
+            today.set(Calendar.MINUTE, 0)
+            today.set(Calendar.SECOND, 0)
+            today.set(Calendar.MILLISECOND, 0)
+            val todayMillis = today.timeInMillis
+
+            if (lastActive == 0L) {
+                userPrefs.updateStreak(todayMillis, 1)
+                return@launch
+            }
+
+            if (lastActive == todayMillis) return@launch
+
+            val yesterday = today.clone() as Calendar
+            yesterday.add(Calendar.DATE, -1)
+            val yesterdayMillis = yesterday.timeInMillis
+
+            when {
+                lastActive == yesterdayMillis -> userPrefs.updateStreak(todayMillis, currentStreak + 1)
+                lastActive < yesterdayMillis -> userPrefs.updateStreak(todayMillis, 1)
+            }
+        }
     }
 
     fun refresh() {

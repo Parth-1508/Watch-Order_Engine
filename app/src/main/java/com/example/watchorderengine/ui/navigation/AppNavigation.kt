@@ -25,10 +25,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.*
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
+import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.ui.screens.*
 import com.example.watchorderengine.ui.screens.home.HomeScreenWrapper
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.TimelineScreen
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 // ─── Navigation helper ───
 private fun safeMediaId(raw: String): String =
@@ -36,7 +40,8 @@ private fun safeMediaId(raw: String): String =
 
 sealed class Screen(val route: String) {
     object Opening            : Screen("opening")
-    object TasteProfileSetup  : Screen("taste_profile_setup")   // NEW: onboarding flow
+    object Login              : Screen("login")
+    object TasteProfileSetup  : Screen("taste_profile_setup")
     object Home               : Screen("home")
     object Discovery          : Screen("discovery")
     object Search             : Screen("search")
@@ -135,6 +140,10 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val settingsViewModel: com.example.watchorderengine.ui.viewmodel.SettingsViewModel = hiltViewModel()
+    val userPrefs = settingsViewModel.prefsRepository
+    val auth = FirebaseAuth.getInstance()
+    val scope = rememberCoroutineScope()
 
     val showBottomBar = currentRoute in listOf(
         Screen.Home.route,
@@ -172,19 +181,23 @@ fun AppNavigation() {
             popExitTransition   = { appPopExitTransition() },
             modifier = Modifier.padding(padding)
         ) {
-            composable(
-                route           = Screen.Opening.route,
-                enterTransition = { fadeIn(tween(TAB_DURATION_MS)) },
-                exitTransition  = { fadeOut(tween(TAB_DURATION_MS)) }
-            ) {
+            composable(Screen.Opening.route) {
                 OpeningScreen(
-                    // "Start Engine" → guided taste-profile setup; cannot press back
                     onEnter = {
-                        navController.navigate(Screen.TasteProfileSetup.route) {
-                            popUpTo(Screen.Opening.route) { inclusive = true }
+                        scope.launch {
+                            val isLoggedIn = auth.currentUser != null
+                            val isTasteDone = userPrefs.isTasteProfileCompleted.first()
+                            
+                            val target = when {
+                                !isLoggedIn -> Screen.Login.route
+                                !isTasteDone -> Screen.TasteProfileSetup.route
+                                else -> Screen.Home.route
+                            }
+                            navController.navigate(target) {
+                                popUpTo(Screen.Opening.route) { inclusive = true }
+                            }
                         }
                     },
-                    // "Skip" → clean dashboard; cannot press back to opening
                     onSkip = {
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.Opening.route) { inclusive = true }
@@ -193,14 +206,30 @@ fun AppNavigation() {
                 )
             }
 
+            composable(Screen.Login.route) {
+                LoginScreen(
+                    onLoginSuccess = {
+                        scope.launch {
+                            val isTasteDone = userPrefs.isTasteProfileCompleted.first()
+                            val target = if (isTasteDone) Screen.Home.route else Screen.TasteProfileSetup.route
+                            navController.navigate(target) {
+                                popUpTo(Screen.Login.route) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
+
             // ── Taste Profile Setup (onboarding) ────────────────────────────
-            // After completing (or skipping within) the setup, the user lands
-            // on Home and the entire onboarding backstack is cleared.
             composable(Screen.TasteProfileSetup.route) {
                 val onboardingViewModel: com.example.watchorderengine.ui.viewmodel.TasteProfileViewModel = hiltViewModel()
                 TasteProfileSetupScreen(
                     onComplete = { genres ->
                         onboardingViewModel.saveSelectedGenres(genres)
+                        // Mark as completed in DataStore
+                        scope.launch {
+                            userPrefs.setTasteProfileCompleted(true)
+                        }
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
                         }

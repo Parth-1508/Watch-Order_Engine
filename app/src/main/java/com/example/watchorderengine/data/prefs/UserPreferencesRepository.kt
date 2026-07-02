@@ -32,6 +32,32 @@ class UserPreferencesRepository(private val context: Context) {
         val AVATAR_URL = stringPreferencesKey("avatar_url")
         val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
         val SELECTED_GENRES = stringSetPreferencesKey("selected_genres")
+        val IS_TASTE_PROFILE_COMPLETED = booleanPreferencesKey("is_taste_profile_completed")
+        val LAST_ACTIVE_DATE = longPreferencesKey("last_active_date")
+        val CURRENT_STREAK = intPreferencesKey("current_streak")
+    }
+
+    val isTasteProfileCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.IS_TASTE_PROFILE_COMPLETED] ?: false
+    }
+
+    val lastActiveDate: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.LAST_ACTIVE_DATE] ?: 0L
+    }
+
+    val currentStreak: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.CURRENT_STREAK] ?: 0
+    }
+
+    suspend fun setTasteProfileCompleted(completed: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.IS_TASTE_PROFILE_COMPLETED] = completed }
+    }
+
+    suspend fun updateStreak(date: Long, streak: Int) {
+        context.dataStore.edit {
+            it[PreferencesKeys.LAST_ACTIVE_DATE] = date
+            it[PreferencesKeys.CURRENT_STREAK] = streak
+        }
     }
 
     val username: StateFlow<String> = context.dataStore.data.map { preferences ->

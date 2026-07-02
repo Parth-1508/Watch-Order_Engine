@@ -26,7 +26,7 @@ sealed interface WipeGraphsState {
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val prefsRepository: UserPreferencesRepository,
+    val prefsRepository: UserPreferencesRepository,
     private val watchOrderRepository: WatchOrderRepository,
     private val db: WatchOrderDatabase
 ) : ViewModel() {
