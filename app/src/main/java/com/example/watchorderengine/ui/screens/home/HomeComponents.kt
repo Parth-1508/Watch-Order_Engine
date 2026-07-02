@@ -153,12 +153,15 @@ fun CategoryTab(
 }
 
 @Composable
-fun MediaCard(show: MediaShowItem, onClick: () -> Unit) {
+fun MediaCard(
+    show: MediaShowItem, 
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val theme = LocalAppTheme.current
     
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clickable { onClick() }
     ) {
         Box(
@@ -208,7 +211,9 @@ fun MediaCard(show: MediaShowItem, onClick: () -> Unit) {
         Text(
             text = show.genres.take(2).joinToString(" • "),
             color = theme.textSecondary,
-            fontSize = 10.sp
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
 
         if (show.progress != null && show.totalEpisodes != null) {

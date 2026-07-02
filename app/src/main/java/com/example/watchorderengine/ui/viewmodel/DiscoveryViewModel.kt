@@ -67,21 +67,7 @@ class DiscoveryViewModel @Inject constructor(
     private val _platformFilter = MutableStateFlow(PlatformFilterState())
     val platformFilter: StateFlow<PlatformFilterState> = _platformFilter.asStateFlow()
 
-    val discoveryDeck: StateFlow<List<MediaSummary>> =
-        combine(_rawDeck, _platformFilter) { deck, filter ->
-            if (!filter.isFilterActive) {
-                deck
-            } else {
-                deck.filter { media ->
-                    val providers = repository.getCachedWatchProviders(media.id)
-                    providers.any { it.providerId in filter.selectedProviderIds }
-                }
-            }
-        }.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = emptyList()
-        )
+    val discoveryDeck: StateFlow<List<MediaSummary>> = _rawDeck.asStateFlow()
 
     init {
         loadDiscovery()
@@ -91,6 +77,7 @@ class DiscoveryViewModel @Inject constructor(
         val current = _platformFilter.value.selectedProviderIds
         val updated = if (providerId in current) current - providerId else current + providerId
         _platformFilter.value = _platformFilter.value.copy(selectedProviderIds = updated)
+        loadDiscovery()
     }
 
     fun selectCategory(category: TmdbConfig.DiscoveryCategory?) {
@@ -105,23 +92,12 @@ class DiscoveryViewModel @Inject constructor(
 
             val selectedProviders = _platformFilter.value.selectedProviderIds
             val raw = _activeCategory.value?.let { repository.discoverByGenre(it, selectedProviders) }
-                ?: repository.getTrending() // Trending doesn't support provider filter in API yet
+                ?: repository.getTrending(selectedProviders)
 
             val trackedIds = repository.getAllTrackedMediaIds()
             val skippedIds = repository.getSkippedMediaIds()
 
-            var filtered = raw.filter { it.id !in trackedIds && it.id !in skippedIds }
-
-            // Fallback local filter for Trending or if API results didn't cache providers
-            if (selectedProviders.isNotEmpty()) {
-                filtered = filtered.filter { media ->
-                    val providers = repository.getCachedWatchProviders(media.id)
-                    // If we have providers cached, check them. 
-                    // If not, we might be hiding valid results, but it's the safest way 
-                    // until we have a better bulk provider API.
-                    providers.any { it.providerId in selectedProviders }
-                }
-            }
+            val filtered = raw.filter { it.id !in trackedIds && it.id !in skippedIds }
 
             _rawDeck.value = filtered
             _isLoading.value = false

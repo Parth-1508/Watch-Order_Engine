@@ -90,17 +90,19 @@ object RecommendationEngine {
 
         val eligibleCandidates = candidates.filter { it.voteCount >= minCandidateVotes }
 
-        val scored = eligibleCandidates.map { candidate ->
+        val scored = (if (eligibleCandidates.size < 5) candidates else eligibleCandidates).map { candidate ->
             val candidateVector = candidate.genres.associateWith { 1.0 }
             val similarity = dotProduct(tasteVector, candidateVector)
             val qualityBoost = (candidate.voteAverage / 10.0).coerceIn(0.0, 1.0)
-            val finalScore   = (similarity * 0.8) + (qualityBoost * 0.2)
+            
+            // Add a small base score so anything remotely related shows up
+            val finalScore   = (similarity * 0.8) + (qualityBoost * 0.1) + 0.1
             val matchedGenres = candidate.genres.filter { tasteVector.containsKey(it) }
 
             Triple(candidate, finalScore, matchedGenres)
         }
 
-        return scored
+        val finalResults = scored
             .filter { (_, score, _) -> score > 0.0 }
             .sortedByDescending { (_, score, _) -> score }
             .take(topK)
@@ -111,6 +113,19 @@ object RecommendationEngine {
                     matchedGenres = genres.take(3),
                 )
             }
+        
+        if (finalResults.size < 5) {
+            // Fill with highest rated candidates if we still have too few
+            val existingIds = finalResults.map { it.media.id }.toSet()
+            val extras = candidates
+                .filter { it.id !in existingIds }
+                .sortedByDescending { it.voteAverage }
+                .take(5 - finalResults.size)
+                .map { Recommendation(it, 0.0, emptyList()) }
+            return finalResults + extras
+        }
+        
+        return finalResults
     }
 
     private fun dotProduct(a: Map<String, Double>, b: Map<String, Double>): Double {

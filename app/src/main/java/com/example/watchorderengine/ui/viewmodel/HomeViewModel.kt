@@ -151,6 +151,7 @@ class HomeViewModel @Inject constructor(
                 _pausedList.value = paused
                 _trendingList.value = trending
 
+                generateRecommendations()
                 updateNextUp(watching)
             } catch (e: Exception) {
                 android.util.Log.e("HomeViewModel", "Refresh failed", e)
@@ -246,7 +247,7 @@ class HomeViewModel @Inject constructor(
                     completedMedia  = trackedPairs,
                     candidates      = candidates,
                     preferredGenres = preferredGenres,
-                    topK            = 10
+                    topK            = 15
                 )
                 _recommendations.value = results
 

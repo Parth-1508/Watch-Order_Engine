@@ -99,7 +99,6 @@ fun TimelineScreen(
             TimelineHeader(
                 uiState = uiState,
                 onBack = onBack,
-                onSearchToggle = { /* Search */ },
                 onSpoilerToggle = { viewModel.toggleSpoilerShield() }
             )
 
@@ -274,7 +273,6 @@ private fun CompletionBanner(visible: Boolean) {
 private fun TimelineHeader(
     uiState: TimelineUiState,
     onBack: () -> Unit,
-    onSearchToggle: () -> Unit,
     onSpoilerToggle: () -> Unit
 ) {
     val universeName = (uiState as? TimelineUiState.Success)?.universe?.name ?: "Skill Tree"
@@ -324,9 +322,6 @@ private fun TimelineHeader(
                     tint = if (spoilerEnabled) WatchOrderColors.SpoilerPurple else WatchOrderColors.TextSecondary,
                     modifier = Modifier.size(18.dp)
                 )
-            }
-            IconButton(onClick = onSearchToggle, modifier = Modifier.size(36.dp).background(WatchOrderColors.ElevatedSurface, CircleShape)) {
-                Icon(Icons.Default.Search, null, tint = WatchOrderColors.TextSecondary, modifier = Modifier.size(18.dp))
             }
         }
     }

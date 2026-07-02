@@ -122,7 +122,7 @@ interface TmdbApiService {
      */
     @GET("discover/movie")
     suspend fun discoverMovies(
-        @Query("with_genres") genreId: Int,
+        @Query("with_genres") genreId: String? = null,
         @Query("with_watch_providers") providerIds: String? = null,
         @Query("watch_region") watchRegion: String? = "IN",
         @Query("language") language: String = "en-US",
@@ -139,7 +139,7 @@ interface TmdbApiService {
      */
     @GET("discover/tv")
     suspend fun discoverTvShows(
-        @Query("with_genres") genreId: Int,
+        @Query("with_genres") genreId: String? = null,
         @Query("with_watch_providers") providerIds: String? = null,
         @Query("watch_region") watchRegion: String? = "IN",
         @Query("language") language: String = "en-US",

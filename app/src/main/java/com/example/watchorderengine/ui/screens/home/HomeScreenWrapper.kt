@@ -11,7 +11,8 @@ import com.example.watchorderengine.ui.viewmodel.HomeViewModel
 fun HomeScreenWrapper(
     onMediaClick: (String) -> Unit,
     onSearchClick: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onProfileClick: () -> Unit
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
     val watching by viewModel.watchingList.collectAsStateWithLifecycle()
@@ -62,6 +63,7 @@ fun HomeScreenWrapper(
         },
         onShowClick = { onMediaClick(it.internalId) },
         onSettingsClick = onSettingsClick,
+        onProfileClick = onProfileClick,
         nextUpItem = nextUpItem,
         onResumeClick = { onMediaClick(it) },
         recommendations = recommendations

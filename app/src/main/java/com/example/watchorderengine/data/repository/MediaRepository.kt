@@ -1028,11 +1028,26 @@ class MediaRepository @Inject constructor(
 
     // ─── Trending / Discovery ─────────────────────────────────────────────────
 
-    suspend fun getTrending(): List<MediaSummary> = withContext(Dispatchers.IO) {
+    suspend fun getTrending(providerIds: Set<Int> = emptySet()): List<MediaSummary> = withContext(Dispatchers.IO) {
         try {
-            val response = apiService.getTrending()
-            if (!response.isSuccessful) return@withContext emptyList()
-            val results = response.body()?.results ?: return@withContext emptyList()
+            val results = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
+            
+            if (providerIds.isEmpty()) {
+                val response1 = apiService.getTrending(page = 1)
+                val response2 = apiService.getTrending(page = 2)
+                if (response1.isSuccessful) response1.body()?.results?.let { results.addAll(it) }
+                if (response2.isSuccessful) response2.body()?.results?.let { results.addAll(it) }
+            } else {
+                val providersStr = providerIds.joinToString("|")
+                // Fetch popular on these platforms
+                val mResp = apiService.discoverMovies(providerIds = providersStr, page = 1)
+                val tResp = apiService.discoverTvShows(providerIds = providersStr, page = 1)
+                
+                // Add mediaType manually since discover results don't have it (it's implicit)
+                mResp.body()?.results?.forEach { results.add(it.copy(mediaType = "movie")) }
+                tResp.body()?.results?.forEach { results.add(it.copy(mediaType = "tv")) }
+            }
+            
             results.forEach { result ->
                 if (result.mediaType == "movie" || result.mediaType == "tv") {
                     val mediaId = buildMediaId(result.id, result.mediaType)
@@ -1042,6 +1057,7 @@ class MediaRepository @Inject constructor(
             }
             results.filter { it.mediaType == "movie" || it.mediaType == "tv" }
                 .mapNotNull { it.toSummary() }
+                .distinctBy { it.id }
         } catch (e: Exception) { emptyList() }
     }
 
@@ -1052,30 +1068,37 @@ class MediaRepository @Inject constructor(
         try {
             val providersStr = providerIds.joinToString("|").takeIf { it.isNotBlank() }
             
-            val movieResponse = apiService.discoverMovies(
-                genreId = category.movieGenreId,
-                providerIds = providersStr
-            )
-            val tvResponse = apiService.discoverTvShows(
-                genreId = category.tvGenreId,
-                providerIds = providersStr
-            )
-            val movies = if (movieResponse.isSuccessful) movieResponse.body()?.results ?: emptyList() else emptyList()
-            val shows  = if (tvResponse.isSuccessful)    tvResponse.body()?.results    ?: emptyList() else emptyList()
+            // If providers are selected, fetch 2 pages to ensure we have enough "Great" shows
+            val pagesToFetch = if (providerIds.isNotEmpty()) 2 else 1
+            
+            val movieResults = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
+            val tvResults = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
+            
+            for (page in 1..pagesToFetch) {
+                val mResp = apiService.discoverMovies(genreId = category.movieGenreId.toString(), providerIds = providersStr, page = page)
+                if (mResp.isSuccessful) mResp.body()?.results?.let { movieResults.addAll(it) }
+                
+                val tResp = apiService.discoverTvShows(genreId = category.tvGenreId.toString(), providerIds = providersStr, page = page)
+                if (tResp.isSuccessful) tResp.body()?.results?.let { tvResults.addAll(it) }
+            }
 
-            movies.forEach { result ->
+            movieResults.forEach { result ->
                 val id = buildMediaId(result.id, "movie")
                 if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = true))
             }
-            shows.forEach { result ->
+            tvResults.forEach { result ->
                 val id = buildMediaId(result.id, "tv")
                 if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = false))
             }
 
-            val movieSummaries = movies.mapNotNull { it.toSummary(explicitIsMovie = true) }
-            val tvSummaries    = shows.mapNotNull  { it.toSummary(explicitIsMovie = false) }
-            movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
+            val movieSummaries = movieResults.mapNotNull { it.toSummary(explicitIsMovie = true) }.distinctBy { it.id }
+            val tvSummaries    = tvResults.mapNotNull  { it.toSummary(explicitIsMovie = false) }.distinctBy { it.id }
+            
+            // Interleave and ensure we have a good number of results
+            val results = movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
                 movieSummaries.drop(tvSummaries.size) + tvSummaries.drop(movieSummaries.size)
+            
+            results.take(40)
         } catch (e: Exception) {
             Log.w(TAG, "discoverByGenre failed for ${category.label}: ${e.message}")
             emptyList()

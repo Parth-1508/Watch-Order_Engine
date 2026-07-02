@@ -256,7 +256,8 @@ fun AppNavigation() {
                 HomeScreenWrapper(
                     onMediaClick    = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
                     onSearchClick   = { navController.navigate(Screen.Search.route) },
-                    onSettingsClick = { navController.navigate(Screen.Settings.route) }
+                    onSettingsClick = { navController.navigate(Screen.Settings.route) },
+                    onProfileClick  = { navController.navigate(Screen.Profile.route) }
                 )
             }
             composable(Screen.Search.route) {

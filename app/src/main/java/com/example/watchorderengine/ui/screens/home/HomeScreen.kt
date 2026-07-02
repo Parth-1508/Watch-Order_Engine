@@ -53,6 +53,7 @@ fun HomeScreen(
     onSearchToggle: (Boolean) -> Unit,
     onShowClick: (MediaShowItem) -> Unit,
     onSettingsClick: () -> Unit,
+    onProfileClick: () -> Unit = {},
     nextUpItem: NextUpItem? = null,
     onResumeClick: (internalId: String) -> Unit = {},
     recommendations: List<Recommendation> = emptyList()
@@ -88,6 +89,7 @@ fun HomeScreen(
                 onQueryChanged = onSearchQueryChanged,
                 onToggleSearch = onSearchToggle,
                 onSettingsClick = onSettingsClick,
+                onProfileClick = onProfileClick,
                 profilePictureUrl = state.profilePictureUrl
             )
 
@@ -207,6 +209,7 @@ fun HomeScreen(
                     ) {
                         items(recommendations, key = { it.media.id }) { recommendation ->
                             MediaCard(
+                                modifier = Modifier.width(130.dp),
                                 show = recommendation.toMediaShowItem(),
                                 onClick = { onShowClick(recommendation.toMediaShowItem()) }
                             )
@@ -373,6 +376,7 @@ fun Header(
     onQueryChanged: (String) -> Unit,
     onToggleSearch: (Boolean) -> Unit,
     onSettingsClick: () -> Unit,
+    onProfileClick: () -> Unit,
     profilePictureUrl: String? = null
 ) {
     val theme = LocalAppTheme.current
@@ -392,13 +396,13 @@ fun Header(
             },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar (Left) — tapping navigates to Settings
+        // Avatar (Left) — tapping navigates to Profile
         Box(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
                 .border(2.dp, theme.textPrimary, CircleShape)
-                .clickable(onClickLabel = "Open settings") { onSettingsClick() }
+                .clickable(onClickLabel = "Open profile") { onProfileClick() }
         ) {
             if (profilePictureUrl.isNullOrBlank()) {
                 Box(
