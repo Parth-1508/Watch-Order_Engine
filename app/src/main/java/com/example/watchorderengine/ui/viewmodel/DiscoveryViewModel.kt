@@ -14,25 +14,23 @@ import javax.inject.Inject
 // ─── Streaming Platform Model ─────────────────────────────────────────────────
 
 data class StreamingPlatform(
-    val providerId: Int,
+    val providerIds: List<Int>,
     val displayName: String,
     val logoUrl: String,
 )
 
 object StreamingPlatforms {
-    private fun logo(path: String) = "https://image.tmdb.org/t/p/w92$path"
+    private fun logo(path: String) = "https://image.tmdb.org/t/p/w154$path"
 
     val ALL: List<StreamingPlatform> = listOf(
-        StreamingPlatform(8,    "Netflix",      logo("/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg")),
-        StreamingPlatform(119,  "Prime Video",  logo("/dQeAar5H991VYporEjUspolDarG.jpg")),
-        StreamingPlatform(337,  "Disney+",      logo("/7rwgEs15tFwyR9NPQ5vjkL215Kj.jpg")),
-        StreamingPlatform(350,  "Apple TV+",    logo("/peURlLlr8jggOwK53fJ5wdQl05y.jpg")),
-        StreamingPlatform(15,   "Hulu",         logo("/zxrVdFjIjLqkfnwyghnfywTn3Lh.jpg")),
-        StreamingPlatform(1899, "Max",          logo("/Ajqyt5aNxNx9GEU0Nyo5bJFMnTI.jpg")),
-        StreamingPlatform(283,  "Crunchyroll",  logo("/8Gt1iClBlzTeQs8WQm8UrCoInjx.jpg")),
-        StreamingPlatform(122,  "Hotstar",      logo("/xbhHHa1YgtpwhC8lb1NQ3ACVcLd.jpg")),
-        StreamingPlatform(232,  "Zee5",         logo("/kgd9I4vq3v3pKkMX3s0KQdnZDgw.jpg")),
-        StreamingPlatform(307,  "SonyLiv",      logo("/DOBsJLpNq59GNv5GrBUeVFgOSY.jpg")),
+        StreamingPlatform(listOf(8),    "Netflix",      logo("/wwemzKWzjKYJFfCeiB57q3r4Bcm.png")),
+        StreamingPlatform(listOf(119),  "Prime Video",  logo("/689hYvLudvT9qvpehIBfxGrD9pX.png")),
+        StreamingPlatform(listOf(122, 337), "Disney+",  logo("/89B99n6UPhY820MvjH6p5mD8fQv.png")),
+        StreamingPlatform(listOf(220),  "JioCinema",    logo("/8v96y5KPrXUaL96C374r9SjF8C8.png")),
+        StreamingPlatform(listOf(350),  "Apple TV+",    logo("/69Sns96asA2fny6b3s9oXpxTQLi.png")),
+        StreamingPlatform(listOf(283),  "Crunchyroll",  logo("/m9UCDXN1vW80NqIUKy8iEbeR06S.png")),
+        StreamingPlatform(listOf(232),  "Zee5",         logo("/8v9yXbY4SgT6M1U9pXqC2J3f5o6.png")),
+        StreamingPlatform(listOf(307),  "SonyLiv",      logo("/rS27i4uXQO0XN4D3z8q6Wp5X9p6.png")),
     )
 }
 
@@ -73,9 +71,16 @@ class DiscoveryViewModel @Inject constructor(
         loadDiscovery()
     }
 
-    fun togglePlatform(providerId: Int) {
+    fun togglePlatform(platform: StreamingPlatform) {
         val current = _platformFilter.value.selectedProviderIds
-        val updated = if (providerId in current) current - providerId else current + providerId
+        val platformIds = platform.providerIds.toSet()
+        
+        val updated = if (current.containsAll(platformIds)) {
+            current - platformIds
+        } else {
+            current + platformIds
+        }
+
         _platformFilter.value = _platformFilter.value.copy(selectedProviderIds = updated)
         loadDiscovery()
     }

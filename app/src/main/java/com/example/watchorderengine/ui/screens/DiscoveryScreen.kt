@@ -106,11 +106,11 @@ fun DiscoveryScreen(
                     )
                 }
                 items(platformFilter.availablePlatforms) { platform ->
-                    val isSelected = platform.providerId in platformFilter.selectedProviderIds
+                    val isSelected = platformFilter.selectedProviderIds.containsAll(platform.providerIds)
                     PlatformChip(
                         platform = platform,
                         isSelected = isSelected,
-                        onClick = { viewModel.togglePlatform(platform.providerId) }
+                        onClick = { viewModel.togglePlatform(platform) }
                     )
                 }
             }
