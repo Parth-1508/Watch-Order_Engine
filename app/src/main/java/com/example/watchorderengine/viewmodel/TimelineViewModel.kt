@@ -8,6 +8,7 @@ import com.example.watchorderengine.data.model.*
 import com.example.watchorderengine.data.cache.TmdbFetchState
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
 import com.example.watchorderengine.data.graph.GraphEngine
+import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.TmdbRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -78,6 +79,7 @@ sealed interface TimelineEvent {
 class TimelineViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: WatchOrderRepository,
+    private val mediaRepository: MediaRepository,
     private val tmdbRepo: TmdbRepository,
     private val tmdbCache: TmdbMetadataCache
 ) : ViewModel() {
@@ -255,8 +257,25 @@ class TimelineViewModel @Inject constructor(
         val newState = !currentlyCompleted
         optimisticOverrides.update { it + (nodeId to newState) }
 
+        // Find the node to resolve its Room mediaId
+        val successState = uiState.value as? TimelineUiState.Success
+        val targetNode = successState?.rows?.flatMap { it.nodes }?.find { it.node.id == nodeId }?.node
+        val resolvedMediaId = targetNode?.let { resolveMediaId(it) }
+
         viewModelScope.launch {
+            // 1. Sync to Firestore (Watch Order status)
             val result = repository.setNodeCompletion(currentUniverseId, nodeId, newState, context)
+            
+            // 2. Sync to Room (Media Tracking status)
+            resolvedMediaId?.let { mediaId ->
+                if (newState) {
+                    mediaRepository.updateTrackingState(mediaId, TrackingState.COMPLETED)
+                    mediaRepository.markAllAsWatched(mediaId)
+                } else {
+                    mediaRepository.removeFromWatchlist(mediaId)
+                }
+            }
+
             optimisticOverrides.update { it - nodeId }
 
             if (result.isFailure) {

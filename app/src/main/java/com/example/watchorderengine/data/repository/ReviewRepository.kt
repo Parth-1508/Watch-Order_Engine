@@ -39,6 +39,9 @@ class ReviewRepository @Inject constructor(
     fun observeReviewsByUser(userId: String): Flow<List<ReviewEntity>> =
         reviewDao.observeReviewsByUser(userId)
 
+    fun observeGlobalAverageRating(): Flow<Float?> =
+        reviewDao.observeGlobalAverageRating()
+
     suspend fun submitReview(
         mediaId: String,
         rating: Float,

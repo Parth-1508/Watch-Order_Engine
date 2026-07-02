@@ -36,9 +36,21 @@ class ProfileViewModel @Inject constructor(
     val username: StateFlow<String> = userPrefs.username
     val avatarUrl: StateFlow<String?> = userPrefs.avatarUrl
 
+    private val _liveAverageRating = MutableStateFlow<Float?>(null)
+
     init {
         loadStats()
         observeUserReviews()
+        observeLiveAverageRating()
+    }
+
+    private fun observeLiveAverageRating() {
+        viewModelScope.launch {
+            reviewRepository.observeGlobalAverageRating().collect { avg ->
+                _liveAverageRating.value = avg
+                _stats.value = _stats.value?.copy(averageRating = avg)
+            }
+        }
     }
 
     private fun observeUserReviews() {
@@ -64,7 +76,6 @@ class ProfileViewModel @Inject constructor(
                 // Real DB metrics
                 val totalWatchedDef = async { repository.countWatchedEpisodes() }
                 val totalMinutesDef = async { repository.getTotalWatchedMinutes() }
-                val ratingsDef      = async { repository.getAllRatedMedia() }
                 val streakDef       = async { repository.computeWatchStreak() }
 
                 val watching  = watchingDef.await()
@@ -75,13 +86,7 @@ class ProfileViewModel @Inject constructor(
                 
                 val totalWatched = totalWatchedDef.await()
                 val totalMinutes = totalMinutesDef.await()
-                val ratings      = ratingsDef.await()
                 val streak       = streakDef.await()
-
-                // Calculate real average rating
-                val avgRating = if (ratings.isNotEmpty()) {
-                    ratings.map { it.second }.average().toFloat()
-                } else null
 
                 // Top genres from all tracked media
                 val allMedia = watching + completed + planned + paused + dropped
@@ -114,7 +119,7 @@ class ProfileViewModel @Inject constructor(
                     showsPlanned         = planned.size,
                     showsPaused          = paused.size,
                     topGenres            = topGenres,
-                    averageRating        = avgRating,
+                    averageRating        = _liveAverageRating.value,
                     recentlyWatched      = recentlyWatched,
                     favoriteGenre        = topGenres.firstOrNull(),
                     streakDays           = streak,
