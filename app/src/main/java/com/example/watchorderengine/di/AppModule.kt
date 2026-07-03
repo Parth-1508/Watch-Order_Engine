@@ -48,4 +48,13 @@ object AppModule {
     @Provides
     fun provideMediaDao(db: WatchOrderDatabase): com.example.watchorderengine.data.db.dao.MediaDao =
         db.mediaDao()
+
+    @Provides
+    @Singleton
+    fun provideAnimeListImportRepository(
+        anilistApi: com.example.watchorderengine.network.AnilistApiService,
+        tmdbApi: com.example.watchorderengine.network.TmdbApiService,
+        db: WatchOrderDatabase
+    ): com.example.watchorderengine.data.import_list.AnimeListImportRepository =
+        com.example.watchorderengine.data.import_list.AnimeListImportRepository(anilistApi, tmdbApi, db)
 }

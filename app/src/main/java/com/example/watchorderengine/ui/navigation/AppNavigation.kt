@@ -52,6 +52,7 @@ sealed class Screen(val route: String) {
     object Community          : Screen("community")
     object Profile            : Screen("profile")
     object Settings           : Screen("settings")
+    object ImportList         : Screen("import_list")
     object Detail    : Screen("detail/{mediaId}") {
         fun route(mediaId: String) = "detail/$mediaId"
     }
@@ -301,7 +302,8 @@ fun AppNavigation() {
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onRateMediaClick = { navController.navigate(Screen.Discovery.route) }
+                    onRateMediaClick = { navController.navigate(Screen.Discovery.route) },
+                    onImportClick = { navController.navigate(Screen.ImportList.route) }
                 )
             }
             composable(Screen.Settings.route) {
@@ -313,6 +315,9 @@ fun AppNavigation() {
                         }
                     }
                 )
+            }
+            composable(Screen.ImportList.route) {
+                ImportListScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route     = Screen.Detail.route,

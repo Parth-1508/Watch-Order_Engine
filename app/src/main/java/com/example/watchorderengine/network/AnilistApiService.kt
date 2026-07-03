@@ -35,7 +35,27 @@ data class AnilistError(
 @JsonClass(generateAdapter = true)
 data class AnilistData(
     @Json(name = "Media") val media: AnilistMedia?,
-    @Json(name = "Page") val page: AnilistPagedMedia?
+    @Json(name = "Page") val page: AnilistPagedMedia?,
+    @Json(name = "MediaListCollection") val mediaListCollection: AnilistMediaListCollection? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistMediaListCollection(
+    val lists: List<AnilistMediaList>?
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistMediaList(
+    val name: String?,
+    val status: String?,
+    val entries: List<AnilistListEntry>?
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistListEntry(
+    val score: Float?,
+    val status: String?,
+    val media: AnilistMedia?
 )
 
 @JsonClass(generateAdapter = true)

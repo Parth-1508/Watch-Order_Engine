@@ -14,6 +14,9 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE id = :id")
     suspend fun getById(id: String): MediaEntity?
 
+    @Query("SELECT * FROM media WHERE anilistId = :anilistId LIMIT 1")
+    suspend fun getByAnilistId(anilistId: Int): MediaEntity?
+
     /**
      * Type-safe TMDB ID lookup filtered by media category.
      *

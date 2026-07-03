@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.watchorderengine.data.WatchOrderRepository
+import com.example.watchorderengine.data.graph.FranchiseAnchors
 import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.db.entity.*
 import com.example.watchorderengine.data.model.*
@@ -526,104 +527,16 @@ class MediaRepository @Inject constructor(
         val entity = db.mediaDao().getById(mediaId) ?: return@withContext "Show not found."
         val isMovie = entity.mediaCategory == "MOVIE"
 
-        // ── Step 1: RAW DATA FIRST — build the FULL franchise item list ──────────
-        // For movies: expand to the entire TMDB Collection so Gemini can sort all
-        // films in a franchise (Toy Story, MCU Infinity Saga, etc.) instead of
-        // receiving a single node and producing a degenerate single-hexagon graph.
-        // For TV: seasons are already a list; no change needed.
         val rawItems: List<com.example.watchorderengine.network.gemini.RawMediaItem> = if (isMovie) {
-
-            // ── Franchise expansion ───────────────────────────────────────────────
-            val collectionItems: List<com.example.watchorderengine.network.gemini.RawMediaItem>? = try {
-                // 1. Re-fetch the movie to get belongs_to_collection (may not be in Room)
-                val detailResponse = apiService.getMovie(entity.tmdbId)
-                val collectionId = detailResponse.body()?.belongsToCollection?.id
-
-                if (collectionId != null && collectionId > 0) {
-                    Log.d(TAG, "Expanding franchise via collection $collectionId for ${entity.title}")
-                    val collectionResponse = apiService.getMovieCollection(collectionId)
-                    collectionResponse.body()?.parts
-                        ?.filter { !it.releaseDate.isNullOrBlank() }  // skip unannounced entries
-                        ?.sortedBy { it.releaseDate }                  // chronological seed
-                        ?.map { part ->
-                            val partMediaId = buildMediaId(part.id, "movie")
-                            // Pre-cache a minimal entity so timeline navigation works instantly;
-                            // full detail is fetched on demand when the user taps the node.
-                            if (db.mediaDao().getById(partMediaId) == null) {
-                                db.mediaDao().upsert(
-                                    com.example.watchorderengine.data.db.entity.MediaEntity(
-                                        id = partMediaId,            tmdbId = part.id,
-                                        anilistId = null,
-                                        title = part.title,          originalTitle = part.title,
-                                        overview = part.overview ?: "", tagline = "", status = "",
-                                        posterUrl   = TmdbConfig.buildImageUrl(part.posterPath),
-                                        backdropUrl = null,
-                                        mediaCategory = "MOVIE",
-                                        genres = emptyList(),        ageRating = "NR",
-                                        voteAverage = part.voteAverage?.toFloat() ?: 0f,
-                                        voteCount = 0,               runtime = null,
-                                        numberOfSeasons = null,      numberOfEpisodes = null,
-                                        releaseDate = part.releaseDate,
-                                        releaseYear = part.releaseDate?.take(4) ?: "",
-                                        trailerKey = null,
-                                        castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
-                                    )
-                                )
-                            }
-                            com.example.watchorderengine.network.gemini.RawMediaItem(
-                                itemId      = partMediaId,
-                                title       = part.title,
-                                overview    = part.overview ?: "",
-                                contentType = "MOVIE",
-                                releaseDate = part.releaseDate,
-                                tmdbId      = part.id,
-                                source      = "TMDB_COLLECTION"
-                            )
-                        }
-                } else {
-                    Log.d(TAG, "No collection found for ${entity.title} — using single-item list")
-                    null
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Collection fetch failed for ${entity.title}: ${e.message}")
-                null
-            }
-
-            // Fall back to the original single-item list for truly standalone movies
-            collectionItems?.takeIf { it.isNotEmpty() } ?: listOf(
-                com.example.watchorderengine.network.gemini.RawMediaItem(
-                    itemId      = mediaId,
-                    title       = entity.title,
-                    overview    = entity.overview,
-                    contentType = "MOVIE",
-                    releaseDate = entity.releaseDate,
-                    tmdbId      = entity.tmdbId,
-                    source      = "TMDB_MOVIE"
-                )
-            )
-
+            buildMovieRawItems(entity, mediaId)
         } else {
-            // TV / Anime: map seasons (unchanged from original)
-            db.seasonDao().getSeasonsByMedia(mediaId).sortedBy { it.seasonNumber }.map { season ->
-                com.example.watchorderengine.network.gemini.RawMediaItem(
-                    itemId       = season.id,
-                    title        = "${entity.title} — ${season.name}",
-                    overview     = season.overview.ifBlank { entity.overview },
-                    contentType  = "SERIES",
-                    seasonNumber = season.seasonNumber,
-                    episodeCount = season.episodeCount,
-                    releaseDate  = season.airDate,
-                    tmdbId       = entity.tmdbId,
-                    source       = "TMDB_SEASON"
-                )
-            }
+            buildTvRawItems(entity, mediaId)
         }
 
         if (rawItems.isEmpty()) {
-            return@withContext "No season data cached yet for this show — open it once before generating a watch order."
+            return@withContext "No data found for this title — open it once before generating a watch order."
         }
 
-        // ── Step 2: Gemini SORTS the real data ──────────────────────────────────
         val result = geminiService.generateWatchOrder(showTitle = entity.title, rawItems = rawItems)
 
         when (result) {
@@ -631,17 +544,16 @@ class MediaRepository @Inject constructor(
             is com.example.watchorderengine.network.gemini.GeminiResult.Success -> {
                 val sortedNodes = result.watchOrder.nodes
                 val sortedEdges = result.watchOrder.edges
-                Log.d(TAG, "SORTED: ${sortedNodes.size} nodes (of ${rawItems.size} raw items), ${sortedEdges.size} edges")
+                Log.d(TAG, "SORTED: ${sortedNodes.size} nodes, ${sortedEdges.size} edges")
 
-                // ── Step 3: Publish ──────────────────────────────────────────────
                 watchOrderRepository.clearGeneratedUniverse(mediaId)
                 val publishResult = watchOrderRepository.publishSortedUniverse(
-                    universeId    = mediaId,
-                    universeName  = entity.title,
-                    coverUrl      = entity.posterUrl ?: "",
-                    rawItems      = rawItems,
-                    sortedNodes   = sortedNodes,
-                    sortedEdges   = sortedEdges,
+                    universeId     = mediaId,
+                    universeName   = entity.title,
+                    coverUrl       = entity.posterUrl ?: "",
+                    rawItems       = rawItems,
+                    sortedNodes    = sortedNodes,
+                    sortedEdges    = sortedEdges,
                     resolveMediaId = { raw ->
                         if (raw.tmdbId == entity.tmdbId) {
                             mediaId to (if (isMovie) "movie" else "tv")
@@ -655,7 +567,6 @@ class MediaRepository @Inject constructor(
                     return@withContext "Firestore push failed: ${publishResult.exceptionOrNull()?.message}"
                 }
 
-                // ── Step 4: Tag episodes CANON/FILLER ───────────────────────────
                 supervisorScope {
                     sortedNodes.forEach { node ->
                         val raw = rawItems.find { it.itemId == node.itemId } ?: return@forEach
@@ -673,6 +584,244 @@ class MediaRepository @Inject constructor(
                 null
             }
         }
+    }
+
+    // ─── Movie raw-item builder (franchise-anchor aware) ──────────────────────
+
+    private suspend fun buildMovieRawItems(
+        entity: MediaEntity,
+        mediaId: String
+    ): List<com.example.watchorderengine.network.gemini.RawMediaItem> {
+        return try {
+            // Step 1: fetch the live movie detail to get belongs_to_collection
+            val detailResponse = apiService.getMovie(entity.tmdbId)
+            val subCollectionId = detailResponse.body()?.belongsToCollection?.id
+
+            // Step 2: franchise-anchor reverse lookup
+            val rootCollectionId = FranchiseAnchors.resolveRootCollectionId(
+                movieTmdbId     = entity.tmdbId,
+                subCollectionId = subCollectionId
+            )
+
+            val targetCollectionId = rootCollectionId ?: subCollectionId
+
+            if (targetCollectionId != null && targetCollectionId > 0) {
+                val franchiseLabel = FranchiseAnchors.labelFor(targetCollectionId)
+                    ?: detailResponse.body()?.belongsToCollection?.name
+                    ?: entity.title
+                Log.d(TAG, "Expanding franchise '$franchiseLabel' via collection $targetCollectionId (${
+                    if (rootCollectionId != null) "FRANCHISE ANCHOR" else "sub-collection"
+                })")
+
+                val collectionResponse = apiService.getMovieCollection(targetCollectionId)
+                val parts = collectionResponse.body()?.parts
+                    ?.filter { !it.releaseDate.isNullOrBlank() }
+                    ?.sortedBy { it.releaseDate }
+
+                if (!parts.isNullOrEmpty()) {
+                    Log.d(TAG, "Collection expanded to ${parts.size} films for Gemini")
+                    return parts.map { part ->
+                        val partMediaId = buildMediaId(part.id, "movie")
+                        // Pre-cache minimal entity so timeline navigation is instant
+                        if (db.mediaDao().getById(partMediaId) == null) {
+                            db.mediaDao().upsert(
+                                MediaEntity(
+                                    id = partMediaId, tmdbId = part.id, anilistId = null,
+                                    title = part.title, originalTitle = part.title,
+                                    overview = part.overview ?: "", tagline = "", status = "",
+                                    posterUrl   = TmdbConfig.buildImageUrl(part.posterPath),
+                                    backdropUrl = null, mediaCategory = "MOVIE",
+                                    genres = emptyList(), ageRating = "NR",
+                                    voteAverage = part.voteAverage?.toFloat() ?: 0f,
+                                    voteCount = 0, runtime = null,
+                                    numberOfSeasons = null, numberOfEpisodes = null,
+                                    releaseDate = part.releaseDate,
+                                    releaseYear = part.releaseDate?.take(4) ?: "",
+                                    trailerKey = null,
+                                    watchProvidersJson = "[]", castJson = "[]",
+                                    recommendationsJson = "[]", arcsJson = "[]"
+                                )
+                            )
+                        }
+                        com.example.watchorderengine.network.gemini.RawMediaItem(
+                            itemId      = partMediaId,
+                            title       = part.title,
+                            overview    = part.overview ?: "",
+                            contentType = "MOVIE",
+                            releaseDate = part.releaseDate,
+                            tmdbId      = part.id,
+                            source      = if (rootCollectionId != null) "TMDB_FRANCHISE" else "TMDB_COLLECTION"
+                        )
+                    }
+                }
+            }
+
+            // Step 3: fallback — try a collection keyword search using the title
+            val keywordSearch = apiService.searchCollection(
+                query = stripTitleSuffix(entity.title)
+            )
+            val bestCollection = keywordSearch.body()?.results
+                ?.filter { it.title.contains(entity.title.take(5), ignoreCase = true) }
+                ?.firstOrNull()
+
+            if (bestCollection != null) {
+                Log.d(TAG, "Collection keyword search found: '${bestCollection.title}' (id=${bestCollection.id})")
+                val fallbackParts = apiService.getMovieCollection(bestCollection.id).body()?.parts
+                    ?.filter { !it.releaseDate.isNullOrBlank() }
+                    ?.sortedBy { it.releaseDate }
+                if (!fallbackParts.isNullOrEmpty()) {
+                    return fallbackParts.map { part ->
+                        com.example.watchorderengine.network.gemini.RawMediaItem(
+                            itemId      = buildMediaId(part.id, "movie"),
+                            title       = part.title,
+                            overview    = part.overview ?: "",
+                            contentType = "MOVIE",
+                            releaseDate = part.releaseDate,
+                            tmdbId      = part.id,
+                            source      = "TMDB_SEARCH_COLLECTION"
+                        )
+                    }
+                }
+            }
+
+            // Final fallback: standalone movie, no franchise
+            Log.d(TAG, "No franchise found for '${entity.title}' — using single-item list")
+            listOf(
+                com.example.watchorderengine.network.gemini.RawMediaItem(
+                    itemId      = mediaId,
+                    title       = entity.title,
+                    overview    = entity.overview,
+                    contentType = "MOVIE",
+                    releaseDate = entity.releaseDate,
+                    tmdbId      = entity.tmdbId,
+                    source      = "TMDB_MOVIE"
+                )
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Movie franchise expansion failed for '${entity.title}': ${e.message}")
+            listOf(
+                com.example.watchorderengine.network.gemini.RawMediaItem(
+                    itemId      = mediaId,
+                    title       = entity.title,
+                    overview    = entity.overview,
+                    contentType = "MOVIE",
+                    releaseDate = entity.releaseDate,
+                    tmdbId      = entity.tmdbId,
+                    source      = "TMDB_MOVIE"
+                )
+            )
+        }
+    }
+
+    // ─── TV raw-item builder (cross-series season aggregation) ────────────────
+
+    private suspend fun buildTvRawItems(
+        entity: MediaEntity,
+        mediaId: String
+    ): List<com.example.watchorderengine.network.gemini.RawMediaItem> {
+        val baseTitle = stripTitleSuffix(entity.title)
+        Log.d(TAG, "TV franchise search: '${entity.title}' → base keyword '$baseTitle'")
+
+        val searchResults = try {
+            val response = apiService.searchTv(query = baseTitle)
+            response.body()?.results
+                ?.filter { it.mediaType == null || it.mediaType == "tv" }
+                ?.take(5)
+                ?: emptyList()
+        } catch (e: Exception) {
+            Log.w(TAG, "TV franchise search failed for '$baseTitle': ${e.message}")
+            emptyList()
+        }
+
+        val showsToProcess: List<Pair<Int, String>> = buildList {
+            add(entity.tmdbId to entity.title)
+            for (result in searchResults) {
+                if (result.id != entity.tmdbId) {
+                    add(result.id to (result.title ?: result.name ?: ""))
+                }
+            }
+        }.distinctBy { it.first }.take(6)
+
+        Log.d(TAG, "TV franchise shows to process: ${showsToProcess.map { it.second }}")
+
+        val allSeasonItems = mutableListOf<com.example.watchorderengine.network.gemini.RawMediaItem>()
+
+        for ((tmdbId, showTitle) in showsToProcess) {
+            val showMediaId = buildMediaId(tmdbId, "tv")
+
+            var dbEntity = db.mediaDao().getById(showMediaId)
+            if (dbEntity == null) {
+                Log.d(TAG, "Fetching & caching new TV franchise entry: '$showTitle' (tmdb=$tmdbId)")
+                val cached = fetchAndCacheTv(tmdbId, showMediaId)
+                if (!cached) {
+                    Log.w(TAG, "Could not cache '$showTitle' — skipping from franchise list")
+                    continue
+                }
+                dbEntity = db.mediaDao().getById(showMediaId)
+            }
+
+            val seasons = db.seasonDao().getSeasonsByMedia(showMediaId).sortedBy { it.seasonNumber }
+            if (seasons.isEmpty()) {
+                Log.d(TAG, "No seasons cached for '$showTitle' — skipping")
+                continue
+            }
+
+            for (season in seasons) {
+                allSeasonItems.add(
+                    com.example.watchorderengine.network.gemini.RawMediaItem(
+                        itemId       = season.id,
+                        title        = "$showTitle — ${season.name}",
+                        overview     = season.overview.ifBlank { dbEntity?.overview ?: "" },
+                        contentType  = "SERIES",
+                        seasonNumber = season.seasonNumber,
+                        episodeCount = season.episodeCount,
+                        releaseDate  = season.airDate,
+                        tmdbId       = tmdbId,
+                        source       = if (tmdbId == entity.tmdbId) "TMDB_SEASON" else "TMDB_RELATED_SEASON"
+                    )
+                )
+            }
+        }
+
+        if (allSeasonItems.isEmpty()) {
+            Log.d(TAG, "Cross-series search empty — falling back to original seasons for '${entity.title}'")
+            return db.seasonDao().getSeasonsByMedia(mediaId).sortedBy { it.seasonNumber }.map { season ->
+                com.example.watchorderengine.network.gemini.RawMediaItem(
+                    itemId       = season.id,
+                    title        = "${entity.title} — ${season.name}",
+                    overview     = season.overview.ifBlank { entity.overview },
+                    contentType  = "SERIES",
+                    seasonNumber = season.seasonNumber,
+                    episodeCount = season.episodeCount,
+                    releaseDate  = season.airDate,
+                    tmdbId       = entity.tmdbId,
+                    source       = "TMDB_SEASON"
+                )
+            }
+        }
+
+        Log.d(TAG, "Built ${allSeasonItems.size} season items across ${showsToProcess.size} TV shows for Gemini")
+        return allSeasonItems
+    }
+
+    // ─── Title suffix stripper ─────────────────────────────────────────────────
+
+    private fun stripTitleSuffix(title: String): String {
+        var base = title.split(":", "/").first().trim()
+
+        val suffixes = listOf(
+            "shippuden", "brotherhood", "super", "zero", "gt", "z",
+            "kai", "next generation", "evolution", "uprising", "origins",
+            "season", "part", "volume", "chapter", "arc",
+            "and the", "of the", "in the"
+        )
+        for (suffix in suffixes) {
+            if (base.lowercase().endsWith(" $suffix")) {
+                base = base.dropLast(suffix.length + 1).trim()
+            }
+        }
+
+        return if (base.length >= 3) base else title
     }
 
     // ─── Title matching (used by generateWatchOrder) ──────────────────────────

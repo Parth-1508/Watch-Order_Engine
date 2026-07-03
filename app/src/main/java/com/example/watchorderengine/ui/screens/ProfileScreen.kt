@@ -72,6 +72,7 @@ private suspend fun copyImageToAppStorage(context: Context, sourceUri: Uri): Str
 fun ProfileScreen(
     onMediaClick: (String) -> Unit,
     onRateMediaClick: () -> Unit = {},
+    onImportClick: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -270,6 +271,29 @@ fun ProfileScreen(
                             onMediaClick = { onMediaClick(review.mediaId) },
                             onDelete = { viewModel.deleteReview(review.id) }
                         )
+                    }
+                }
+            }
+
+            // Import Button
+            Surface(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .then(ThemeBorderModifier())
+                    .clickable { onImportClick() },
+                color = theme.surface
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.ImportExport, null, tint = theme.textPrimary)
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text("IMPORT ANIME LIST", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
+                        Text("Sync from AniList or MyAnimeList", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                     }
                 }
             }

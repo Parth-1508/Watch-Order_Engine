@@ -143,4 +143,17 @@ interface JikanApiService {
         @Path("id")    malId: Int,
         @Query("page") page:  Int = 1
     ): Response<JikanEpisodesResponse>
+
+    /**
+     * Fetches a user's anime list from MAL.
+     *
+     * Endpoint: GET /v4/users/{username}/animelist
+     */
+    @GET("users/{username}/animelist")
+    suspend fun getUserAnimeList(
+        @Path("username") username: String,
+        @Query("status")  status: Int? = null,
+        @Query("limit")   limit: Int = 300,
+        @Query("page")    page: Int = 1
+    ): Response<com.example.watchorderengine.data.import_list.JikanUserListResponse>
 }

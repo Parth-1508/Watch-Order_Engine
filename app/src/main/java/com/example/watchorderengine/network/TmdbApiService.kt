@@ -174,6 +174,43 @@ interface TmdbApiService {
         @Path("collectionId") collectionId: Int,
         @Query("language")    language: String = "en-US"
     ): Response<com.example.watchorderengine.network.model.TmdbCollectionResponse>
+
+    /**
+     * Searches for TV shows by keyword.
+     *
+     * Used by generateWatchOrder's TV branch to resolve title variants
+     * (e.g., "Naruto" → surfaces "Naruto" AND "Naruto: Shippuden" as separate
+     * TV entries) before passing the combined season list to Gemini.
+     *
+     * Endpoint: GET /3/search/tv
+     * Docs: https://developer.themoviedb.org/reference/search-tv
+     *
+     * @param query  Stripped base title ("Naruto", "Fate", "Dragon Ball")
+     * @param page   Page 1 returns up to 20 results; we only need the top 5.
+     */
+    @GET("search/tv")
+    suspend fun searchTv(
+        @Query("query")          query: String,
+        @Query("language")       language: String = "en-US",
+        @Query("page")           page: Int = 1,
+        @Query("include_adult")  includeAdult: Boolean = false
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
+
+    /**
+     * Fetches TMDB collections that contain a specific keyword in their name.
+     *
+     * Used by the franchise-anchor reverse lookup to find parent collection IDs
+     * for universe discovery (e.g., "Marvel Cinematic Universe Collection").
+     *
+     * Endpoint: GET /3/search/collection
+     * Docs: https://developer.themoviedb.org/reference/search-collection
+     */
+    @GET("search/collection")
+    suspend fun searchCollection(
+        @Query("query")    query: String,
+        @Query("language") language: String = "en-US",
+        @Query("page")     page: Int = 1
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbCollectionPart>>
 }
 
 // ─── OkHttp Auth Interceptor ──────────────────────────────────────────────────
