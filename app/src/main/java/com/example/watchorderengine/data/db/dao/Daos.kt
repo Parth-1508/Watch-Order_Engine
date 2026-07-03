@@ -46,6 +46,14 @@ interface MediaDao {
 
     @Query("DELETE FROM media WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    /** Marks Jikan filler sync as complete so it is never re-run. */
+    @Query("UPDATE media SET jikanFillerSynced = 1 WHERE id = :mediaId")
+    suspend fun markJikanSynced(mediaId: String)
+
+    /** Returns true if Jikan filler data has already been saved for this show. */
+    @Query("SELECT jikanFillerSynced FROM media WHERE id = :mediaId")
+    suspend fun isJikanSynced(mediaId: String): Boolean
 }
 
 // ─── SeasonDao ───────────────────────────────────────────────────────────────

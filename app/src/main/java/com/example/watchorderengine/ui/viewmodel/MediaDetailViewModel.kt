@@ -29,10 +29,6 @@ class MediaDetailViewModel @Inject constructor(
     val reviewRepository: ReviewRepository
 ) : ViewModel() {
 
-    // Tracks which mediaIds have already had Jikan enrichment triggered this
-    // session so we don't re-call on every season switch or forceRefresh.
-    private val jikanEnrichedIds = mutableSetOf<String>()
-
     private val _mediaDetail = MutableStateFlow<MediaDetail?>(null)
     val mediaDetail: StateFlow<MediaDetail?> = _mediaDetail.asStateFlow()
 
@@ -165,6 +161,7 @@ class MediaDetailViewModel @Inject constructor(
         }
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun loadEpisodes(mediaId: String, seasonNumber: Int) {
         val sanitizedId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
         episodesJob?.cancel()
@@ -172,19 +169,10 @@ class MediaDetailViewModel @Inject constructor(
             _isEpisodesLoading.value = true
             try {
                 // ── Jikan filler enrichment ────────────────────────────────────
-                val showTitle = _mediaDetail.value?.title
-                if (showTitle != null &&
-                    sanitizedId !in jikanEnrichedIds &&
-                    repository.isAnimeEligibleForJikan(sanitizedId)
-                ) {
-                    jikanEnrichedIds.add(sanitizedId)
-                    launch {
-                        repository.enrichEpisodesWithJikanFiller(
-                            mediaId   = sanitizedId,
-                            showTitle = showTitle
-                        )
-                    }
-                }
+                repository.launchJikanEnrichmentIfNeeded(
+                    mediaId   = sanitizedId,
+                    showTitle = _mediaDetail.value?.title ?: return@launch
+                )
 
                 // ── Episode DB flow ────────────────────────────────────────────
                 combine(

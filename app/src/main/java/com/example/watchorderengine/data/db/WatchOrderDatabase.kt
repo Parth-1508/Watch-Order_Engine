@@ -160,6 +160,16 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // jikanFillerSynced: 0 = not yet run, 1 = complete.
+        // Default 0 ensures all existing shows get enriched on first open.
+        db.execSQL(
+            "ALTER TABLE media ADD COLUMN jikanFillerSynced INTEGER NOT NULL DEFAULT 0"
+        )
+    }
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
@@ -173,7 +183,7 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
         PendingSyncTaskEntity::class,
         ReviewEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -219,7 +229,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

@@ -50,6 +50,14 @@ data class MediaEntity(
     val castJson: String,                // JSON string of List<CastMember>
     val recommendationsJson: String,
     val arcsJson: String,
+
+    /**
+     * Set to true once [MediaRepository.enrichEpisodesWithJikanFiller] has
+     * successfully completed for this show.  Prevents re-running the 44-second
+     * One Piece job on every app launch or ViewModel recreation.
+     */
+    val jikanFillerSynced: Boolean = false,
+
     val lastUpdated: Long = System.currentTimeMillis()
 )
 

@@ -31,6 +31,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,6 +50,9 @@ class MediaRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) {
+    // ─── Repository-owned scope for long-running background tasks ─────────────────
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     // ─── ID helpers ───────────────────────────────────────────────────────────
 
     /**
@@ -336,26 +341,40 @@ class MediaRepository @Inject constructor(
             db.mediaDao().upsert(entity)
 
             if (body.seasons != null) {
-                // Pre-calculate season offsets for absolute episode numbering to ensure
-                // deterministic order regardless of which season-refresh finishes first.
-                val seasonOffsets = mutableMapOf<Int, Int>()
-                var cumulativeCount = 0
-                body.seasons.sortedBy { it.seasonNumber }.forEach { s ->
-                    if (s.seasonNumber > 0) {
-                        seasonOffsets[s.seasonNumber] = cumulativeCount
-                        cumulativeCount += s.episodeCount
-                    }
-                }
+                // FIX: Fetch seasons SERIALLY and build the running offset from the
+                // ACTUAL episode count returned by each detail response — not from
+                // body.seasons[n].episodeCount (the TV-show-header summary field).
+                //
+                // WHY THIS MATTERS FOR ONE PIECE:
+                //   TMDB's summary says Season 14 has 118 episodes.
+                //   The actual /season/14 response may return 103 (some unaired or
+                //   reorganised). If we use 118 as the offset seed, Season 15's
+                //   absolute numbers start 15 too high, and the drift compounds
+                //   across 21 seasons. By Season 20, absolute numbers can be 50+
+                //   off, so Jikan's mal_id filler list never matches any Room row.
+                //
+                // Serial fetching costs a few extra seconds vs parallel but
+                // guarantees correct absolute numbers for every long-running anime.
 
-                supervisorScope {
-                    body.seasons
-                        .map { season ->
-                            async { 
-                                val offset = seasonOffsets[season.seasonNumber] ?: 0
-                                refreshSeasonEpisodes(tmdbId, mediaId, season.seasonNumber, season.episodeCount, offset) 
-                            }
-                        }
-                        .forEach { it.await() }
+                var cumulativeOffset = 0
+                body.seasons.sortedBy { it.seasonNumber }.forEach { seasonSummary ->
+                    // Season 0 (Specials) episodes get offset=0 but their absolute
+                    // numbers are never used for filler matching (guarded elsewhere),
+                    // so their offset doesn't matter — just don't add them to the
+                    // cumulative count.
+                    val offset = if (seasonSummary.seasonNumber > 0) cumulativeOffset else 0
+
+                    val actualEpisodeCount = refreshSeasonEpisodesReturnCount(
+                        tmdbId       = tmdbId,
+                        mediaId      = mediaId,
+                        seasonNumber = seasonSummary.seasonNumber,
+                        episodeCount = seasonSummary.episodeCount,
+                        offset       = offset
+                    )
+
+                    if (seasonSummary.seasonNumber > 0) {
+                        cumulativeOffset += actualEpisodeCount
+                    }
                 }
             }
 
@@ -368,12 +387,20 @@ class MediaRepository @Inject constructor(
         }
     }
 
-    private suspend fun refreshSeasonEpisodes(
+    /**
+     * Fetches one season's episodes, writes them to Room, and returns the ACTUAL
+     * number of episodes that were returned by the API.
+     *
+     * The return value is used as the offset increment for the next season so that
+     * [absoluteEpisodeNumber] is always derived from real data, not the (possibly
+     * wrong) [episodeCount] summary field in the TV-show header.
+     */
+    private suspend fun refreshSeasonEpisodesReturnCount(
         tmdbId: Int, mediaId: String, seasonNumber: Int, episodeCount: Int, offset: Int
-    ) {
-        try {
+    ): Int {
+        return try {
             val response = apiService.getTvSeason(tmdbId, seasonNumber)
-            if (!response.isSuccessful || response.body() == null) return
+            if (!response.isSuccessful || response.body() == null) return episodeCount
             val seasonBody = response.body()!!
             val seasonId   = "${mediaId}_s$seasonNumber"
 
@@ -387,13 +414,15 @@ class MediaRepository @Inject constructor(
             val existingEpisodes = db.episodeDao().getEpisodesBySeason(seasonId)
                 .associateBy { it.episodeNumber }
 
-            val entities = seasonBody.episodes?.mapIndexed { idx, ep ->
+            val episodes = seasonBody.episodes ?: return 0
+
+            val entities = episodes.mapIndexed { idx, ep ->
                 val existing = existingEpisodes[ep.episodeNumber]
                 EpisodeEntity(
                     id = "${mediaId}_s${seasonNumber}e${ep.episodeNumber}",
                     seasonId = seasonId, mediaId = mediaId,
                     episodeNumber = ep.episodeNumber, seasonNumber = seasonNumber,
-                    absoluteEpisodeNumber = offset + idx + 1,
+                    absoluteEpisodeNumber = offset + idx + 1,   // offset from ACTUAL count
                     title = ep.name ?: "Episode ${ep.episodeNumber}",
                     overview = ep.overview ?: "", airDate = ep.airDate, runtime = ep.runtime,
                     stillUrl = TmdbConfig.buildImageUrl(ep.stillPath, TmdbConfig.PosterSize.HD),
@@ -401,11 +430,16 @@ class MediaRepository @Inject constructor(
                     episodeType = existing?.episodeType ?: "CANON",
                     arcName = existing?.arcName
                 )
-            } ?: return
+            }
 
             if (entities.isNotEmpty()) db.episodeDao().upsertAll(entities)
+
+            // Return the ACTUAL count so the next season's offset is correct
+            entities.size
+
         } catch (e: Exception) {
             Log.e(TAG, "Season $seasonNumber fetch failed for $mediaId", e)
+            episodeCount  // fall back to header count on network error
         }
     }
 
@@ -1251,83 +1285,122 @@ class MediaRepository @Inject constructor(
     // ─── Jikan filler enrichment ──────────────────────────────────────────────
 
     /**
-     * Returns true when a cached [MediaEntity] is likely an anime and should
-     * have its episodes enriched with Jikan filler data.
+     * Returns true when a cached [MediaEntity] is likely an anime AND has not yet
+     * been enriched with Jikan filler data.
      */
     suspend fun isAnimeEligibleForJikan(mediaId: String): Boolean = withContext(Dispatchers.IO) {
         val entity = db.mediaDao().getById(mediaId) ?: return@withContext false
+        if (entity.jikanFillerSynced) return@withContext false   // already done
         entity.originalLanguage == "ja" || entity.genres.contains("Animation")
     }
 
     /**
-     * Fetches filler episode data from Jikan and writes it into the local Room
-     * `episodes` table by updating [EpisodeEntity.episodeType] to "FILLER" for
-     * any episode that Jikan classifies as filler.
+     * Launches Jikan filler enrichment in the **repository scope**, which is
+     * independent of any ViewModel lifecycle.
+     *
+     * Safe to call from any coroutine context — it returns immediately and lets
+     * the background job run to completion even if the caller is cancelled.
+     * The [jikanFillerSynced] Room flag prevents duplicate runs across app sessions.
      */
-    suspend fun enrichEpisodesWithJikanFiller(mediaId: String, showTitle: String) {
-        withContext(Dispatchers.IO) {
-            try {
-                // Step 1: Resolve MAL ID (This now automatically uses type="tv" from your updated Service)
-                val searchResponse = jikanApiService.searchAnime(showTitle)
-                if (!searchResponse.isSuccessful) return@withContext
-                
-                val malId = searchResponse.body()?.data?.firstOrNull()?.malId ?: return@withContext
-                android.util.Log.d(TAG, "Jikan: resolved '$showTitle' → mal_id=$malId")
+    fun launchJikanEnrichmentIfNeeded(mediaId: String, showTitle: String) {
+        repositoryScope.launch {
+            if (!isAnimeEligibleForJikan(mediaId)) return@launch
+            enrichEpisodesWithJikanFiller(mediaId, showTitle)
+        }
+    }
 
-                // Step 2: Fetch all episode pages with Rate Limit Handling
-                val fillerEpisodeNumbers = mutableSetOf<Int>()
-                var page = 1
-                var hasNextPage = true
-
-                while (hasNextPage) {
-                    var epResponse = jikanApiService.getEpisodes(malId, page)
-                    
-                    // Handle Jikan's strict 3 req/sec limit
-                    if (epResponse.code() == 429) {
-                        android.util.Log.w(TAG, "Jikan rate limit hit. Waiting 3 seconds...")
-                        kotlinx.coroutines.delay(3000L)
-                        epResponse = jikanApiService.getEpisodes(malId, page)
-                    }
-
-                    if (!epResponse.isSuccessful) break
-                    val body = epResponse.body() ?: break
-
-                    body.data.forEach { ep ->
-                        // Since you correctly removed epId, we just use malId as the episode number!
-                        val epNumber = ep.malId
-                        if (ep.filler && epNumber > 0) {
-                            fillerEpisodeNumbers.add(epNumber)
-                        }
-                    }
-
-                    hasNextPage = body.pagination?.hasNextPage == true
-                    page++
-                    
-                    // Hard delay to respect rate limits
-                    if (hasNextPage) kotlinx.coroutines.delay(1000L)
-                }
-
-                if (fillerEpisodeNumbers.isEmpty()) return@withContext
-
-                // Step 3 & 4: Load Room episodes and Update using absoluteEpisodeNumber & protecting Season 0
-                val allEpisodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
-
-                val toUpdate = allEpisodes.filter { entity ->
-                    entity.episodeType == EpisodeType.CANON.name &&
-                    entity.absoluteEpisodeNumber in fillerEpisodeNumbers &&
-                    entity.seasonNumber > 0 // Protects specials/movies from being overwritten
-                }.map { entity ->
-                    entity.copy(episodeType = EpisodeType.FILLER.name)
-                }
-
-                if (toUpdate.isNotEmpty()) {
-                    db.episodeDao().upsertAll(toUpdate)
-                    android.util.Log.d(TAG, "Jikan: tagged ${toUpdate.size} episodes as FILLER for $mediaId")
-                }
-
-            } catch (e: Exception) {
-                android.util.Log.w(TAG, "Jikan enrichment failed for '$showTitle': ${e.message}")
+    /**
+     * Fetches filler episode data from Jikan and writes it into the local Room
+     * `episodes` table.  Call via [launchJikanEnrichmentIfNeeded] — never call
+     * this directly from a ViewModel.
+     */
+    private suspend fun enrichEpisodesWithJikanFiller(mediaId: String, showTitle: String) {
+        try {
+            // Step 1: Resolve MAL ID (type="tv" filter is applied by JikanApiService)
+            val searchResponse = jikanApiService.searchAnime(showTitle)
+            if (!searchResponse.isSuccessful) {
+                Log.w(TAG, "Jikan search failed for '$showTitle': HTTP ${searchResponse.code()}")
+                return
             }
+
+            val malId = searchResponse.body()?.data?.firstOrNull()?.malId
+            if (malId == null) {
+                Log.w(TAG, "Jikan: no MAL entry found for '$showTitle'")
+                return
+            }
+            Log.d(TAG, "Jikan: resolved '$showTitle' → mal_id=$malId")
+
+            // Step 2: Paginate all episode pages, collecting filler numbers
+            val fillerEpisodeNumbers = mutableSetOf<Int>()
+            var page = 1
+            var hasNextPage = true
+
+            while (hasNextPage) {
+                // First attempt
+                var epResponse = jikanApiService.getEpisodes(malId, page)
+
+                // Exponential back-off on 429 (Jikan 3 req/sec limit)
+                if (epResponse.code() == 429) {
+                    Log.w(TAG, "Jikan 429 on page $page — waiting 4 s")
+                    kotlinx.coroutines.delay(4000L)
+                    epResponse = jikanApiService.getEpisodes(malId, page)
+                }
+                if (epResponse.code() == 429) {
+                    Log.w(TAG, "Jikan 429 again on page $page — waiting 10 s")
+                    kotlinx.coroutines.delay(10000L)
+                    epResponse = jikanApiService.getEpisodes(malId, page)
+                }
+
+                if (!epResponse.isSuccessful) {
+                    Log.w(TAG, "Jikan episodes failed page $page: HTTP ${epResponse.code()}")
+                    break
+                }
+                val body = epResponse.body() ?: break
+
+                body.data.forEach { ep ->
+                    // ep.malId is the 1-based sequential episode number within the series
+                    if (ep.filler && ep.malId > 0) {
+                        fillerEpisodeNumbers.add(ep.malId)
+                    }
+                }
+
+                hasNextPage = body.pagination?.hasNextPage == true
+                page++
+
+                // 1.1 s inter-page delay keeps us safely under Jikan's 3 req/sec limit
+                if (hasNextPage) kotlinx.coroutines.delay(1100L)
+            }
+
+            Log.d(TAG, "Jikan: found ${fillerEpisodeNumbers.size} filler episodes for '$showTitle'")
+
+            if (fillerEpisodeNumbers.isEmpty()) {
+                // Mark synced even on empty result so we don't retry on every launch
+                db.mediaDao().markJikanSynced(mediaId)
+                return
+            }
+
+            // Step 3: Match against Room episodes using absoluteEpisodeNumber
+            val allEpisodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+
+            val toUpdate = allEpisodes.filter { entity ->
+                entity.seasonNumber > 0 &&                              // never tag Season 0 specials
+                entity.episodeType == EpisodeType.CANON.name &&         // only tag previously-canon eps
+                entity.absoluteEpisodeNumber in fillerEpisodeNumbers    // Jikan match
+            }.map { entity ->
+                entity.copy(episodeType = EpisodeType.FILLER.name)
+            }
+
+            if (toUpdate.isNotEmpty()) {
+                db.episodeDao().upsertAll(toUpdate)
+                Log.d(TAG, "Jikan: tagged ${toUpdate.size} episodes as FILLER for $mediaId")
+            }
+
+            // Step 4: Persist the "done" flag — prevents 44-second re-runs on every visit
+            db.mediaDao().markJikanSynced(mediaId)
+
+        } catch (e: Exception) {
+            Log.w(TAG, "Jikan enrichment failed for '$showTitle': ${e.message}")
+            // Do NOT mark synced on exception — let it retry next time the user opens the show
         }
     }
 
