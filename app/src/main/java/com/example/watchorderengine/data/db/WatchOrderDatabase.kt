@@ -180,6 +180,27 @@ abstract class WatchOrderDatabase : RoomDatabase() {
     abstract fun pendingSyncTaskDao(): PendingSyncTaskDao
     abstract fun reviewDao(): ReviewDao
 
+    /**
+     * Surgically clears only the cached metadata (shows, seasons, episodes)
+     * while preserving user-specific data (watchlist progress, watched episodes, 
+     * reviews, and sync tasks). 
+     * 
+     * This fulfills the promise made in the Settings UI that clearing cache 
+     * is safe for your progress.
+     */
+    suspend fun clearMetadataCache() {
+        val db = (this as RoomDatabase).openHelper.writableDatabase
+        db.beginTransaction()
+        try {
+            db.execSQL("DELETE FROM episodes")
+            db.execSQL("DELETE FROM seasons")
+            db.execSQL("DELETE FROM media")
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     companion object {
         @Volatile private var INSTANCE: WatchOrderDatabase? = null
 

@@ -828,7 +828,7 @@ class MediaRepository @Inject constructor(
                 if (watched) EpisodeWatchedEntity(epId, mediaId) else null
             }
             Log.d(TAG, "Sync: found ${episodes.size} watched episodes in cloud")
-            episodes.forEach { db.episodeWatchedDao().markWatched(it) }
+            db.episodeWatchedDao().markWatchedAll(episodes)
 
             // 3. Sync Profile Data
             val profileSnap = firestore.collection("users").document(uid)
