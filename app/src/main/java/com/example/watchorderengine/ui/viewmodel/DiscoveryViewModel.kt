@@ -25,10 +25,10 @@ object StreamingPlatforms {
     val ALL: List<StreamingPlatform> = listOf(
         StreamingPlatform(listOf(8),    "Netflix",      logo("/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg")),
         StreamingPlatform(listOf(119),  "Prime Video",  logo("/dQeAar5H991VYporEjUspolDarG.jpg")),
-        StreamingPlatform(listOf(220, 122, 337), "JioCinema", logo("/8v96y5KPrXUaL96C374r9SjF8C8.png")),
+        StreamingPlatform(listOf(220, 122, 337), "JioCinema", logo("/9A1qXwN7qT3N8pG2pX4WdE2j4gX.png")),
         StreamingPlatform(listOf(350),  "Apple TV+",    logo("/peURlLlr8jggOwK53fJ5wdQl05y.jpg")),
-        StreamingPlatform(listOf(283),  "Crunchyroll",  logo("/8Gt1iClBlzTeQs8WQm8UrCoInjx.jpg")),
-        StreamingPlatform(listOf(232),  "Zee5",         logo("/kgd9I4vq3v3pKkMX3s0KQdnZDgw.jpg")),
+        StreamingPlatform(listOf(283),  "Crunchyroll",  logo("/8Gt1iClBlzTeQs8WQm8UrCoInjx.png")),
+        StreamingPlatform(listOf(232),  "Zee5",         logo("/kgd9I4vq3v3pKkMX3s0KQdnZDgw.png")),
     )
 }
 
