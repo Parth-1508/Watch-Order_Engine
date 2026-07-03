@@ -152,6 +152,14 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE user_progress ADD COLUMN completedNodeIds TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE user_progress ADD COLUMN activeRoute TEXT")
+        db.execSQL("ALTER TABLE user_progress ADD COLUMN spoilerShieldEnabled INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
@@ -165,7 +173,7 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
         PendingSyncTaskEntity::class,
         ReviewEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -211,7 +219,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

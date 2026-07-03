@@ -803,6 +803,31 @@ class MediaRepository @Inject constructor(
             Log.d(TAG, "Sync: found ${watchlist.size} watchlist items in cloud")
             watchlist.forEach { db.userProgressDao().upsert(it) }
 
+            // 1.2 Sync Graph/Universe Progress
+            val progressSnap = firestore.collection("users").document(uid)
+                .collection("progress").get().await()
+            val universeProgress = progressSnap.documents.mapNotNull { it.toObject(UserProgress::class.java) }
+            Log.d(TAG, "Sync: found ${universeProgress.size} universe progress records")
+            universeProgress.forEach { up ->
+                // Map the domain UserProgress back to UserProgressEntity for Room caching
+                val entity = UserProgressEntity(
+                    mediaId = up.mediaId,
+                    trackingState = up.trackingState.name,
+                    currentSeasonNumber = up.currentSeasonNumber,
+                    currentEpisodeNumber = up.currentEpisodeNumber,
+                    userRating = up.userRating,
+                    startedDate = up.startedDate,
+                    completedDate = up.completedDate,
+                    updatedAt = up.updatedAt,
+                    userNotes = up.userNotes,
+                    priorityTag = up.priorityTag.name,
+                    completedNodeIds = up.completed_node_ids,
+                    activeRoute = up.active_route,
+                    spoilerShieldEnabled = up.spoiler_shield_enabled
+                )
+                db.userProgressDao().upsert(entity)
+            }
+
             // 1.5 Backfill missing media metadata from TMDB in parallel (OPTIMIZED: fetch Media only)
             supervisorScope {
                 watchlist.filter { db.mediaDao().getById(it.mediaId) == null }

@@ -112,7 +112,12 @@ data class UserProgressEntity(
     val completedDate: Long? = null,
     val updatedAt: Long = System.currentTimeMillis(),
     val userNotes: String = "",
-    val priorityTag: String = "NONE"    // PriorityTag.name
+    val priorityTag: String = "NONE",    // PriorityTag.name
+    
+    // Graph/Universe progress fields
+    val completedNodeIds: List<String> = emptyList(),
+    val activeRoute: String? = null,
+    val spoilerShieldEnabled: Boolean = false
 )
 
 @Entity(
