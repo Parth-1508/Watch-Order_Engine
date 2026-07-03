@@ -183,8 +183,8 @@ private fun PlatformChip(
                 model = platform.logoUrl,
                 contentDescription = platform.displayName,
                 modifier = Modifier
-                    .size(18.dp)
-                    .clip(RoundedCornerShape(2.dp)),
+                    .size(20.dp)
+                    .clip(RoundedCornerShape(4.dp)),
                 contentScale = ContentScale.Fit
             )
             Text(

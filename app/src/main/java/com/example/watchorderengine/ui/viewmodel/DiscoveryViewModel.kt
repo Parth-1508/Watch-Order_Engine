@@ -20,15 +20,15 @@ data class StreamingPlatform(
 )
 
 object StreamingPlatforms {
-    private fun logo(path: String) = "https://image.tmdb.org/t/p/w92$path"
+    private fun logo(path: String) = "https://image.tmdb.org/t/p/w154$path"
 
     val ALL: List<StreamingPlatform> = listOf(
-        StreamingPlatform(listOf(8),    "Netflix",      logo("/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg")),
-        StreamingPlatform(listOf(119),  "Prime Video",  logo("/dQeAar5H991VYporEjUspolDarG.jpg")),
+        StreamingPlatform(listOf(8),    "Netflix",      logo("/wwemzKWzjKYJFfCeiB57q3r4Bcm.png")),
+        StreamingPlatform(listOf(119),  "Prime Video",  logo("/689hYvLudvT9qvpehIBfxGrD9pX.png")),
         StreamingPlatform(listOf(220, 122, 337), "JioCinema", logo("/8v96y5KPrXUaL96C374r9SjF8C8.png")),
-        StreamingPlatform(listOf(350),  "Apple TV+",    logo("/peURlLlr8jggOwK53fJ5wdQl05y.jpg")),
-        StreamingPlatform(listOf(283),  "Crunchyroll",  logo("/8Gt1iClBlzTeQs8WQm8UrCoInjx.jpg")),
-        StreamingPlatform(listOf(232),  "Zee5",         logo("/kgd9I4vq3v3pKkMX3s0KQdnZDgw.jpg")),
+        StreamingPlatform(listOf(350),  "Apple TV+",    logo("/69Sns96asA2fny6b3s9oXpxTQLi.png")),
+        StreamingPlatform(listOf(283),  "Crunchyroll",  logo("/m9UCDXN1vW80NqIUKy8iEbeR06S.png")),
+        StreamingPlatform(listOf(232),  "Zee5",         logo("/8v9yXbY4SgT6M1U9pXqC2J3f5o6.png")),
     )
 }
 
