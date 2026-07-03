@@ -22,7 +22,7 @@ data class StreamingPlatform(
 object StreamingPlatforms {
     // Standard TMDB image fetcher
     private fun logo(path: String) = "https://image.tmdb.org/t/p/w92$path"
-    
+
     // Fallback dynamic icon fetcher
     private fun favicon(domain: String) = "https://www.google.com/s2/favicons?domain=$domain&sz=128"
 
@@ -31,9 +31,9 @@ object StreamingPlatforms {
         StreamingPlatform(listOf(8),    "Netflix",      logo("/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg")),
         StreamingPlatform(listOf(119),  "Prime Video",  logo("/dQeAar5H991VYporEjUspolDarG.jpg")),
         StreamingPlatform(listOf(350),  "Apple TV+",    logo("/peURlLlr8jggOwK53fJ5wdQl05y.jpg")),
-        
+        StreamingPlatform(listOf(220, 122, 337), "JioCinema",    logo("/boMYreJ9JWNDnXiHUfoix4oYhBc.jpg")),
+
         // Stable Google Favicon links to completely bypass TMDB's 404 errors
-        StreamingPlatform(listOf(220, 122, 337), "JioCinema", favicon("jiocinema.com")),
         StreamingPlatform(listOf(283),  "Crunchyroll",  favicon("crunchyroll.com")),
         StreamingPlatform(listOf(232),  "Zee5",         favicon("zee5.com"))
     )
