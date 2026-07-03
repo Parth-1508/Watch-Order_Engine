@@ -33,6 +33,7 @@ import com.example.watchorderengine.ui.timeline.TimelineScreen
 import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.ReviewRepository
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -149,6 +150,16 @@ fun AppNavigation() {
     val auth = FirebaseAuth.getInstance()
     val scope = rememberCoroutineScope()
 
+    val navigateTopLevel: (String) -> Unit = { route ->
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     val showBottomBar = currentRoute in listOf(
         Screen.Home.route,
         Screen.Discovery.route,
@@ -163,15 +174,7 @@ fun AppNavigation() {
             if (showBottomBar) {
                 AppBottomBar(
                     currentRoute = currentRoute,
-                    onNavigate = { route ->
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    onNavigate = navigateTopLevel
                 )
             }
         }
@@ -192,9 +195,11 @@ fun AppNavigation() {
                             val isLoggedIn = auth.currentUser != null
                             
                             if (isLoggedIn) {
-                                // Background sync to hydrate cache if it was cleared
-                                mediaRepository.syncAllFromCloud()
-                                reviewRepository.syncReviewsFromFirestore()
+                                // Hydrate cache in background WITHOUT blocking entry
+                                launch(Dispatchers.IO) {
+                                    mediaRepository.syncAllFromCloud()
+                                    reviewRepository.syncReviewsFromFirestore()
+                                }
                             }
 
                             val isTasteDone = userPrefs.isTasteProfileCompleted.first()
@@ -255,9 +260,9 @@ fun AppNavigation() {
             composable(Screen.Home.route) {
                 HomeScreenWrapper(
                     onMediaClick    = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onSearchClick   = { navController.navigate(Screen.Search.route) },
-                    onSettingsClick = { navController.navigate(Screen.Settings.route) },
-                    onProfileClick  = { navController.navigate(Screen.Profile.route) }
+                    onSearchClick   = { navigateTopLevel(Screen.Search.route) },
+                    onSettingsClick = { navigateTopLevel(Screen.Settings.route) },
+                    onProfileClick  = { navigateTopLevel(Screen.Profile.route) }
                 )
             }
             composable(Screen.Search.route) {

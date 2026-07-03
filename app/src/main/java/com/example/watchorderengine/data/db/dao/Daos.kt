@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MediaDao {
+    @Query("SELECT * FROM media WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<String>): List<MediaEntity>
+
     @Query("SELECT * FROM media WHERE id = :id")
     suspend fun getById(id: String): MediaEntity?
 
@@ -87,6 +90,18 @@ interface EpisodeDao {
 
     @Query("SELECT * FROM episodes WHERE mediaId = :mediaId ORDER BY absoluteEpisodeNumber ASC")
     suspend fun getAllEpisodesByMedia(mediaId: String): List<EpisodeEntity>
+
+    @Query("""
+        SELECT MAX(e.absoluteEpisodeNumber)
+        FROM episodes e
+        INNER JOIN episode_watched w ON (
+            w.episodeId = e.id 
+            OR w.episodeId = REPLACE(REPLACE(e.id, 'tmdb_m_', 'tmdb_'), 'tmdb_t_', 'tmdb_')
+            OR w.episodeId = REPLACE(REPLACE(e.id, 'tmdb_m_', ''), 'tmdb_t_', '')
+        )
+        WHERE e.mediaId = :mediaId
+    """)
+    fun observeMaxWatchedAbsoluteEpisode(mediaId: String): Flow<Int?>
 }
 
 // ─── UserProgressDao ─────────────────────────────────────────────────────────

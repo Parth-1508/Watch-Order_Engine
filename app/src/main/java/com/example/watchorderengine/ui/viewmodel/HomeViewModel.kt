@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 import kotlinx.coroutines.flow.first
@@ -44,7 +43,7 @@ class HomeViewModel @Inject constructor(
     private val _pausedList = MutableStateFlow<List<MediaSummary>>(emptyList())
     val pausedList: StateFlow<List<MediaSummary>> = _pausedList.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
+    private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _trendingList = MutableStateFlow<List<MediaSummary>>(emptyList())
@@ -63,16 +62,16 @@ class HomeViewModel @Inject constructor(
     )
 
     init {
-        refresh()
-        updateDailyStreak()
+        viewModelScope.launch(Dispatchers.IO) {
+            refreshData()
+            updateDailyStreak()
+        }
         observeTasteProfile()
     }
 
     private fun observeTasteProfile() {
         viewModelScope.launch {
             userPrefs.selectedGenres.collect {
-                // Re-generate recommendations whenever the taste profile changes
-                // (e.g. after finishing onboarding)
                 generateRecommendations()
             }
         }
@@ -120,44 +119,55 @@ class HomeViewModel @Inject constructor(
     private var hasAttemptedSync = false
 
     fun refresh() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                var watching = withContext(Dispatchers.IO) { repository.getWatchingList() }
-                var planned = withContext(Dispatchers.IO) { repository.getPlannedList() }
-                var completed = withContext(Dispatchers.IO) { repository.getCompletedList() }
-                var dropped = withContext(Dispatchers.IO) { repository.getDroppedList() }
-                var paused = withContext(Dispatchers.IO) { repository.getPausedList() }
-                var trending = withContext(Dispatchers.IO) { repository.getTrending() }
+        viewModelScope.launch(Dispatchers.IO) {
+            refreshData()
+        }
+    }
 
-                // If everything is empty but user is logged in, try a sync once
-                if (!hasAttemptedSync && watching.isEmpty() && planned.isEmpty() && completed.isEmpty()) {
-                    hasAttemptedSync = true
-                    repository.syncAllFromCloud()
-                    
-                    // Fetch again after sync
-                    watching = withContext(Dispatchers.IO) { repository.getWatchingList() }
-                    planned = withContext(Dispatchers.IO) { repository.getPlannedList() }
-                    completed = withContext(Dispatchers.IO) { repository.getCompletedList() }
-                    dropped = withContext(Dispatchers.IO) { repository.getDroppedList() }
-                    paused = withContext(Dispatchers.IO) { repository.getPausedList() }
-                    trending = withContext(Dispatchers.IO) { repository.getTrending() }
-                }
+    private suspend fun refreshData() {
+        _isLoading.value = true
+        try {
+            // Load trending immediately to show SOMETHING
+            _trendingList.value = repository.getTrending()
+            
+            val watching = repository.getWatchingList()
+            val planned = repository.getPlannedList()
+            val completed = repository.getCompletedList()
+            val dropped = repository.getDroppedList()
+            val paused = repository.getPausedList()
 
-                _watchingList.value = watching
-                _plannedList.value = planned
-                _completedList.value = completed
-                _droppedList.value = dropped
-                _pausedList.value = paused
-                _trendingList.value = trending
+            // Update UI with what we have locally
+            _watchingList.value = watching
+            _plannedList.value = planned
+            _completedList.value = completed
+            _droppedList.value = dropped
+            _pausedList.value = paused
+            
+            // Generate initial recs from cache
+            generateRecommendations()
+            updateNextUp(watching)
 
+            // If everything is empty but user is logged in, try a sync once
+            if (!hasAttemptedSync && watching.isEmpty() && planned.isEmpty() && completed.isEmpty()) {
+                hasAttemptedSync = true
+                
+                // This call was optimized to only fetch Media metadata, not episodes.
+                repository.syncAllFromCloud()
+                
+                // Refresh lists after sync
+                _watchingList.value = repository.getWatchingList()
+                _plannedList.value = repository.getPlannedList()
+                _completedList.value = repository.getCompletedList()
+                _droppedList.value = repository.getDroppedList()
+                _pausedList.value = repository.getPausedList()
+                
                 generateRecommendations()
-                updateNextUp(watching)
-            } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Refresh failed", e)
-            } finally {
-                _isLoading.value = false
+                updateNextUp(_watchingList.value)
             }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeViewModel", "Refresh failed", e)
+        } finally {
+            _isLoading.value = false
         }
     }
 
@@ -222,24 +232,26 @@ class HomeViewModel @Inject constructor(
                 val preferredGenres = userPrefs.selectedGenres.first()
                 
                 // PRIMARY filter: exact Room ID match
-                val trackedIds = repository.getAllTrackedMediaIds()
+                val trackedIds = repository.getAllTrackedMediaIds().toList()
+                if (trackedIds.isEmpty() && preferredGenres.isEmpty()) return@launch
 
-                // SECONDARY filter: tmdbId-level match to catch legacy/typed ID mismatches.
-                val trackedTmdbIds: Set<Int> = trackedIds
-                    .mapNotNull { id -> db.mediaDao().getById(id)?.tmdbId }
-                    .toSet()
+                // Fetch tracked entities in one go
+                val trackedEntities = db.mediaDao().getByIds(trackedIds).associateBy { it.id }
+                val trackedTmdbIds: Set<Int> = trackedEntities.values.map { it.tmdbId }.toSet()
 
                 // Build the "taste profile" from what the user is actively tracking
                 val trackedPairs = trackedIds.mapNotNull { id ->
-                    val entity   = db.mediaDao().getById(id)             ?: return@mapNotNull null
+                    val entity   = trackedEntities[id]                   ?: return@mapNotNull null
                     val progress = db.userProgressDao().getByMediaId(id) ?: return@mapNotNull null
                     entity to progress
                 }
 
                 // Candidates: exclude by both ID string AND raw tmdbId
+                // OPTIMIZATION: Instead of getAll(), maybe we just need some diversity?
+                // But the engine uses the candidates list.
                 val allMedia   = db.mediaDao().getAll()
                 val candidates = allMedia.filter { media ->
-                    media.id    !in trackedIds    &&
+                    media.id    !in trackedEntities.keys &&
                     media.tmdbId !in trackedTmdbIds
                 }
 

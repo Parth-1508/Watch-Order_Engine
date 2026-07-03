@@ -50,4 +50,33 @@ class UniverseListViewModel @Inject constructor(
                 }
         }
     }
+
+    fun deleteUniverse(universeId: String) {
+        viewModelScope.launch {
+            repository.deleteUniverse(universeId)
+        }
+    }
+
+    fun regenerateUniverse(universeId: String) {
+        viewModelScope.launch {
+            mediaRepository.generateWatchOrder(universeId)
+        }
+    }
+
+    fun toggleUniverseCompletion(universeId: String, markAsCompleted: Boolean) {
+        viewModelScope.launch {
+            val nodes = repository.getNodes(universeId).first()
+            nodes.forEach { node ->
+                val mediaId = TimelineViewModel.resolveMediaId(node)
+                if (markAsCompleted) {
+                    mediaRepository.updateTrackingState(mediaId, com.example.watchorderengine.data.model.TrackingState.COMPLETED)
+                    mediaRepository.markAllAsWatched(mediaId)
+                    repository.setNodeCompletionDirect(universeId, node.id, true)
+                } else {
+                    mediaRepository.removeFromWatchlist(mediaId)
+                    repository.setNodeCompletionDirect(universeId, node.id, false)
+                }
+            }
+        }
+    }
 }

@@ -192,7 +192,8 @@ data class EpisodeItem(
     val voteAverage: Float,
     val episodeType: EpisodeType,
     val arcName: String?,
-    val isWatched: Boolean
+    val isWatched: Boolean,
+    val isSpoilerBlurred: Boolean = false
 )
 
 @Serializable

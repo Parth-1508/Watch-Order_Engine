@@ -457,6 +457,13 @@ class MediaRepository @Inject constructor(
         }.flowOn(Dispatchers.IO)
     }
 
+    fun observeMaxWatchedAbsoluteEpisode(mediaId: String): Flow<Int> {
+        return db.episodeDao().observeMaxWatchedAbsoluteEpisode(mediaId)
+            .map { it ?: 0 }
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.IO)
+    }
+
     // ─── Search ───────────────────────────────────────────────────────────────
 
     suspend fun searchMedia(query: String): List<MediaSummary> = withContext(Dispatchers.IO) {
@@ -793,18 +800,16 @@ class MediaRepository @Inject constructor(
             Log.d(TAG, "Sync: found ${watchlist.size} watchlist items in cloud")
             watchlist.forEach { db.userProgressDao().upsert(it) }
 
-            // 1.5 Backfill missing media metadata from TMDB in parallel
+            // 1.5 Backfill missing media metadata from TMDB in parallel (OPTIMIZED: fetch Media only)
             supervisorScope {
                 watchlist.filter { db.mediaDao().getById(it.mediaId) == null }
                     .map { progress ->
                         async {
                             val tmdbId = extractTmdbId(progress.mediaId)
                             if (tmdbId != null) {
-                                if (isMovieId(progress.mediaId)) {
-                                    fetchAndCacheMovie(tmdbId, progress.mediaId)
-                                } else {
-                                    fetchAndCacheTv(tmdbId, progress.mediaId)
-                                }
+                                // Just fetch the main MediaEntity to show in the list.
+                                // Don't fetch all seasons/episodes during bulk sync.
+                                fetchAndCacheMediaOnly(tmdbId, progress.mediaId)
                             }
                         }
                     }.forEach { it.await() }
@@ -822,7 +827,7 @@ class MediaRepository @Inject constructor(
             Log.d(TAG, "Sync: found ${episodes.size} watched episodes in cloud")
             episodes.forEach { db.episodeWatchedDao().markWatched(it) }
 
-            // 3. Sync Profile Data (Streak, Taste Completion)
+            // 3. Sync Profile Data
             val profileSnap = firestore.collection("users").document(uid)
                 .collection("profile").document("metadata").get().await()
             
@@ -843,6 +848,22 @@ class MediaRepository @Inject constructor(
             Log.e(TAG, "Sync from cloud failed: ${e.message}", e)
             Result.failure(e)
         }
+    }
+
+    /** Optimized fetcher that only gets the basic Media metadata without heavy season/episode detail. */
+    private suspend fun fetchAndCacheMediaOnly(tmdbId: Int, mediaId: String): Boolean {
+        return try {
+            if (isMovieId(mediaId)) {
+                fetchAndCacheMovie(tmdbId, mediaId)
+            } else {
+                val response = apiService.getTvShow(tmdbId)
+                if (!response.isSuccessful || response.body() == null) return false
+                val body = response.body()!!
+                val entity = body.toMediaEntity(mediaId)
+                db.mediaDao().upsert(entity)
+                true
+            }
+        } catch (e: Exception) { false }
     }
 
     suspend fun getListByState(
@@ -1033,10 +1054,16 @@ class MediaRepository @Inject constructor(
             val results = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
             
             if (providerIds.isEmpty()) {
-                val response1 = apiService.getTrending(page = 1)
-                val response2 = apiService.getTrending(page = 2)
-                if (response1.isSuccessful) response1.body()?.results?.let { results.addAll(it) }
-                if (response2.isSuccessful) response2.body()?.results?.let { results.addAll(it) }
+                supervisorScope {
+                    val d1 = async { apiService.getTrending(page = 1) }
+                    val d2 = async { apiService.getTrending(page = 2) }
+                    
+                    val r1 = d1.await()
+                    val r2 = d2.await()
+                    
+                    if (r1.isSuccessful) r1.body()?.results?.let { results.addAll(it) }
+                    if (r2.isSuccessful) r2.body()?.results?.let { results.addAll(it) }
+                }
             } else {
                 val providersStr = providerIds.joinToString("|")
                 // Fetch popular on these platforms

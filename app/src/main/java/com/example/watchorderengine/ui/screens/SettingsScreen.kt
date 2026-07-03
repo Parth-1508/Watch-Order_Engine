@@ -38,6 +38,7 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
     val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val hideFiller by viewModel.hideFiller.collectAsStateWithLifecycle()
+    val hideUnwatchedSpoilers by viewModel.hideUnwatchedSpoilers.collectAsStateWithLifecycle()
     val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsStateWithLifecycle()
     val wipeGraphsState by viewModel.wipeGraphsState.collectAsStateWithLifecycle()
     var showClearCacheDialog by remember { mutableStateOf(false) }
@@ -199,11 +200,22 @@ fun SettingsScreen(
         ) {
             Column {
                 PreferenceToggleRow(
-                    icon = Icons.Default.Shield,
-                    title = "SPOILER WALL",
-                    subtitle = if (hideFiller) "HIDING FILLER + UNSEEN EPISODES" else "HIDING UNSEEN EPISODES ONLY",
+                    icon = Icons.Default.FilterList,
+                    title = "HIDE FILLERS",
+                    subtitle = if (hideFiller) "FILLER EPISODES ARE HIDDEN" else "SHOW ALL EPISODES",
                     checked = hideFiller,
                     onCheckedChange = { viewModel.setHideFiller(it) }
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = theme.textPrimary.copy(alpha = 0.05f)
+                )
+                PreferenceToggleRow(
+                    icon = Icons.Default.VisibilityOff,
+                    title = "SPOILER SHIELD",
+                    subtitle = if (hideUnwatchedSpoilers) "UNWATCHED SYNOPSES BLURRED" else "SHOW ALL SYNOPSES",
+                    checked = hideUnwatchedSpoilers,
+                    onCheckedChange = { viewModel.setHideUnwatchedSpoilers(it) }
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 16.dp),

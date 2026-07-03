@@ -105,9 +105,16 @@ class DiscoveryViewModel @Inject constructor(
                 ?: repository.getTrending(selectedProviders)
 
             val trackedIds = repository.getAllTrackedMediaIds()
+            // Extract raw TMDB IDs to ensure legacy/prefixed IDs are caught
+            val trackedTmdbIds = trackedIds.mapNotNull { it.substringAfterLast("_").toIntOrNull() }.toSet()
+            
             val skippedIds = repository.getSkippedMediaIds()
 
-            val filtered = raw.filter { it.id !in trackedIds && it.id !in skippedIds }
+            val filtered = raw.filter { 
+                it.id !in trackedIds && 
+                it.tmdbId !in trackedTmdbIds &&
+                it.id !in skippedIds 
+            }
 
             _rawDeck.value = filtered
             _isLoading.value = false

@@ -322,6 +322,20 @@ class WatchOrderRepository @Inject constructor(
         batch.commit().await()
     }
 
+    suspend fun deleteUniverse(universeId: String): Result<Unit> = runCatching {
+        val nodeDocs = nodesRef(universeId).get().await()
+        val edgeDocs = edgesRef(universeId).get().await()
+        val tagDocs  = tagsRef(universeId).get().await()
+
+        val batch = firestore.batch()
+        nodeDocs.documents.forEach { batch.delete(it.reference) }
+        edgeDocs.documents.forEach { batch.delete(it.reference) }
+        tagDocs.documents.forEach { batch.delete(it.reference) }
+        batch.delete(universeRef(universeId))
+
+        batch.commit().await()
+    }
+
     suspend fun clearGeneratedUniverse(universeId: String): Result<Unit> = runCatching {
         val nodeDocs = nodesRef(universeId).get().await()
         val edgeDocs = edgesRef(universeId).get().await()

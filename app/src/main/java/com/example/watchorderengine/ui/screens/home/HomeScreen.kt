@@ -81,138 +81,144 @@ fun HomeScreen(
                 }
             }
     ) {
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
-            // Header
-            Header(
-                isSearchOpen = state.isSearchOpen,
-                query = state.searchQuery,
-                onQueryChanged = onSearchQueryChanged,
-                onToggleSearch = onSearchToggle,
-                onSettingsClick = onSettingsClick,
-                onProfileClick = onProfileClick,
-                profilePictureUrl = state.profilePictureUrl
-            )
-
-            // "Next Up" Quick Resume Card
-            AnimatedVisibility(
-                visible = nextUpItem != null,
-                enter   = fadeIn() + expandVertically(),
-                exit    = fadeOut() + shrinkVertically()
-            ) {
-                nextUpItem?.let { item ->
-                    NextUpCard(
-                        item     = item,
-                        onResume = { onResumeClick(item.internalId) },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
+        if (state.isLoading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = theme.accent)
             }
+        } else {
+            Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
+                // Header
+                Header(
+                    isSearchOpen = state.isSearchOpen,
+                    query = state.searchQuery,
+                    onQueryChanged = onSearchQueryChanged,
+                    onToggleSearch = onSearchToggle,
+                    onSettingsClick = onSettingsClick,
+                    onProfileClick = onProfileClick,
+                    profilePictureUrl = state.profilePictureUrl
+                )
 
-            // Category Tabs
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(state.categories) { category ->
-                    val count = state.shows.count { it.watchlistStatus == category }
-                    CategoryTab(
-                        name = category,
-                        count = count,
-                        isSelected = state.activeCategory == category,
-                        onClick = { onCategorySelected(category) }
-                    )
-                }
-            }
-
-            // Main Content Area
-            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                // Active Category Label
-                Box(
-                    modifier = Modifier
-                        .graphicsLayer {
-                            if (theme.isComic) rotationZ = 2f
-                        }
-                        .drawBehind {
-                            drawRect(color = Color.Black)
-                            drawRect(color = Color.Magenta, style = Stroke(width = 2.dp.toPx()))
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                // "Next Up" Quick Resume Card
+                AnimatedVisibility(
+                    visible = nextUpItem != null,
+                    enter   = fadeIn() + expandVertically(),
+                    exit    = fadeOut() + shrinkVertically()
                 ) {
-                    Text(
-                        text = state.activeCategory.uppercase(),
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                val filteredShows = state.shows.filter { it.watchlistStatus == state.activeCategory }
-                
-                if (filteredShows.isEmpty()) {
-                    // Empty State Replica
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(modifier = Modifier.size(80.dp).background(Color.White.copy(alpha = 0.05f), CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Tv, 
-                                contentDescription = null, 
-                                tint = Color.Gray, 
-                                modifier = Modifier.size(40.dp)
-                            )
-                        }
-                        Text("NO SHOWS HERE YET", color = Color.Gray, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 16.dp))
-                        Text(
-                            text = "Open a show and set it to ${state.activeCategory}",
-                            color = Color.Gray,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(top = 8.dp)
+                    nextUpItem?.let { item ->
+                        NextUpCard(
+                            item     = item,
+                            onResume = { onResumeClick(item.internalId) },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
-                } else {
-                    // Responsive Grid
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        filteredShows.chunked(2).forEach { rowShows ->
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                rowShows.forEach { show ->
-                                    Box(modifier = Modifier.weight(1f)) {
-                                        MediaCard(show = show, onClick = { onShowClick(show) })
+                }
+
+                // Category Tabs
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(state.categories) { category ->
+                        val count = state.shows.count { it.watchlistStatus == category }
+                        CategoryTab(
+                            name = category,
+                            count = count,
+                            isSelected = state.activeCategory == category,
+                            onClick = { onCategorySelected(category) }
+                        )
+                    }
+                }
+
+                // Main Content Area
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    // Active Category Label
+                    Box(
+                        modifier = Modifier
+                            .graphicsLayer {
+                                if (theme.isComic) rotationZ = 2f
+                            }
+                            .drawBehind {
+                                drawRect(color = Color.Black)
+                                drawRect(color = Color.Magenta, style = Stroke(width = 2.dp.toPx()))
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = state.activeCategory.uppercase(),
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    val filteredShows = state.shows.filter { it.watchlistStatus == state.activeCategory }
+                    
+                    if (filteredShows.isEmpty()) {
+                        // Empty State Replica
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(modifier = Modifier.size(80.dp).background(Color.White.copy(alpha = 0.05f), CircleShape), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Tv, 
+                                    contentDescription = null, 
+                                    tint = Color.Gray, 
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+                            Text("NO SHOWS HERE YET", color = Color.Gray, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 16.dp))
+                            Text(
+                                text = "Open a show and set it to ${state.activeCategory}",
+                                color = Color.Gray,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                    } else {
+                        // Responsive Grid
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            filteredShows.chunked(2).forEach { rowShows ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    rowShows.forEach { show ->
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            MediaCard(show = show, onClick = { onShowClick(show) })
+                                        }
                                     }
-                                }
-                                if (rowShows.size == 1) {
-                                    Spacer(modifier = Modifier.weight(1f))
+                                    if (rowShows.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // RECOMMENDED FOR YOU Section
-                if (recommendations.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Text(
-                        "RECOMMENDED FOR YOU",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.Gray,
-                        letterSpacing = 1.sp
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // RECOMMENDED FOR YOU Section
+                    if (recommendations.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Text(
+                            "RECOMMENDED FOR YOU",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.Gray,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        contentPadding = PaddingValues(bottom = 32.dp)
-                    ) {
-                        items(recommendations, key = { it.media.id }) { recommendation ->
-                            MediaCard(
-                                modifier = Modifier.width(130.dp),
-                                show = recommendation.toMediaShowItem(),
-                                onClick = { onShowClick(recommendation.toMediaShowItem()) }
-                            )
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            contentPadding = PaddingValues(bottom = 32.dp)
+                        ) {
+                            items(recommendations, key = { it.media.id }) { recommendation ->
+                                MediaCard(
+                                    modifier = Modifier.width(130.dp),
+                                    show = recommendation.toMediaShowItem(),
+                                    onClick = { onShowClick(recommendation.toMediaShowItem()) }
+                                )
+                            }
                         }
                     }
                 }
@@ -385,13 +391,14 @@ fun Header(
         modifier = Modifier
             .fillMaxWidth()
             .background(theme.background)
-            .padding(16.dp)
+            .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 24.dp)
             .drawBehind {
+                val yPosition = size.height + 12.dp.toPx()
                 drawLine(
-                    color = Color.Black,
-                    start = Offset(0f, size.height),
-                    end = Offset(size.width, size.height),
-                    strokeWidth = 4.dp.toPx()
+                    color = Color.Black.copy(alpha = 0.1f),
+                    start = Offset(-16.dp.toPx(), yPosition),
+                    end = Offset(size.width + 16.dp.toPx(), yPosition),
+                    strokeWidth = 1.dp.toPx()
                 )
             },
         verticalAlignment = Alignment.CenterVertically
@@ -439,7 +446,7 @@ fun Header(
                     onValueChange = onQueryChanged,
                     placeholder = { Text("Search title...", fontSize = 14.sp) },
                     modifier = Modifier
-                        .padding(horizontal = 8.dp)
+                        .padding(horizontal = 16.dp)
                         .height(48.dp),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = theme.surface,
@@ -453,19 +460,19 @@ fun Header(
                     leadingIcon = { Icon(Icons.Default.Search, null, tint = theme.textSecondary) }
                 )
             } else {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "WATCH ORDER",
-                        style = TextStyle(
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Black,
-                            fontStyle = FontStyle.Italic,
-                            letterSpacing = (-1).sp
-                        ),
-                        color = theme.textPrimary,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                Text(
+                    text = "WATCH ORDER",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Black,
+                        fontStyle = FontStyle.Italic,
+                        letterSpacing = (-1).sp
+                    ),
+                    color = theme.textPrimary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                )
             }
         }
 

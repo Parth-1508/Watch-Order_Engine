@@ -333,26 +333,32 @@ private fun TimelineContent(
     viewModel: TimelineViewModel
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // Floating Hint
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            color = WatchOrderColors.AccentGold.copy(alpha = 0.1f),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, WatchOrderColors.AccentGold.copy(alpha = 0.2f))
         ) {
-            items(state.availableTags) { tag ->
-                val isSelected = tag.tagId == state.activeRouteTag
-                Surface(
-                    shape = CircleShape,
-                    color = if (isSelected) WatchOrderColors.AccentGold else WatchOrderColors.ElevatedSurface,
-                    border = BorderStroke(1.dp, if (isSelected) WatchOrderColors.AccentGold else WatchOrderColors.CardBorder),
-                    onClick = { viewModel.setActiveRoute(tag.tagId) }
-                ) {
-                    Text(
-                        tag.label,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                        color = if (isSelected) WatchOrderColors.DeepSpace else WatchOrderColors.TextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lightbulb,
+                    contentDescription = null,
+                    tint = WatchOrderColors.AccentGold,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Tip: Long-press any hexagonal node to toggle its watch status.",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
             }
         }
 

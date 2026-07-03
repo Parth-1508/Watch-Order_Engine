@@ -24,6 +24,7 @@ fun HomeScreenWrapper(
     val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
     val nextUpItem by viewModel.nextUp.collectAsStateWithLifecycle()
     val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
     var state by remember {
         mutableStateOf(
@@ -33,8 +34,8 @@ fun HomeScreenWrapper(
         )
     }
 
-    LaunchedEffect(avatarUrl) {
-        state = state.copy(profilePictureUrl = avatarUrl)
+    LaunchedEffect(avatarUrl, isLoading) {
+        state = state.copy(profilePictureUrl = avatarUrl, isLoading = isLoading)
     }
 
     val realShows = remember(watching, planned, completed, dropped, paused, trending, recommendations) {

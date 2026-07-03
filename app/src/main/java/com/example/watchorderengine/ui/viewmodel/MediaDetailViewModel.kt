@@ -7,6 +7,7 @@ import com.example.watchorderengine.data.model.EpisodeItem
 import com.example.watchorderengine.data.model.MediaDetail
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.db.entity.ReviewEntity
+import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.repository.CharacterRepository
 import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.ReviewRepository
@@ -22,6 +23,7 @@ class MediaDetailViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: MediaRepository,
     private val characterRepository: CharacterRepository,
+    private val userPrefs: UserPreferencesRepository,
     val reviewRepository: ReviewRepository
 ) : ViewModel() {
 
@@ -163,11 +165,28 @@ class MediaDetailViewModel @Inject constructor(
         episodesJob = viewModelScope.launch {
             _isEpisodesLoading.value = true
             try {
-                repository.observeEpisodesBySeason(sanitizedId, seasonNumber).collect { eps ->
-                    _episodes.value = eps
-                    if (eps.isNotEmpty()) {
-                        _isEpisodesLoading.value = false
+                combine(
+                    repository.observeEpisodesBySeason(sanitizedId, seasonNumber),
+                    userPrefs.hideFiller,
+                    userPrefs.hideUnwatchedSpoilers,
+                    repository.observeMaxWatchedAbsoluteEpisode(sanitizedId)
+                ) { eps, hideFillers, hideSpoilers, maxWatchedAbs ->
+                    eps.filter { ep -> 
+                        if (hideFillers) ep.episodeType != com.example.watchorderengine.data.model.EpisodeType.FILLER 
+                        else true 
+                    }.map { ep ->
+                        val isBlurred = hideSpoilers && !ep.isWatched && ep.absoluteEpisodeNumber > (maxWatchedAbs + 1)
+                        if (isBlurred) {
+                            ep.copy(
+                                title = "Episode ${ep.episodeNumber}",
+                                overview = "Spoiler shielded. Watch previous episodes to reveal.",
+                                isSpoilerBlurred = true
+                            )
+                        } else ep
                     }
+                }.collect { filtered ->
+                    _episodes.value = filtered
+                    _isEpisodesLoading.value = false
                 }
             } catch (e: Exception) {
                 _isEpisodesLoading.value = false

@@ -28,6 +28,7 @@ class UserPreferencesRepository(private val context: Context) {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val LAYOUT_STYLE = stringPreferencesKey("layout_style")
         val HIDE_FILLER = booleanPreferencesKey("hide_filler")
+        val HIDE_UNWATCHED_SPOILERS = booleanPreferencesKey("hide_unwatched_spoilers")
         val USERNAME = stringPreferencesKey("username")
         val AVATAR_URL = stringPreferencesKey("avatar_url")
         val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
@@ -81,6 +82,10 @@ class UserPreferencesRepository(private val context: Context) {
         preferences[PreferencesKeys.HIDE_FILLER] ?: false
     }
 
+    val hideUnwatchedSpoilers: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.HIDE_UNWATCHED_SPOILERS] ?: false
+    }
+
     val cloudSyncEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.CLOUD_SYNC_ENABLED] ?: true
     }
@@ -99,6 +104,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setHideFiller(hide: Boolean) {
         context.dataStore.edit { it[PreferencesKeys.HIDE_FILLER] = hide }
+    }
+
+    suspend fun setHideUnwatchedSpoilers(hide: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.HIDE_UNWATCHED_SPOILERS] = hide }
     }
 
     suspend fun setCloudSyncEnabled(enabled: Boolean) {

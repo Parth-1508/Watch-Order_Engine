@@ -44,6 +44,9 @@ class SettingsViewModel @Inject constructor(
     val hideFiller: StateFlow<Boolean> = prefsRepository.hideFiller
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val hideUnwatchedSpoilers: StateFlow<Boolean> = prefsRepository.hideUnwatchedSpoilers
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val cloudSyncEnabled: StateFlow<Boolean> = prefsRepository.cloudSyncEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
@@ -60,6 +63,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setHideFiller(hide: Boolean) {
         viewModelScope.launch { prefsRepository.setHideFiller(hide) }
+    }
+
+    fun setHideUnwatchedSpoilers(hide: Boolean) {
+        viewModelScope.launch { prefsRepository.setHideUnwatchedSpoilers(hide) }
     }
 
     fun setCloudSyncEnabled(enabled: Boolean) {

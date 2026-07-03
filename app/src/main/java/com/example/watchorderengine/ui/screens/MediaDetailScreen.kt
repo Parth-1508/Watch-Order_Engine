@@ -1,6 +1,7 @@
 package com.example.watchorderengine.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import android.os.Build
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
@@ -815,75 +819,135 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
     val theme = LocalAppTheme.current
     var expanded by remember { mutableStateOf(false) }
 
+    val blurRadius by animateDpAsState(
+        targetValue = if (episode.isSpoilerBlurred) 16.dp else 0.dp,
+        label = "episode_blur"
+    )
+
+    val spoilerModifier = if (episode.isSpoilerBlurred) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Modifier.blur(blurRadius, BlurredEdgeTreatment.Unbounded)
+        } else {
+            Modifier.alpha(0.1f)
+        }
+    } else Modifier
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable { expanded = !expanded },
-        color = theme.surface.copy(alpha = 0.5f),
+            .clickable(enabled = !episode.isSpoilerBlurred) { expanded = !expanded },
+        color = if (episode.isSpoilerBlurred) theme.surface.copy(alpha = 0.2f) else theme.surface.copy(alpha = 0.5f),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (episode.isSpoilerBlurred) Color.White.copy(alpha = 0.02f) else Color.White.copy(alpha = 0.05f)
+        )
     ) {
-        Column {
-            Row(
-                modifier = Modifier.padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(100.dp, 60.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black)
+        Box {
+            Column(modifier = spoilerModifier) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AsyncImage(
-                        model = episode.stillUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().alpha(if (episode.isWatched) 0.4f else 0.8f)
-                    )
-                    Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(16.dp))
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ep ${episode.episodeNumber}", color = Color.Gray, fontSize = 10.sp)
-                        if (episode.episodeType != com.example.watchorderengine.data.model.EpisodeType.CANON) {
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp, 60.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black)
+                    ) {
+                        AsyncImage(
+                            model = episode.stillUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .alpha(if (episode.isWatched) 0.4f else 0.8f)
+                        )
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            null,
+                            tint = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(16.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Ep ${episode.episodeNumber}", color = Color.Gray, fontSize = 10.sp)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Box(modifier = Modifier.background(
-                                if (episode.episodeType == com.example.watchorderengine.data.model.EpisodeType.FILLER) Color.Red.copy(alpha = 0.2f) else Color.Yellow.copy(alpha = 0.2f),
-                                RoundedCornerShape(4.dp)
-                            ).padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                Text(episode.episodeType.name, color = if (episode.episodeType == com.example.watchorderengine.data.model.EpisodeType.FILLER) Color.Red else Color.Yellow, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            val isFiller =
+                                episode.episodeType == com.example.watchorderengine.data.model.EpisodeType.FILLER
+                            Surface(
+                                color = if (isFiller) Color(0xFFFF8A65).copy(alpha = 0.2f) else Color(0xFF4FC3F7).copy(
+                                    alpha = 0.2f
+                                ),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = if (isFiller) "FILLER" else "CANON",
+                                    color = if (isFiller) Color(0xFFFF8A65) else Color(0xFF4FC3F7),
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
                             }
                         }
+                        Text(
+                            text = episode.title,
+                            color = if (episode.isWatched) Color.Gray else Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textDecoration = if (episode.isWatched) TextDecoration.LineThrough else null
+                        )
                     }
-                    Text(
-                        text = episode.title, 
-                        color = if (episode.isWatched) Color.Gray else Color.White, 
-                        fontWeight = FontWeight.Bold, 
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textDecoration = if (episode.isWatched) TextDecoration.LineThrough else null
-                    )
+                    IconButton(onClick = { onToggleEpisode(episode) }) {
+                        Icon(
+                            if (episode.isWatched) Icons.Default.CheckCircle else Icons.Default.AddCircle,
+                            null,
+                            tint = if (episode.isWatched) Color(0xFF4ADE80) else Color.Gray,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
-                IconButton(onClick = { onToggleEpisode(episode) }) {
-                    Icon(
-                        if (episode.isWatched) Icons.Default.CheckCircle else Icons.Default.AddCircle,
-                        null,
-                        tint = if (episode.isWatched) Color(0xFF4ADE80) else Color.Gray,
-                        modifier = Modifier.size(28.dp)
+                if (expanded) {
+                    Text(
+                        text = episode.overview.ifBlank { "No synopsis available." },
+                        color = Color.LightGray,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                        lineHeight = 16.sp
                     )
                 }
             }
-            if (expanded) {
-                Text(
-                    text = episode.overview.ifBlank { "No synopsis available." },
-                    color = Color.LightGray,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                    lineHeight = 16.sp
-                )
+
+            if (episode.isSpoilerBlurred) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color.Transparent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.Lock,
+                            null,
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "SPOILER PROTECTED",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
             }
         }
     }

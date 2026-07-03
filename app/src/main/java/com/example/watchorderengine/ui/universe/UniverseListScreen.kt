@@ -5,9 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -52,7 +53,13 @@ fun UniverseListScreen(
                 is UniverseListUiState.Success -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(state.universes) { universe ->
-                            UniverseItem(universe, onClick = { onUniverseClick(universe.id) })
+                            UniverseItem(
+                                universe = universe,
+                                onClick = { onUniverseClick(universe.id) },
+                                onRegenerate = { viewModel.regenerateUniverse(universe.id) },
+                                onDelete = { viewModel.deleteUniverse(universe.id) },
+                                onToggleCompletion = { viewModel.toggleUniverseCompletion(universe.id, it) }
+                            )
                         }
                     }
                 }
@@ -61,13 +68,25 @@ fun UniverseListScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun UniverseItem(universe: Universe, onClick: () -> Unit) {
+fun UniverseItem(
+    universe: Universe,
+    onClick: () -> Unit,
+    onRegenerate: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleCompletion: (Boolean) -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showMenu = true }
+            ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = WatchOrderColors.CardSurface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -107,6 +126,46 @@ fun UniverseItem(universe: Universe, onClick: () -> Unit) {
                     color = WatchOrderColors.TextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Context Menu
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                modifier = Modifier.background(WatchOrderColors.ElevatedSurface)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Regenerate Node", color = WatchOrderColors.TextPrimary) },
+                    onClick = {
+                        showMenu = false
+                        onRegenerate()
+                    },
+                    leadingIcon = { Icon(Icons.Default.Refresh, null, tint = WatchOrderColors.AccentGold) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete Node", color = WatchOrderColors.TextPrimary) },
+                    onClick = {
+                        showMenu = false
+                        onDelete()
+                    },
+                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = Color.Red) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Mark Watched", color = WatchOrderColors.TextPrimary) },
+                    onClick = {
+                        showMenu = false
+                        onToggleCompletion(true)
+                    },
+                    leadingIcon = { Icon(Icons.Default.Check, null, tint = WatchOrderColors.CompletedGreen) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Mark Unwatched", color = WatchOrderColors.TextPrimary) },
+                    onClick = {
+                        showMenu = false
+                        onToggleCompletion(false)
+                    },
+                    leadingIcon = { Icon(Icons.Default.Close, null, tint = Color.Gray) }
                 )
             }
         }
