@@ -20,7 +20,7 @@ data class StreamingPlatform(
 )
 
 object StreamingPlatforms {
-    private fun logo(path: String) = "https://image.tmdb.org/t/p/w154$path"
+    private fun logo(path: String) = "https://image.tmdb.org/t/p/w92$path"
 
     val ALL: List<StreamingPlatform> = listOf(
         StreamingPlatform(listOf(8),    "Netflix",      logo("/wwemzKWzjKYJFfCeiB57q3r4Bcm.png")),

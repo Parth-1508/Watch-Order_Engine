@@ -1098,7 +1098,13 @@ class MediaRepository @Inject constructor(
             val results = movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
                 movieSummaries.drop(tvSummaries.size) + tvSummaries.drop(movieSummaries.size)
             
-            results.take(40)
+            // If we have very few results for a specific platform (e.g. SonyLIV), try to fetch generic popular
+            if (results.size < 10 && providerIds.isNotEmpty()) {
+                val genericTrending = getTrending(providerIds)
+                (results + genericTrending).distinctBy { it.id }.take(40)
+            } else {
+                results.take(40)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "discoverByGenre failed for ${category.label}: ${e.message}")
             emptyList()
