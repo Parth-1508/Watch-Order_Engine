@@ -175,7 +175,7 @@ private fun PlatformChip(
         )
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -183,9 +183,9 @@ private fun PlatformChip(
                 model = platform.logoUrl,
                 contentDescription = platform.displayName,
                 modifier = Modifier
-                    .size(20.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                contentScale = ContentScale.Fit
+                    .size(16.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                contentScale = ContentScale.Crop
             )
             Text(
                 text = platform.displayName.uppercase(),
