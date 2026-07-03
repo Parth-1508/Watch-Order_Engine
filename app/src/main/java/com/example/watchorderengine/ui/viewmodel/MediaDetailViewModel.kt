@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.EpisodeItem
+import com.example.watchorderengine.data.model.EpisodeType
+import com.example.watchorderengine.data.model.MediaCategory
 import com.example.watchorderengine.data.model.MediaDetail
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.db.entity.ReviewEntity
@@ -26,6 +28,10 @@ class MediaDetailViewModel @Inject constructor(
     private val userPrefs: UserPreferencesRepository,
     val reviewRepository: ReviewRepository
 ) : ViewModel() {
+
+    // Tracks which mediaIds have already had Jikan enrichment triggered this
+    // session so we don't re-call on every season switch or forceRefresh.
+    private val jikanEnrichedIds = mutableSetOf<String>()
 
     private val _mediaDetail = MutableStateFlow<MediaDetail?>(null)
     val mediaDetail: StateFlow<MediaDetail?> = _mediaDetail.asStateFlow()
@@ -165,6 +171,22 @@ class MediaDetailViewModel @Inject constructor(
         episodesJob = viewModelScope.launch {
             _isEpisodesLoading.value = true
             try {
+                // ── Jikan filler enrichment ────────────────────────────────────
+                val showTitle = _mediaDetail.value?.title
+                if (showTitle != null &&
+                    sanitizedId !in jikanEnrichedIds &&
+                    repository.isAnimeEligibleForJikan(sanitizedId)
+                ) {
+                    jikanEnrichedIds.add(sanitizedId)
+                    launch {
+                        repository.enrichEpisodesWithJikanFiller(
+                            mediaId   = sanitizedId,
+                            showTitle = showTitle
+                        )
+                    }
+                }
+
+                // ── Episode DB flow ────────────────────────────────────────────
                 combine(
                     repository.observeEpisodesBySeason(sanitizedId, seasonNumber),
                     userPrefs.hideFiller,

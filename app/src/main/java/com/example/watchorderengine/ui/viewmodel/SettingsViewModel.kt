@@ -93,10 +93,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun clearCache() {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                db.clearAllTables()
-            }
+        viewModelScope.launch(Dispatchers.IO) {
+            db.clearAllTables()
         }
     }
 

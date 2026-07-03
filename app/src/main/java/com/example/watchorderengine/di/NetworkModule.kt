@@ -5,6 +5,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.example.watchorderengine.BuildConfig
 import com.example.watchorderengine.network.AnilistApiService
+import com.example.watchorderengine.network.JikanApiService
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbAuthInterceptor
 import com.example.watchorderengine.network.TmdbConfig
@@ -170,6 +171,40 @@ object NetworkModule {
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(WikipediaApiService::class.java)
+    }
+
+    /**
+     * Jikan v4 is a public REST mirror of MyAnimeList — no auth token required.
+     *
+     * WHY A DEDICATED RETROFIT INSTANCE:
+     *   - Different base URL from TMDB and Wikipedia.
+     *   - No auth interceptor (TMDB's TmdbAuthInterceptor must not be applied).
+     *   - Lighter OkHttpClient (no disk cache — Jikan episode filler flags rarely
+     *     change, but the data set is small enough that re-fetching on app restart
+     *     is acceptable and avoids cache-staleness bugs).
+     *
+     * RATE LIMIT: 3 req/sec.  The caller (MediaDetailViewModel) issues at most
+     * one search + a handful of episode pages per show load, well within limits.
+     */
+    @Provides
+    @Singleton
+    fun provideJikanApiService(moshi: Moshi): JikanApiService {
+        val loggingInterceptor = HttpLoggingInterceptor().apply {
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
+                    else HttpLoggingInterceptor.Level.NONE
+        }
+        val client = OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            // Generous timeouts: Jikan can be slow under heavy load (it's community-run).
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+        return Retrofit.Builder()
+            .baseUrl("https://api.jikan.moe/v4/")
+            .client(client)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(JikanApiService::class.java)
     }
 
     @Provides

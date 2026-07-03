@@ -146,6 +146,12 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE media ADD COLUMN originalLanguage TEXT")
+    }
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
@@ -159,7 +165,7 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         PendingSyncTaskEntity::class,
         ReviewEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -184,7 +190,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

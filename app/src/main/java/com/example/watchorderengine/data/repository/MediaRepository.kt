@@ -10,6 +10,7 @@ import com.example.watchorderengine.data.db.entity.*
 import com.example.watchorderengine.data.model.*
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.sync.SyncWorker
+import com.example.watchorderengine.network.JikanApiService
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbConfig
 import com.example.watchorderengine.network.gemini.GeminiResult
@@ -40,6 +41,7 @@ class MediaRepository @Inject constructor(
     private val db: WatchOrderDatabase,
     private val moshi: Moshi,
     private val apiService: TmdbApiService,
+    private val jikanApiService: JikanApiService,
     private val geminiService: GeminiService,
     private val watchOrderRepository: WatchOrderRepository,
     private val userPrefs: UserPreferencesRepository,
@@ -298,6 +300,7 @@ class MediaRepository @Inject constructor(
             releaseDate      = entity.releaseDate,
             releaseYear      = entity.releaseDate?.take(4) ?: "",
             trailerKey       = entity.trailerKey,
+            originalLanguage = entity.originalLanguage,
             watchProviders   = providers ?: emptyList(),
             cast             = cast ?: emptyList(),
             recommendations  = recs,
@@ -1220,6 +1223,99 @@ class MediaRepository @Inject constructor(
         } catch (e: Exception) { 0 }
     }
 
+    // ─── Jikan filler enrichment ──────────────────────────────────────────────
+
+    /**
+     * Returns true when a cached [MediaEntity] is likely an anime and should
+     * have its episodes enriched with Jikan filler data.
+     */
+    suspend fun isAnimeEligibleForJikan(mediaId: String): Boolean = withContext(Dispatchers.IO) {
+        val entity = db.mediaDao().getById(mediaId) ?: return@withContext false
+        entity.originalLanguage == "ja" || entity.genres.contains("Animation")
+    }
+
+    /**
+     * Fetches filler episode data from Jikan and writes it into the local Room
+     * `episodes` table by updating [EpisodeEntity.episodeType] to "FILLER" for
+     * any episode that Jikan classifies as filler.
+     */
+    suspend fun enrichEpisodesWithJikanFiller(mediaId: String, showTitle: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                // Step 1: Resolve MAL ID from title search
+                val searchResponse = jikanApiService.searchAnime(showTitle)
+                if (!searchResponse.isSuccessful) {
+                    Log.w(TAG, "Jikan search failed for '$showTitle': HTTP ${searchResponse.code()}")
+                    return@withContext
+                }
+                val malId = searchResponse.body()?.data?.firstOrNull()?.malId
+                if (malId == null) {
+                    Log.d(TAG, "Jikan: no MAL entry found for '$showTitle'")
+                    return@withContext
+                }
+                Log.d(TAG, "Jikan: resolved '$showTitle' → mal_id=$malId")
+
+                // Step 2: Fetch all episode pages and collect filler episode numbers
+                val fillerEpisodeNumbers = mutableSetOf<Int>()
+                var page = 1
+                var hasNextPage = true
+
+                while (hasNextPage) {
+                    var epResponse = jikanApiService.getEpisodes(malId, page)
+                    
+                    // Jikan API Rate Limit is strict. If we hit a 429, back off and retry once.
+                    if (epResponse.code() == 429) {
+                        android.util.Log.w(TAG, "Jikan rate limit hit on page $page. Waiting 3 seconds...")
+                        kotlinx.coroutines.delay(3000L)
+                        epResponse = jikanApiService.getEpisodes(malId, page)
+                    }
+
+                    if (!epResponse.isSuccessful) {
+                        android.util.Log.w(TAG, "Jikan episodes page $page failed for mal_id=$malId: HTTP ${epResponse.code()}")
+                        break // If it STILL fails after the retry, abort safely
+                    }
+                    
+                    val body = epResponse.body() ?: break
+
+                    body.data.forEach { ep ->
+                        // Jikan v4 mal_id is the sequential episode number in this endpoint
+                        val epNumber = ep.epId ?: ep.malId 
+                        if (ep.filler && epNumber > 0) {
+                            fillerEpisodeNumbers.add(epNumber)
+                        }
+                    }
+
+                    hasNextPage = body.pagination?.hasNextPage == true
+                    page++
+
+                    // Hard delay of 1 full second between pages to guarantee we stay under the 3 req/sec limit.
+                    if (hasNextPage) kotlinx.coroutines.delay(1000L)
+                }
+
+                if (fillerEpisodeNumbers.isEmpty()) return@withContext
+
+                // Step 3: Load all cached episodes for this show from Room
+                val allEpisodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+
+                // Step 4: Mark matching episodes as FILLER if they are currently CANON.
+                val toUpdate = allEpisodes.filter { entity ->
+                    entity.episodeType == EpisodeType.CANON.name &&
+                    entity.absoluteEpisodeNumber in fillerEpisodeNumbers &&
+                    entity.seasonNumber > 0
+                }.map { entity ->
+                    entity.copy(episodeType = EpisodeType.FILLER.name)
+                }
+
+                if (toUpdate.isNotEmpty()) {
+                    db.episodeDao().upsertAll(toUpdate)
+                    Log.d(TAG, "Jikan: tagged ${toUpdate.size} episodes as FILLER for $mediaId")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Jikan enrichment failed for '$showTitle' ($mediaId): ${e.message}")
+            }
+        }
+    }
+
     // ─── Mappers ──────────────────────────────────────────────────────────────
 
     private fun SeasonEntity.toDomain() = SeasonSummary(
@@ -1300,6 +1396,7 @@ class MediaRepository @Inject constructor(
             releaseDate = releaseDate ?: firstAirDate,
             releaseYear = (releaseDate ?: firstAirDate)?.take(4) ?: "",
             trailerKey = trailerKey,
+            originalLanguage = originalLanguage,
             watchProvidersJson = providersJson,
             castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
         )

@@ -136,6 +136,7 @@ data class MediaDetail(
     val releaseDate: String?,
     val releaseYear: String,
     val trailerKey: String?,
+    val originalLanguage: String?,
 
     /**
      * Streaming / rental / purchase options for this title.
@@ -280,7 +281,7 @@ data class Edge(
 
 @Serializable
 data class ContextTag(
-    @DocumentId val tagId: String = "",
+    @DocumentId val documentId: String = "",
     val label: String = "",
     val color: String = "#FFFFFF",
     val order: Int = 0
