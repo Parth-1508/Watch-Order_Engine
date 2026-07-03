@@ -1267,20 +1267,14 @@ class MediaRepository @Inject constructor(
     suspend fun enrichEpisodesWithJikanFiller(mediaId: String, showTitle: String) {
         withContext(Dispatchers.IO) {
             try {
-                // Step 1: Resolve MAL ID from title search
+                // Step 1: Resolve MAL ID (This now automatically uses type="tv" from your updated Service)
                 val searchResponse = jikanApiService.searchAnime(showTitle)
-                if (!searchResponse.isSuccessful) {
-                    Log.w(TAG, "Jikan search failed for '$showTitle': HTTP ${searchResponse.code()}")
-                    return@withContext
-                }
-                val malId = searchResponse.body()?.data?.firstOrNull()?.malId
-                if (malId == null) {
-                    Log.d(TAG, "Jikan: no MAL entry found for '$showTitle'")
-                    return@withContext
-                }
-                Log.d(TAG, "Jikan: resolved '$showTitle' → mal_id=$malId")
+                if (!searchResponse.isSuccessful) return@withContext
+                
+                val malId = searchResponse.body()?.data?.firstOrNull()?.malId ?: return@withContext
+                android.util.Log.d(TAG, "Jikan: resolved '$showTitle' → mal_id=$malId")
 
-                // Step 2: Fetch all episode pages and collect filler episode numbers
+                // Step 2: Fetch all episode pages with Rate Limit Handling
                 val fillerEpisodeNumbers = mutableSetOf<Int>()
                 var page = 1
                 var hasNextPage = true
@@ -1288,23 +1282,19 @@ class MediaRepository @Inject constructor(
                 while (hasNextPage) {
                     var epResponse = jikanApiService.getEpisodes(malId, page)
                     
-                    // Jikan API Rate Limit is strict. If we hit a 429, back off and retry once.
+                    // Handle Jikan's strict 3 req/sec limit
                     if (epResponse.code() == 429) {
-                        android.util.Log.w(TAG, "Jikan rate limit hit on page $page. Waiting 3 seconds...")
+                        android.util.Log.w(TAG, "Jikan rate limit hit. Waiting 3 seconds...")
                         kotlinx.coroutines.delay(3000L)
                         epResponse = jikanApiService.getEpisodes(malId, page)
                     }
 
-                    if (!epResponse.isSuccessful) {
-                        android.util.Log.w(TAG, "Jikan episodes page $page failed for mal_id=$malId: HTTP ${epResponse.code()}")
-                        break // If it STILL fails after the retry, abort safely
-                    }
-                    
+                    if (!epResponse.isSuccessful) break
                     val body = epResponse.body() ?: break
 
                     body.data.forEach { ep ->
-                        // Jikan v4 mal_id is the sequential episode number in this endpoint
-                        val epNumber = ep.epId ?: ep.malId 
+                        // Since you correctly removed epId, we just use malId as the episode number!
+                        val epNumber = ep.malId
                         if (ep.filler && epNumber > 0) {
                             fillerEpisodeNumbers.add(epNumber)
                         }
@@ -1312,31 +1302,31 @@ class MediaRepository @Inject constructor(
 
                     hasNextPage = body.pagination?.hasNextPage == true
                     page++
-
-                    // Hard delay of 1 full second between pages to guarantee we stay under the 3 req/sec limit.
+                    
+                    // Hard delay to respect rate limits
                     if (hasNextPage) kotlinx.coroutines.delay(1000L)
                 }
 
                 if (fillerEpisodeNumbers.isEmpty()) return@withContext
 
-                // Step 3: Load all cached episodes for this show from Room
+                // Step 3 & 4: Load Room episodes and Update using absoluteEpisodeNumber & protecting Season 0
                 val allEpisodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
 
-                // Step 4: Mark matching episodes as FILLER if they are currently CANON.
                 val toUpdate = allEpisodes.filter { entity ->
                     entity.episodeType == EpisodeType.CANON.name &&
                     entity.absoluteEpisodeNumber in fillerEpisodeNumbers &&
-                    entity.seasonNumber > 0
+                    entity.seasonNumber > 0 // Protects specials/movies from being overwritten
                 }.map { entity ->
                     entity.copy(episodeType = EpisodeType.FILLER.name)
                 }
 
                 if (toUpdate.isNotEmpty()) {
                     db.episodeDao().upsertAll(toUpdate)
-                    Log.d(TAG, "Jikan: tagged ${toUpdate.size} episodes as FILLER for $mediaId")
+                    android.util.Log.d(TAG, "Jikan: tagged ${toUpdate.size} episodes as FILLER for $mediaId")
                 }
+
             } catch (e: Exception) {
-                Log.w(TAG, "Jikan enrichment failed for '$showTitle' ($mediaId): ${e.message}")
+                android.util.Log.w(TAG, "Jikan enrichment failed for '$showTitle': ${e.message}")
             }
         }
     }
