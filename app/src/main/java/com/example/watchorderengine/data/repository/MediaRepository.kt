@@ -1098,7 +1098,7 @@ class MediaRepository @Inject constructor(
             val results = movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
                 movieSummaries.drop(tvSummaries.size) + tvSummaries.drop(movieSummaries.size)
             
-            // If we have very few results for a specific platform (e.g. SonyLIV), try to fetch generic popular
+            // If we have very few results for a specific platform, try to fetch generic popular
             if (results.size < 10 && providerIds.isNotEmpty()) {
                 val genericTrending = getTrending(providerIds)
                 (results + genericTrending).distinctBy { it.id }.take(40)

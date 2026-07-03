@@ -106,7 +106,6 @@ object TmdbConfig {
         122 to "Hotstar",
         232 to "Zee5",
         121 to "Voot",
-        307 to "SonyLiv",
         1899 to "HBO Max",
         15 to "Hulu",
         384 to "HBO",

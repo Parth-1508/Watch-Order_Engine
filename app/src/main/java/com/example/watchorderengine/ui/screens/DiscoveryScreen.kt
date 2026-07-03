@@ -175,16 +175,16 @@ private fun PlatformChip(
         )
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             AsyncImage(
                 model = platform.logoUrl,
                 contentDescription = platform.displayName,
                 modifier = Modifier
-                    .height(12.dp)
-                    .widthIn(max = 60.dp),
+                    .size(18.dp)
+                    .clip(RoundedCornerShape(2.dp)),
                 contentScale = ContentScale.Fit
             )
             Text(
