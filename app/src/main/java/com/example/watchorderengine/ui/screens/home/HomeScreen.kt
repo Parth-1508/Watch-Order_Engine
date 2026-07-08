@@ -6,7 +6,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-  import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -31,8 +30,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.paging.compose.LazyPagingItems
 import com.example.watchorderengine.data.recommendation.Recommendation
 import com.example.watchorderengine.ui.theme.LocalAppTheme
+import com.example.watchorderengine.data.model.MediaSummary
+import com.example.watchorderengine.data.model.TrackingState
 
 // ─── "Next Up" data model ─────────────────────────────────────────────────────
 
@@ -48,10 +50,11 @@ data class NextUpItem(
 @Composable
 fun HomeScreen(
     state: HomeUiState,
+    watchlist: LazyPagingItems<MediaSummary>,
     onCategorySelected: (String) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onSearchToggle: (Boolean) -> Unit,
-    onShowClick: (MediaShowItem) -> Unit,
+    onShowClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
     onProfileClick: () -> Unit = {},
     nextUpItem: NextUpItem? = null,
@@ -59,87 +62,87 @@ fun HomeScreen(
     recommendations: List<Recommendation> = emptyList()
 ) {
     val theme = LocalAppTheme.current
-    val scrollState = rememberScrollState()
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(theme.background)
-            .drawBehind {
-                if (theme.isComic) {
-                    val dotRadius = 1.dp.toPx()
-                    val spacing = 16.dp.toPx()
-                    for (x in 0 until (size.width / spacing).toInt() + 1) {
-                        for (y in 0 until (size.height / spacing).toInt() + 1) {
-                            drawCircle(
-                                color = Color.Black.copy(alpha = 0.1f),
-                                radius = dotRadius,
-                                center = Offset(x * spacing, y * spacing)
-                            )
-                        }
-                    }
-                }
-            }
     ) {
-        if (state.isLoading) {
+        if (state.isLoading && watchlist.itemCount == 0) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = theme.accent)
             }
         } else {
-            Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
                 // Header
-                Header(
-                    isSearchOpen = state.isSearchOpen,
-                    query = state.searchQuery,
-                    onQueryChanged = onSearchQueryChanged,
-                    onToggleSearch = onSearchToggle,
-                    onSettingsClick = onSettingsClick,
-                    onProfileClick = onProfileClick,
-                    profilePictureUrl = state.profilePictureUrl
-                )
+                item {
+                    Header(
+                        isSearchOpen = state.isSearchOpen,
+                        query = state.searchQuery,
+                        onQueryChanged = onSearchQueryChanged,
+                        onToggleSearch = onSearchToggle,
+                        onSettingsClick = onSettingsClick,
+                        onProfileClick = onProfileClick,
+                        profilePictureUrl = state.profilePictureUrl
+                    )
+                }
 
                 // "Next Up" Quick Resume Card
-                AnimatedVisibility(
-                    visible = nextUpItem != null,
-                    enter   = fadeIn() + expandVertically(),
-                    exit    = fadeOut() + shrinkVertically()
-                ) {
-                    nextUpItem?.let { item ->
-                        NextUpCard(
-                            item     = item,
-                            onResume = { onResumeClick(item.internalId) },
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
+                item {
+                    AnimatedVisibility(
+                        visible = nextUpItem != null,
+                        enter   = fadeIn() + expandVertically(),
+                        exit    = fadeOut() + shrinkVertically()
+                    ) {
+                        nextUpItem?.let { item ->
+                            NextUpCard(
+                                item     = item,
+                                onResume = { onResumeClick(item.internalId) },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
                     }
                 }
 
                 // Category Tabs
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(state.categories) { category ->
-                        val count = state.shows.count { it.watchlistStatus == category }
-                        CategoryTab(
-                            name = category,
-                            count = count,
-                            isSelected = state.activeCategory == category,
-                            onClick = { onCategorySelected(category) }
-                        )
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(state.categories) { category ->
+                            val count = when(category) {
+                                "Watching" -> state.watchingCount
+                                "Planned" -> state.plannedCount
+                                "Completed" -> state.completedCount
+                                "Dropped" -> state.droppedCount
+                                "Paused" -> state.pausedCount
+                                else -> 0
+                            }
+                            CategoryTab(
+                                name = category,
+                                count = count,
+                                isSelected = state.activeCategory == category,
+                                onClick = { onCategorySelected(category) }
+                            )
+                        }
                     }
                 }
 
-                // Main Content Area
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    // Active Category Label
+                // Active Category Label
+                item {
                     Box(
                         modifier = Modifier
+                            .padding(horizontal = 16.dp)
                             .graphicsLayer {
                                 if (theme.isComic) rotationZ = 2f
                             }
                             .drawBehind {
                                 drawRect(color = Color.Black)
-                                drawRect(color = Color.Magenta, style = Stroke(width = 2.dp.toPx()))
+                                drawRect(color = theme.accent, style = Stroke(width = 2.dp.toPx()))
                             }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
@@ -150,15 +153,12 @@ fun HomeScreen(
                             fontWeight = FontWeight.Black
                         )
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(32.dp))
-
-                    val filteredShows = state.shows.filter { it.watchlistStatus == state.activeCategory }
-                    
-                    if (filteredShows.isEmpty()) {
-                        // Empty State Replica
+                if (watchlist.itemCount == 0 && watchlist.loadState.refresh is androidx.paging.LoadState.NotLoading) {
+                    item {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 60.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(modifier = Modifier.size(80.dp).background(Color.White.copy(alpha = 0.05f), CircleShape), contentAlignment = Alignment.Center) {
@@ -177,46 +177,71 @@ fun HomeScreen(
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                         }
-                    } else {
-                        // Responsive Grid
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            filteredShows.chunked(2).forEach { rowShows ->
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    rowShows.forEach { show ->
-                                        Box(modifier = Modifier.weight(1f)) {
-                                            MediaCard(show = show, onClick = { onShowClick(show) })
-                                        }
-                                    }
-                                    if (rowShows.size == 1) {
-                                        Spacer(modifier = Modifier.weight(1f))
-                                    }
+                    }
+                } else {
+                    // Grid mapping for Paging items
+                    val rowCount = (watchlist.itemCount + 1) / 2
+                    items(rowCount) { rowIndex ->
+                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            val firstIndex = rowIndex * 2
+                            val secondIndex = firstIndex + 1
+                            
+                            watchlist[firstIndex]?.let { show ->
+                                Box(modifier = Modifier.weight(1f)) {
+                                    MediaCardPaged(show = show, onClick = { onShowClick(show.id) })
                                 }
+                            } ?: Box(modifier = Modifier.weight(1f))
+                            
+                            if (secondIndex < watchlist.itemCount) {
+                                watchlist[secondIndex]?.let { show ->
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        MediaCardPaged(show = show, onClick = { onShowClick(show.id) })
+                                    }
+                                } ?: Box(modifier = Modifier.weight(1f))
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
                             }
                         }
                     }
+                }
 
-                    // RECOMMENDED FOR YOU Section
-                    if (recommendations.isNotEmpty()) {
+                // RECOMMENDED FOR YOU Section
+                if (recommendations.isNotEmpty()) {
+                    item {
                         Spacer(modifier = Modifier.height(32.dp))
                         Text(
                             "RECOMMENDED FOR YOU",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.Gray,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
                         LazyRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            contentPadding = PaddingValues(bottom = 32.dp)
+                            contentPadding = PaddingValues(horizontal = 16.dp)
                         ) {
                             items(recommendations, key = { it.media.id }) { recommendation ->
-                                MediaCard(
+                                // Mapping MediaEntity to MediaSummary for simpler UI component
+                                val summary = MediaSummary(
+                                    id = recommendation.media.id,
+                                    tmdbId = recommendation.media.tmdbId,
+                                    title = recommendation.media.title,
+                                    posterUrl = recommendation.media.posterUrl,
+                                    backdropUrl = recommendation.media.backdropUrl,
+                                    mediaCategory = com.example.watchorderengine.data.model.MediaCategory.valueOf(recommendation.media.mediaCategory),
+                                    voteAverage = recommendation.media.voteAverage,
+                                    releaseYear = recommendation.media.releaseYear,
+                                    trackingState = null,
+                                    ageRating = recommendation.media.ageRating
+                                )
+                                MediaCardPaged(
                                     modifier = Modifier.width(130.dp),
-                                    show = recommendation.toMediaShowItem(),
-                                    onClick = { onShowClick(recommendation.toMediaShowItem()) }
+                                    show = summary,
+                                    onClick = { onShowClick(summary.id) }
                                 )
                             }
                         }
@@ -224,6 +249,72 @@ fun HomeScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun MediaCardPaged(
+    show: MediaSummary, 
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val theme = LocalAppTheme.current
+    
+    Column(
+        modifier = modifier
+            .clickable { onClick() }
+    ) {
+        Box(
+            modifier = Modifier
+                .aspectRatio(2f / 3f)
+                .then(ThemeBorderModifier())
+                .background(Color.Black)
+        ) {
+            AsyncImage(
+                model = show.posterUrl,
+                contentDescription = show.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.9f
+            )
+            
+            Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                StatusBadge(type = show.mediaCategory.name)
+            }
+
+            if (show.trackingState == TrackingState.COMPLETED) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                        .background(Color(0xFF00FF00), RoundedCornerShape(4.dp))
+                        .border(1.dp, Color.Black, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("✓ DONE", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = show.title,
+            color = theme.textPrimary,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 18.sp
+        )
+        
+        Text(
+            text = show.genres.take(2).joinToString(" • "),
+            color = theme.textSecondary,
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -491,68 +582,6 @@ fun Header(
                     modifier = Modifier.size(40.dp).border(2.dp, theme.textPrimary, CircleShape)
                 ) {
                     Icon(Icons.Default.Settings, null, tint = theme.textPrimary)
-                }
-            }
-        }
-    }
-}
-
-// Adapts a recommendation engine result into the MediaShowItem shape that MediaCard renders.
-private fun Recommendation.toMediaShowItem(): MediaShowItem = MediaShowItem(
-    id = media.tmdbId,
-    internalId = media.id,
-    title = media.title,
-    imageUrl = media.posterUrl ?: "",
-    genres = media.genres,
-    badge = "RECOMMENDED",
-    watchlistStatus = "Recommended"
-)
-
-@Composable
-fun SearchOverlay(
-    query: String,
-    results: List<MediaShowItem>,
-    onResultClick: (MediaShowItem) -> Unit
-) {
-    val theme = LocalAppTheme.current
-    Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 80.dp),
-        color = theme.background.copy(alpha = 0.95f)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                "${results.size} RESULTS",
-                color = theme.textSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(results) { show ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onResultClick(show) }
-                            .then(ThemeBorderModifier())
-                            .background(theme.surface)
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AsyncImage(
-                            model = show.imageUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp, 64.dp).then(ThemeBorderModifier()),
-                            contentScale = ContentScale.Crop
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(show.title, color = theme.textPrimary, fontWeight = FontWeight.Black, fontSize = 14.sp)
-                            Text(show.genres.joinToString(" • "), color = theme.textSecondary, fontSize = 10.sp)
-                        }
-                        StatusBadge(type = show.badge)
-                    }
                 }
             }
         }

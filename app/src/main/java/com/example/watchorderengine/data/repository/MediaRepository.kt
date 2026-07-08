@@ -18,6 +18,8 @@ import com.example.watchorderengine.network.gemini.GeminiResult
 import com.example.watchorderengine.network.gemini.GeminiService
 import com.example.watchorderengine.network.model.TmdbWatchProvider
 import com.example.watchorderengine.network.model.TmdbWatchProviderCountry
+import androidx.paging.map
+import com.example.watchorderengine.util.retry
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -34,6 +36,7 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -81,11 +84,11 @@ class MediaRepository @Inject constructor(
      *   "tmdb_10193"   → 10193  (legacy untyped format)
      *   "10193"        → 10193  (very old format)
      */
-    private fun extractTmdbId(mediaId: String): Int? =
+    internal fun extractTmdbId(mediaId: String): Int? =
         mediaId.substringAfterLast("_").toIntOrNull()
 
-    private fun isMovieId(mediaId: String): Boolean = mediaId.contains("_m_")
-    private fun isTvId(mediaId: String):    Boolean = mediaId.contains("_t_")
+    internal fun isMovieId(mediaId: String): Boolean = mediaId.contains("_m_")
+    internal fun isTvId(mediaId: String):    Boolean = mediaId.contains("_t_")
 
     /**
      * Returns a set of normalized episode IDs that the user has watched for this show,
@@ -149,6 +152,18 @@ class MediaRepository @Inject constructor(
     }
 
     // ─── Media Detail flow ────────────────────────────────────────────────────
+
+    /**
+     * Ensures that the full details (seasons, episodes) for a media item are
+     * fetched and cached in Room. If it's a TV show and it only has a minimal
+     * entity (e.g. from search), this will trigger a full TMDB refresh.
+     */
+    suspend fun ensureDetailsFetched(mediaId: String) = withContext(Dispatchers.IO) {
+        val entity = db.mediaDao().getById(mediaId)
+        if (entity == null || (isTvId(mediaId) && entity.numberOfSeasons == null)) {
+            refreshDetail(mediaId)
+        }
+    }
 
     fun getMediaDetailFlow(mediaId: String): Flow<MediaDetail?> = flow {
         // Emit cached entity first for instant display (may be null on first visit).
@@ -317,10 +332,10 @@ class MediaRepository @Inject constructor(
                     totalEpisodesWatched = finalWatchedCount)
             } else null
         )
-    }
-  private suspend fun fetchAndCacheMovie(tmdbId: Int, mediaId: String): Boolean {
+      }
+    private suspend fun fetchAndCacheMovie(tmdbId: Int, mediaId: String): Boolean {
         return try {
-            val response = apiService.getMovie(tmdbId)
+            val response = retry { apiService.getMovie(tmdbId) }
             if (!response.isSuccessful || response.body() == null) return false
             val body = response.body()!!
             val entity   = body.toMediaEntity(mediaId)
@@ -335,7 +350,7 @@ class MediaRepository @Inject constructor(
 
     private suspend fun fetchAndCacheTv(tmdbId: Int, mediaId: String): Boolean {
         return try {
-            val response = apiService.getTvShow(tmdbId)
+            val response = retry { apiService.getTvShow(tmdbId) }
             if (!response.isSuccessful || response.body() == null) return false
             val body = response.body()!!
             val entity = body.toMediaEntity(mediaId)
@@ -400,7 +415,7 @@ class MediaRepository @Inject constructor(
         tmdbId: Int, mediaId: String, seasonNumber: Int, episodeCount: Int, offset: Int
     ): Int {
         return try {
-            val response = apiService.getTvSeason(tmdbId, seasonNumber)
+            val response = retry { apiService.getTvSeason(tmdbId, seasonNumber) }
             if (!response.isSuccessful || response.body() == null) return episodeCount
             val seasonBody = response.body()!!
             val seasonId   = "${mediaId}_s$seasonNumber"
@@ -870,9 +885,12 @@ class MediaRepository @Inject constructor(
 
             val current = db.userProgressDao().getProgress(mediaId)
             val entity = UserProgressEntity(
-                mediaId = mediaId, trackingState = state.name,
+                mediaId = mediaId, 
+                trackingState = state.name,
+                userRating   = current?.userRating,
                 userNotes    = current?.userNotes    ?: "",
-                priorityTag  = current?.priorityTag  ?: "NONE"
+                priorityTag  = current?.priorityTag  ?: "NONE",
+                updatedAt    = System.currentTimeMillis()
             )
             db.userProgressDao().upsert(entity)
 
@@ -1077,6 +1095,37 @@ class MediaRepository @Inject constructor(
         } catch (e: Exception) { false }
     }
 
+    fun observeListByStatePaged(
+        trackingState: TrackingState
+    ): Flow<androidx.paging.PagingData<MediaSummary>> {
+        return androidx.paging.Pager(
+            config = androidx.paging.PagingConfig(pageSize = 20, enablePlaceholders = false),
+            pagingSourceFactory = { db.userProgressDao().getByStatePaging(trackingState.name) }
+        ).flow.map { pagingData ->
+            pagingData.map { joined ->
+                val progress = joined.progress
+                val entity = joined.media
+                val tmdbId = extractTmdbId(progress.mediaId) ?: entity?.tmdbId ?: 0
+                
+                entity?.toSummary(
+                    trackingState, 
+                    PriorityTag.valueOf(progress.priorityTag)
+                ) ?: MediaSummary(
+                    id = progress.mediaId,
+                    tmdbId = tmdbId,
+                    title = "Unknown",
+                    posterUrl = null,
+                    backdropUrl = null,
+                    mediaCategory = MediaCategory.TV_SHOW,
+                    voteAverage = 0f,
+                    releaseYear = "",
+                    trackingState = trackingState,
+                    ageRating = "NR"
+                )
+            }
+        }
+    }
+
     suspend fun getListByState(
         trackingState: TrackingState,
         sortType: SortType = SortType.DATE_ADDED
@@ -1121,6 +1170,9 @@ class MediaRepository @Inject constructor(
 
     fun observeCompletedMediaIds(): Flow<Set<String>> =
         db.userProgressDao().observeCompletedMediaIds().map { it.toSet() }
+
+    fun observeCountByState(state: TrackingState): Flow<Int> =
+        db.userProgressDao().observeCountByState(state.name)
 
     private fun sortSummaries(list: List<MediaSummary>, sortType: SortType) = when (sortType) {
         SortType.ALPHABETICAL            -> list.sortedBy { it.title }
@@ -1382,8 +1434,23 @@ class MediaRepository @Inject constructor(
         val updated = db.userProgressDao().updateRating(mediaId, rating, now)
         if (updated == 0) {
             db.userProgressDao().upsert(UserProgressEntity(
-                mediaId = mediaId, trackingState = "PLANNED", userRating = rating
+                mediaId = mediaId, trackingState = "PLANNED", userRating = rating, updatedAt = now
             ))
+        }
+
+        // SYNC TO FIRESTORE
+        if (userPrefs.cloudSyncEnabled.first()) {
+            try {
+                val uid = auth.currentUser?.uid ?: return@withContext
+                val progress = db.userProgressDao().getProgress(mediaId)
+                if (progress != null) {
+                    firestore.collection("users").document(uid)
+                        .collection("watchlist").document(mediaId)
+                        .set(progress).await()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to sync rating to cloud: ${e.message}")
+            }
         }
     }
 

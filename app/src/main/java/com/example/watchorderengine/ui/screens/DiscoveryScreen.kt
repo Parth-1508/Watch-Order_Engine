@@ -56,7 +56,7 @@ fun DiscoveryScreen(
         if (deck.isNotEmpty()) {
             AsyncImage(
                 model = deck.last().backdropUrl ?: deck.last().posterUrl,
-                contentDescription = null,
+                contentDescription = "Background artwork for ${deck.last().title}",
                 modifier = Modifier.fillMaxSize().alpha(0.3f),
                 contentScale = ContentScale.Crop
             )
@@ -137,6 +137,15 @@ fun DiscoveryScreen(
                     }
                 }
             }
+        }
+
+        // Retry UI if loading fails and deck is empty
+        if (!isLoading && deck.isEmpty() && activeCategory != null) {
+             Box(Modifier.align(Alignment.Center)) {
+                 Button(onClick = { viewModel.resetDeck() }) {
+                     Text("Retry Connection")
+                 }
+             }
         }
     }
 }
@@ -254,7 +263,7 @@ fun DiscoveryCard(
     ) {
         AsyncImage(
             model = media.posterUrl,
-            contentDescription = null,
+            contentDescription = "Poster for ${media.title}",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )

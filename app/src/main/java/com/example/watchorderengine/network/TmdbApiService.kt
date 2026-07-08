@@ -176,6 +176,26 @@ interface TmdbApiService {
     ): Response<com.example.watchorderengine.network.model.TmdbCollectionResponse>
 
     /**
+     * Fetches user reviews for a movie.
+     */
+    @GET("movie/{movieId}/reviews")
+    suspend fun getMovieReviews(
+        @Path("movieId")  movieId: Int,
+        @Query("language") language: String = "en-US",
+        @Query("page")     page: Int = 1
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbReview>>
+
+    /**
+     * Fetches user reviews for a TV show.
+     */
+    @GET("tv/{tvId}/reviews")
+    suspend fun getTvReviews(
+        @Path("tvId")     tvId: Int,
+        @Query("language") language: String = "en-US",
+        @Query("page")     page: Int = 1
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbReview>>
+
+    /**
      * Searches for TV shows by keyword.
      *
      * Used by generateWatchOrder's TV branch to resolve title variants

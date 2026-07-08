@@ -21,7 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.Universe
-import com.example.watchorderengine.ui.theme.WatchOrderColors
+import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.viewmodel.UniverseListUiState
 import com.example.watchorderengine.viewmodel.UniverseListViewModel
 
@@ -31,6 +31,7 @@ fun UniverseListScreen(
     onUniverseClick: (String) -> Unit,
     viewModel: UniverseListViewModel = hiltViewModel()
 ) {
+    val theme = LocalAppTheme.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -39,17 +40,24 @@ fun UniverseListScreen(
                 title = { Text("Select Universe") },
                 modifier = Modifier.statusBarsPadding(),
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = WatchOrderColors.VoidDark,
-                    titleContentColor = WatchOrderColors.TextPrimary
+                    containerColor = theme.background,
+                    titleContentColor = theme.textPrimary
                 )
             )
         },
-        containerColor = WatchOrderColors.VoidDark
+        containerColor = theme.background
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             when (val state = uiState) {
-                is UniverseListUiState.Loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                is UniverseListUiState.Error -> Text(state.message, color = WatchOrderColors.BranchCoral, modifier = Modifier.align(Alignment.Center))
+                is UniverseListUiState.Loading -> CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = theme.accent
+                )
+                is UniverseListUiState.Error -> Text(
+                    state.message, 
+                    color = theme.statusFiller, 
+                    modifier = Modifier.align(Alignment.Center)
+                )
                 is UniverseListUiState.Success -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(state.universes) { universe ->
@@ -77,6 +85,7 @@ fun UniverseItem(
     onDelete: () -> Unit,
     onToggleCompletion: (Boolean) -> Unit
 ) {
+    val theme = LocalAppTheme.current
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
@@ -87,14 +96,14 @@ fun UniverseItem(
                 onClick = onClick,
                 onLongClick = { showMenu = true }
             ),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = WatchOrderColors.CardSurface),
+        shape = RoundedCornerShape(theme.appRadius),
+        colors = CardDefaults.cardColors(containerColor = theme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Box(modifier = Modifier.height(160.dp)) {
             AsyncImage(
                 model = universe.bannerUrl ?: universe.posterUrl,
-                contentDescription = null,
+                contentDescription = "Cover for ${universe.name}",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
                 alpha = 0.6f
@@ -104,7 +113,7 @@ fun UniverseItem(
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, WatchOrderColors.DeepSpace),
+                            colors = listOf(Color.Transparent, theme.background),
                             startY = 100f
                         )
                     )
@@ -117,13 +126,13 @@ fun UniverseItem(
                 Text(
                     universe.name,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = WatchOrderColors.TextPrimary,
+                    color = theme.textPrimary,
                     fontWeight = FontWeight.Black
                 )
                 Text(
                     universe.description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = WatchOrderColors.TextSecondary,
+                    color = theme.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -133,39 +142,39 @@ fun UniverseItem(
             DropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
-                modifier = Modifier.background(WatchOrderColors.ElevatedSurface)
+                modifier = Modifier.background(theme.surface)
             ) {
                 DropdownMenuItem(
-                    text = { Text("Regenerate Node", color = WatchOrderColors.TextPrimary) },
+                    text = { Text("Regenerate Node", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onRegenerate()
                     },
-                    leadingIcon = { Icon(Icons.Default.Refresh, null, tint = WatchOrderColors.AccentGold) }
+                    leadingIcon = { Icon(Icons.Default.Refresh, null, tint = theme.accent) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete Node", color = WatchOrderColors.TextPrimary) },
+                    text = { Text("Delete Node", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onDelete()
                     },
-                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = Color.Red) }
+                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = theme.statusFiller) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Mark Watched", color = WatchOrderColors.TextPrimary) },
+                    text = { Text("Mark Watched", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onToggleCompletion(true)
                     },
-                    leadingIcon = { Icon(Icons.Default.Check, null, tint = WatchOrderColors.CompletedGreen) }
+                    leadingIcon = { Icon(Icons.Default.Check, null, tint = theme.statusCanon) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Mark Unwatched", color = WatchOrderColors.TextPrimary) },
+                    text = { Text("Mark Unwatched", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onToggleCompletion(false)
                     },
-                    leadingIcon = { Icon(Icons.Default.Close, null, tint = Color.Gray) }
+                    leadingIcon = { Icon(Icons.Default.Close, null, tint = theme.textSecondary) }
                 )
             }
         }

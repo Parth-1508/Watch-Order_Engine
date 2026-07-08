@@ -5,6 +5,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -68,6 +69,7 @@ fun ImportListScreen(
         AnimatedContent(
             targetState = uiState,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
+            modifier = Modifier.weight(1f),
             label = "import_state"
         ) { state ->
             when (state) {
@@ -214,6 +216,33 @@ fun ImportListScreen(
                     }
                 }
 
+                // ── Syncing ────────────────────────────────────────────────────
+                is ImportUiState.Syncing -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(
+                                progress = { if (state.total > 0) state.current.toFloat() / state.total else 0f },
+                                color = theme.accent,
+                                strokeWidth = 6.dp,
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(Modifier.height(24.dp))
+                            Text(
+                                "Importing ${state.current} / ${state.total}",
+                                color = theme.textPrimary,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 18.sp
+                            )
+                            Text(
+                                "Syncing with cloud and marking episodes...",
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+
                 // ── Preview ───────────────────────────────────────────────────
                 is ImportUiState.Preview -> {
                     val entries  = state.entries
@@ -340,6 +369,45 @@ fun ImportListScreen(
                 }
             }
         }
+
+        // ── Bottom Syncing Indicator ──────────────────────────────────────────
+        val syncingState = uiState as? ImportUiState.Syncing
+        if (syncingState != null) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = theme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Syncing with Firestore...",
+                            color = theme.textPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            "${syncingState.current} / ${syncingState.total}",
+                            color = theme.accent,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.sp
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    val progressVal = if (syncingState.total > 0) syncingState.current.toFloat() / syncingState.total else 0f
+                    LinearProgressIndicator(
+                        progress = { progressVal },
+                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                        color = theme.accent,
+                        trackColor = theme.accent.copy(alpha = 0.2f)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -396,7 +464,7 @@ private fun ImportEntryRow(entry: ImportedAnimeEntry) {
             )
             if (entry.userRating != null) {
                 Text(
-                    "★ ${String.format("%.1f", entry.userRating)}",
+                    "★ ${String.format("%.1f", entry.userRating)} / 10",
                     fontSize = 11.sp,
                     color    = Color(0xFFFFD700)
                 )

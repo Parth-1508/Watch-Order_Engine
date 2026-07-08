@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -19,22 +20,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.*
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
-import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.ui.screens.*
 import com.example.watchorderengine.ui.screens.home.HomeScreenWrapper
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.TimelineScreen
-import com.example.watchorderengine.data.repository.MediaRepository
-import com.example.watchorderengine.data.repository.ReviewRepository
-import com.google.firebase.auth.FirebaseAuth
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
+import com.example.watchorderengine.util.ConnectivityObserver
 import kotlinx.coroutines.launch
 
 // ─── Navigation helper ───
@@ -144,11 +141,7 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val settingsViewModel: com.example.watchorderengine.ui.viewmodel.SettingsViewModel = hiltViewModel()
-    val userPrefs = settingsViewModel.prefsRepository
-    val mediaRepository: MediaRepository = hiltViewModel<com.example.watchorderengine.ui.viewmodel.HomeViewModel>().repository
-    val reviewRepository: ReviewRepository = hiltViewModel<com.example.watchorderengine.ui.viewmodel.MediaDetailViewModel>().reviewRepository
-    val auth = FirebaseAuth.getInstance()
+    val navViewModel: com.example.watchorderengine.ui.viewmodel.NavViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
     val navigateTopLevel: (String) -> Unit = { route ->
@@ -170,6 +163,8 @@ fun AppNavigation() {
         Screen.Profile.route
     )
 
+    val connectivityStatus by navViewModel.connectivityStatus.collectAsState()
+
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
@@ -180,185 +175,207 @@ fun AppNavigation() {
             }
         }
     ) { padding ->
-        NavHost(
-            navController    = navController,
-            startDestination = Screen.Opening.route,
-            enterTransition  = { appEnterTransition() },
-            exitTransition   = { appExitTransition() },
-            popEnterTransition  = { appPopEnterTransition() },
-            popExitTransition   = { appPopExitTransition() },
-            modifier = Modifier.padding(padding)
-        ) {
-            composable(Screen.Opening.route) {
-                OpeningScreen(
-                    onEnter = {
-                        scope.launch {
-                            val isLoggedIn = auth.currentUser != null
-                            
-                            if (isLoggedIn) {
-                                // Hydrate cache in background WITHOUT blocking entry
-                                launch(Dispatchers.IO) {
-                                    mediaRepository.syncAllFromCloud()
-                                    reviewRepository.syncReviewsFromFirestore()
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (connectivityStatus != ConnectivityObserver.Status.Available) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFFFF4B4B)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 4.dp, horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudOff,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Offline Mode",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            NavHost(
+                navController    = navController,
+                startDestination = Screen.Opening.route,
+                enterTransition  = { appEnterTransition() },
+                exitTransition   = { appExitTransition() },
+                popEnterTransition  = { appPopEnterTransition() },
+                popExitTransition   = { appPopExitTransition() },
+                modifier = Modifier.weight(1f)
+            ) {
+                composable(Screen.Opening.route) {
+                    OpeningScreen(
+                        onEnter = {
+                            scope.launch {
+                                val target = navViewModel.getInitialRoute()
+                                if (target != "login") {
+                                    navViewModel.syncDataOnLogin()
+                                }
+                                navController.navigate(target) {
+                                    popUpTo(Screen.Opening.route) { inclusive = true }
                                 }
                             }
-
-                            val isTasteDone = userPrefs.isTasteProfileCompleted.first()
-                            
-                            val target = when {
-                                !isLoggedIn -> Screen.Login.route
-                                !isTasteDone -> Screen.TasteProfileSetup.route
-                                else -> Screen.Home.route
-                            }
-                            navController.navigate(target) {
+                        },
+                        onSkip = {
+                            navController.navigate(Screen.Home.route) {
                                 popUpTo(Screen.Opening.route) { inclusive = true }
                             }
                         }
-                    },
-                    onSkip = {
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.Opening.route) { inclusive = true }
-                        }
-                    }
-                )
-            }
+                    )
+                }
 
-            composable(Screen.Login.route) {
-                LoginScreen(
-                    onLoginSuccess = {
-                        scope.launch {
-                            // Run global data sync
-                            mediaRepository.syncAllFromCloud()
-                            reviewRepository.syncReviewsFromFirestore()
-                            
-                            val isTasteDone = userPrefs.isTasteProfileCompleted.first()
-                            val target = if (isTasteDone) Screen.Home.route else Screen.TasteProfileSetup.route
-                            navController.navigate(target) {
-                                popUpTo(Screen.Login.route) { inclusive = true }
+                composable(Screen.Login.route) {
+                    LoginScreen(
+                        onLoginSuccess = {
+                            scope.launch {
+                                navViewModel.syncDataOnLogin()
+                                val target = navViewModel.getInitialRoute()
+                                navController.navigate(target) {
+                                    popUpTo(Screen.Login.route) { inclusive = true }
+                                }
                             }
                         }
-                    }
-                )
-            }
+                    )
+                }
 
-            // ── Taste Profile Setup (onboarding) ────────────────────────────
-            composable(Screen.TasteProfileSetup.route) {
-                val onboardingViewModel: com.example.watchorderengine.ui.viewmodel.TasteProfileViewModel = hiltViewModel()
-                TasteProfileSetupScreen(
-                    onComplete = { genres ->
-                        onboardingViewModel.saveSelectedGenres(genres)
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
+                composable(Screen.TasteProfileSetup.route) {
+                    val onboardingViewModel: com.example.watchorderengine.ui.viewmodel.TasteProfileViewModel = hiltViewModel()
+                    TasteProfileSetupScreen(
+                        onComplete = { genres ->
+                            onboardingViewModel.saveSelectedGenres(genres)
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
+                            }
+                        },
+                        onSkip = {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
+                            }
                         }
-                    },
-                    onSkip = {
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.TasteProfileSetup.route) { inclusive = true }
+                    )
+                }
+
+                composable(Screen.Home.route) {
+                    HomeScreenWrapper(
+                        onMediaClick    = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                        onSearchClick   = { navigateTopLevel(Screen.Search.route) },
+                        onSettingsClick = { navigateTopLevel(Screen.Settings.route) },
+                        onProfileClick  = { navigateTopLevel(Screen.Profile.route) }
+                    )
+                }
+
+                composable(Screen.Search.route) {
+                    SearchScreen(
+                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                        onBack       = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Discovery.route) {
+                    DiscoveryScreen(
+                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                        onBack       = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Graph.route) {
+                    com.example.watchorderengine.ui.universe.UniverseListScreen(
+                        onUniverseClick = { universeId ->
+                            navController.navigate("timeline/$universeId")
                         }
-                    }
-                )
-            }
-            composable(Screen.Home.route) {
-                HomeScreenWrapper(
-                    onMediaClick    = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onSearchClick   = { navigateTopLevel(Screen.Search.route) },
-                    onSettingsClick = { navigateTopLevel(Screen.Settings.route) },
-                    onProfileClick  = { navigateTopLevel(Screen.Profile.route) }
-                )
-            }
-            composable(Screen.Search.route) {
-                SearchScreen(
-                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onBack       = { navController.popBackStack() }
-                )
-            }
-            composable(Screen.Discovery.route) {
-                DiscoveryScreen(
-                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onBack       = { navController.popBackStack() }
-                )
-            }
-            composable(Screen.Graph.route) {
-                com.example.watchorderengine.ui.universe.UniverseListScreen(
-                    onUniverseClick = { universeId ->
-                        navController.navigate("timeline/$universeId")
-                    }
-                )
-            }
-            composable(
-                route     = "timeline/{universeId}",
-                arguments = listOf(navArgument("universeId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val universeId = backStackEntry.arguments?.getString("universeId") ?: ""
-                TimelineScreen(
-                    universeId  = universeId,
-                    onBack      = { navController.popBackStack() },
-                    onNodeDetail = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
-                )
-            }
-            composable(Screen.Community.route) {
-                CommunityScreen()
-            }
-            composable(Screen.Profile.route) {
-                ProfileScreen(
-                    onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                    onRateMediaClick = { navController.navigate(Screen.Discovery.route) },
-                    onImportClick = { navController.navigate(Screen.ImportList.route) }
-                )
-            }
-            composable(Screen.Settings.route) {
-                SettingsScreen(
-                    onBack = { navController.popBackStack() },
-                    onLogout = {
-                        navController.navigate(Screen.Opening.route) {
-                            popUpTo(0) { inclusive = true }
+                    )
+                }
+
+                composable(
+                    route     = "timeline/{universeId}",
+                    arguments = listOf(navArgument("universeId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val universeId = backStackEntry.arguments?.getString("universeId") ?: ""
+                    TimelineScreen(
+                        universeId  = universeId,
+                        onBack      = { navController.popBackStack() },
+                        onNodeDetail = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
+                    )
+                }
+
+                composable(Screen.Community.route) {
+                    CommunityScreen()
+                }
+
+                composable(Screen.Profile.route) {
+                    ProfileScreen(
+                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                        onRateMediaClick = { navController.navigate(Screen.Discovery.route) },
+                        onImportClick = { navController.navigate(Screen.ImportList.route) }
+                    )
+                }
+
+                composable(Screen.Settings.route) {
+                    SettingsScreen(
+                        onBack = { navController.popBackStack() },
+                        onLogout = {
+                            navController.navigate(Screen.Opening.route) {
+                                popUpTo(0) { inclusive = true }
+                            }
                         }
-                    }
-                )
-            }
-            composable(Screen.ImportList.route) {
-                ImportListScreen(onBack = { navController.popBackStack() })
-            }
-            composable(
-                route     = Screen.Detail.route,
-                arguments = listOf(navArgument("mediaId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val mediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
-                MediaDetailScreen(
-                    mediaId         = safeMediaId(mediaId),
-                    onBack          = { navController.popBackStack() },
-                    onUniverseClick = { universeId ->
-                        navController.navigate("timeline/$universeId")
-                    },
-                    onCharacterClick = { tmdbPersonId, characterName, showTitle, isAnime, anilistId ->
-                        navController.navigate(
-                            Screen.CharacterDetail.route(tmdbPersonId, characterName, showTitle, isAnime, anilistId)
-                        )
-                    }
-                )
-            }
-            composable(
-                route = Screen.CharacterDetail.route,
-                arguments = listOf(
-                    navArgument("tmdbPersonId")   { type = NavType.IntType },
-                    navArgument("characterName")  { type = NavType.StringType },
-                    navArgument("showTitle")      { type = NavType.StringType },
-                    navArgument("isAnime")        { type = NavType.BoolType },
-                    navArgument("anilistId")      { type = NavType.IntType; defaultValue = -1 }
-                )
-            ) { backStackEntry ->
-                val args = backStackEntry.arguments
-                CharacterDetailScreen(
-                    tmdbPersonId  = args?.getInt("tmdbPersonId") ?: 0,
-                    characterName = java.net.URLDecoder.decode(args?.getString("characterName") ?: "", "UTF-8"),
-                    showTitle     = java.net.URLDecoder.decode(args?.getString("showTitle") ?: "", "UTF-8"),
-                    isAnime       = args?.getBoolean("isAnime") ?: false,
-                    anilistId     = args?.getInt("anilistId")?.takeIf { it > 0 },
-                    onBack        = { navController.popBackStack() },
-                    onMediaClick  = { mediaId ->
-                        navController.navigate(Screen.Detail.route(safeMediaId(mediaId)))
-                    }
-                )
+                    )
+                }
+
+                composable(Screen.ImportList.route) {
+                    ImportListScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(
+                    route     = Screen.Detail.route,
+                    arguments = listOf(navArgument("mediaId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val mediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
+                    MediaDetailScreen(
+                        mediaId         = safeMediaId(mediaId),
+                        onBack          = { navController.popBackStack() },
+                        onUniverseClick = { universeId ->
+                            navController.navigate("timeline/$universeId")
+                        },
+                        onCharacterClick = { tmdbPersonId, characterName, showTitle, isAnime, anilistId ->
+                            navController.navigate(
+                                Screen.CharacterDetail.route(tmdbPersonId, characterName, showTitle, isAnime, anilistId)
+                            )
+                        }
+                    )
+                }
+
+                composable(
+                    route = Screen.CharacterDetail.route,
+                    arguments = listOf(
+                        navArgument("tmdbPersonId")   { type = NavType.IntType },
+                        navArgument("characterName")  { type = NavType.StringType },
+                        navArgument("showTitle")      { type = NavType.StringType },
+                        navArgument("isAnime")        { type = NavType.BoolType },
+                        navArgument("anilistId")      { type = NavType.IntType; defaultValue = -1 }
+                    )
+                ) { backStackEntry ->
+                    val args = backStackEntry.arguments
+                    CharacterDetailScreen(
+                        tmdbPersonId  = args?.getInt("tmdbPersonId") ?: 0,
+                        characterName = java.net.URLDecoder.decode(args?.getString("characterName") ?: "", "UTF-8"),
+                        showTitle     = java.net.URLDecoder.decode(args?.getString("showTitle") ?: "", "UTF-8"),
+                        isAnime       = args?.getBoolean("isAnime") ?: false,
+                        anilistId     = args?.getInt("anilistId")?.takeIf { it > 0 },
+                        onBack        = { navController.popBackStack() },
+                        onMediaClick  = { mediaId ->
+                            navController.navigate(Screen.Detail.route(safeMediaId(mediaId)))
+                        }
+                    )
+                }
             }
         }
     }

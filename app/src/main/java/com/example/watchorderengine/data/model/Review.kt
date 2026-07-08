@@ -99,3 +99,25 @@ fun ReviewDocument.toRoomEntity(): ReviewEntity {
         isSynced    = true,
     )
 }
+
+// ─── Unified Review Domain Model ──────────────────────────────────────────────
+
+@Serializable
+data class ReviewItem(
+    val id: String,
+    val authorName: String,
+    val authorAvatarUrl: String?,
+    val rating: Float?,        // null if source doesn't provide 1-5 or 1-10
+    val reviewText: String,
+    val source: ReviewSource,
+    val createdAt: Long,
+    val hasSpoilers: Boolean = false,
+    val externalUrl: String? = null
+)
+
+enum class ReviewSource {
+    LOCAL,
+    TMDB,
+    ANILIST,
+    MAL
+}

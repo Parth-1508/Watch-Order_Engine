@@ -19,11 +19,15 @@ sealed interface ImportSource {
 sealed interface ImportUiState {
     object Idle    : ImportUiState
     object Loading : ImportUiState
+    data class Syncing(val current: Int, val total: Int) : ImportUiState
     data class Preview(
         val entries: List<ImportedAnimeEntry>,
         val source: ImportSource
     ) : ImportUiState
-    data class Success(val written: Int, val total: Int)  : ImportUiState
+    data class Success(
+        val written: Int, 
+        val total: Int
+    )  : ImportUiState
     data class Error(val message: String)                 : ImportUiState
 }
 
@@ -65,9 +69,15 @@ class ImportViewModel @Inject constructor(
     /** Step 2: confirm import — writes the previewed entries to Room. */
     fun confirmImport(entries: List<ImportedAnimeEntry>, overwrite: Boolean) {
         viewModelScope.launch {
-            _uiState.value = ImportUiState.Loading
+            _uiState.value = ImportUiState.Syncing(0, entries.size)
             try {
-                val written = importRepository.persistEntriesToRoom(entries, overwrite)
+                val written = importRepository.persistEntriesToRoom(
+                    entries = entries, 
+                    overwrite = overwrite,
+                    onProgress = { current, total ->
+                        _uiState.value = ImportUiState.Syncing(current, total)
+                    }
+                )
                 _uiState.value = ImportUiState.Success(written = written, total = entries.size)
             } catch (e: Exception) {
                 _uiState.value = ImportUiState.Error(e.message ?: "Import failed.")

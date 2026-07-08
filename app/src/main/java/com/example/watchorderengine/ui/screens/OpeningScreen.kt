@@ -140,20 +140,20 @@ fun OpeningScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp)
             ) {
                 items(listOf(
-                    "🗺️" to "Skill Tree",
-                    "🃏" to "Discovery Deck",
-                    "🏆" to "Player Profile"
-                )) { (emoji, title) ->
+                    Triple("🗺️", "Skill Tree", "Map franchise watch orders as branching visual timelines."),
+                    Triple("🃏", "Discovery Deck", "Swipe through trending media to find your next obsession."),
+                    Triple("🏆", "Player Profile", "Track viewing stats, streaks, and ratings across the cloud.")
+                )) { (emoji, title, desc) ->
                     Surface(
-                        modifier = Modifier.width(160.dp),
+                        modifier = Modifier.width(180.dp),
                         shape = RoundedCornerShape(24.dp),
                         color = Color.White.copy(alpha = 0.05f),
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(emoji, fontSize = 24.sp)
-                            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("Map any series as a visual timeline", color = Color.Gray, fontSize = 10.sp)
+                            Text(title, color = Color.White, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                            Text(desc, color = Color.Gray, fontSize = 10.sp, lineHeight = 14.sp)
                         }
                     }
                 }

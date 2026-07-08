@@ -120,7 +120,13 @@ fun MediaDetailScreen(
         
         if (!isLoading && media == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Failed to load details for $mediaId", color = theme.textPrimary)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Failed to load details", color = theme.textPrimary)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { viewModel.loadMediaDetail(mediaId) }) {
+                        Text("Retry")
+                    }
+                }
             }
         }
     }
@@ -236,7 +242,7 @@ private fun DetailContent(
                 Box(modifier = Modifier.height(350.dp).fillMaxWidth()) {
                     AsyncImage(
                         model = detail.backdropUrl ?: detail.posterUrl,
-                        contentDescription = null,
+                        contentDescription = "Show Backdrop",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                         error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.Movie)
@@ -265,7 +271,7 @@ private fun DetailContent(
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.5f))
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Go back", tint = Color.White)
                         }
                         val context = androidx.compose.ui.platform.LocalContext.current
                         IconButton(
@@ -283,7 +289,7 @@ private fun DetailContent(
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.5f))
                         ) {
-                            Icon(Icons.Default.Share, null, tint = Color.White)
+                            Icon(Icons.Default.Share, "Share show", tint = Color.White)
                         }
                     }
 
@@ -333,7 +339,7 @@ private fun DetailContent(
                     ) {
                         Text(detail.releaseYear, color = Color.LightGray, fontSize = 14.sp)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Default.Star, null, tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Star, "Rating", tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp))
                             Text(String.format("%.1f", detail.voteAverage), color = Color(0xFFFFD700), fontSize = 14.sp)
                         }
                         Box(modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
@@ -623,7 +629,8 @@ private fun ReviewsTab(
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
-    val reviews by viewModel.reviews.collectAsStateWithLifecycle()
+    val reviews by viewModel.aggregatedReviews.collectAsStateWithLifecycle()
+    val isReviewsLoading by viewModel.isReviewsLoading.collectAsStateWithLifecycle()
     var showReviewSheet by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.padding(16.dp)) {
@@ -639,7 +646,11 @@ private fun ReviewsTab(
 
         Spacer(Modifier.height(24.dp))
 
-        if (reviews.isEmpty()) {
+        if (isReviewsLoading && reviews.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = theme.accent)
+            }
+        } else if (reviews.isEmpty()) {
             Text(
                 "No reviews yet. Be the first to share your thoughts!",
                 color = Color.Gray,
@@ -670,11 +681,12 @@ private fun ReviewsTab(
 
 @Composable
 private fun ReviewItem(
-    review: com.example.watchorderengine.data.db.entity.ReviewEntity,
+    review: com.example.watchorderengine.data.model.ReviewItem,
     onDelete: () -> Unit
 ) {
     val theme = LocalAppTheme.current
     var isExpanded by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
 
     Surface(
         modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth(),
@@ -689,30 +701,54 @@ private fun ReviewItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    repeat(5) { index ->
-                        Icon(
-                            imageVector = if (index < review.rating) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = null,
-                            tint = if (index < review.rating) Color(0xFFFFD700) else Color.Gray,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = String.format("%.1f", review.rating),
-                        color = Color(0xFFFFD700),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                    AsyncImage(
+                        model = review.authorAvatarUrl,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp).clip(CircleShape).background(Color.Gray),
+                        contentScale = ContentScale.Crop
                     )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = review.authorName,
+                            color = theme.textPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SourceBadge(review.source)
+                            if (review.rating != null) {
+                                Spacer(Modifier.width(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Star, null, tint = Color(0xFFFFD700), modifier = Modifier.size(12.dp))
+                                    Text(
+                                        text = String.format("%.1f", review.rating),
+                                        color = Color(0xFFFFD700),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
                 
-                IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.Delete, null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                Row {
+                    if (review.externalUrl != null) {
+                        IconButton(onClick = { uriHandler.openUri(review.externalUrl) }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.OpenInNew, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                    if (review.source == com.example.watchorderengine.data.model.ReviewSource.LOCAL) {
+                        IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Delete, null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                        }
+                    }
                 }
             }
 
             if (review.reviewText.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
                 if (review.hasSpoilers && !isExpanded) {
                     Box(
                         modifier = Modifier
@@ -729,23 +765,58 @@ private fun ReviewItem(
                         }
                     }
                 } else {
+                    val cleanText = if (review.source == com.example.watchorderengine.data.model.ReviewSource.LOCAL) {
+                        review.reviewText 
+                    } else {
+                        // Very basic HTML strip for external reviews
+                        review.reviewText.replace(Regex("<[^>]*>"), "")
+                    }
+                    
                     Text(
-                        text = review.reviewText,
+                        text = cleanText,
                         color = Color.LightGray,
                         fontSize = 13.sp,
-                        lineHeight = 18.sp
+                        lineHeight = 18.sp,
+                        maxLines = if (isExpanded) Int.MAX_VALUE else 8,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable { isExpanded = !isExpanded }
                     )
                 }
             }
             
-            Spacer(Modifier.height(8.dp))
-            val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
-            Text(
-                text = "Posted on ${sdf.format(java.util.Date(review.createdAt))}",
-                color = Color.Gray,
-                fontSize = 10.sp
-            )
+            if (review.createdAt > 0) {
+                Spacer(Modifier.height(8.dp))
+                val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+                Text(
+                    text = "Posted on ${sdf.format(java.util.Date(review.createdAt))}",
+                    color = Color.Gray,
+                    fontSize = 10.sp
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun SourceBadge(source: com.example.watchorderengine.data.model.ReviewSource) {
+    val (color, label) = when (source) {
+        com.example.watchorderengine.data.model.ReviewSource.LOCAL -> Color(0xFF4FC3F7) to "WOE"
+        com.example.watchorderengine.data.model.ReviewSource.TMDB -> Color(0xFF01B4E4) to "TMDB"
+        com.example.watchorderengine.data.model.ReviewSource.ANILIST -> Color(0xFF02A9FF) to "AniList"
+        com.example.watchorderengine.data.model.ReviewSource.MAL -> Color(0xFF2E51A2) to "MAL"
+    }
+    Surface(
+        color = color.copy(alpha = 0.15f),
+        shape = RoundedCornerShape(4.dp),
+        border = BorderStroke(0.5.dp, color.copy(alpha = 0.3f))
+    ) {
+        Text(
+            text = label,
+            color = color,
+            fontSize = 7.sp,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+        )
     }
 }
 
@@ -755,7 +826,7 @@ private fun ReviewSubmissionDialog(
     onSubmit: (Float, String, Boolean) -> Unit
 ) {
     val theme = LocalAppTheme.current
-    var rating by remember { mutableFloatStateOf(4f) }
+    var rating by remember { mutableFloatStateOf(8f) }
     var text by remember { mutableStateOf("") }
     var hasSpoilers by remember { mutableStateOf(false) }
 
@@ -769,12 +840,12 @@ private fun ReviewSubmissionDialog(
                 Slider(
                     value = rating,
                     onValueChange = { rating = it },
-                    valueRange = 0.5f..5f,
-                    steps = 8,
+                    valueRange = 1f..10f,
+                    steps = 17,
                     colors = SliderDefaults.colors(thumbColor = theme.accent, activeTrackColor = theme.accent)
                 )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    Text("${rating} Stars", fontWeight = FontWeight.Bold, color = theme.accent)
+                    Text("${String.format("%.1f", rating)} / 10", fontWeight = FontWeight.Bold, color = theme.accent)
                 }
                 
                 Spacer(Modifier.height(16.dp))

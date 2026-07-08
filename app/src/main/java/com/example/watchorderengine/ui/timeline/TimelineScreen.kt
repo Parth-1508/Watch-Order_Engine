@@ -1,5 +1,6 @@
 package com.example.watchorderengine.ui.timeline
 
+import android.content.Intent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,7 +30,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.watchorderengine.ui.theme.LocalAppTheme
-import com.example.watchorderengine.ui.theme.WatchOrderColors
 import com.example.watchorderengine.ui.timeline.components.BranchingTimelineView
 import com.example.watchorderengine.viewmodel.*
 
@@ -41,6 +42,7 @@ fun TimelineScreen(
     onNodeDetail: (nodeId: String) -> Unit,
     viewModel: TimelineViewModel = hiltViewModel(),
 ) {
+    val theme = LocalAppTheme.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
 
@@ -64,7 +66,7 @@ fun TimelineScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(WatchOrderColors.DeepSpace)
+            .background(theme.background)
             .drawWithCache {
                 val random = java.util.Random(42)
                 val stars = List(100) {
@@ -85,7 +87,7 @@ fun TimelineScreen(
 
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(WatchOrderColors.AccentGold.copy(alpha = 0.05f), Color.Transparent),
+                            colors = listOf(theme.accent.copy(alpha = 0.05f), Color.Transparent),
                             center = Offset(size.width * 0.8f, size.height * 0.2f),
                             radius = size.width * 0.6f
                         ),
@@ -105,9 +107,11 @@ fun TimelineScreen(
             CompletionBanner(visible = isUniverseComplete)
 
             when (val state = uiState) {
-                is TimelineUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = WatchOrderColors.AccentGold) }
+                is TimelineUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { 
+                    CircularProgressIndicator(color = theme.accent) 
+                }
                 is TimelineUiState.Success -> TimelineContent(state, viewModel)
-                is TimelineUiState.Error -> Text("Error: ${state.message}", color = Color.Red, modifier = Modifier.padding(16.dp))
+                is TimelineUiState.Error -> Text("Error: ${state.message}", color = theme.statusFiller, modifier = Modifier.padding(16.dp))
             }
         }
 
@@ -119,6 +123,7 @@ fun TimelineScreen(
 
 @Composable
 fun SyncingOverlay() {
+    val theme = LocalAppTheme.current
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -128,7 +133,7 @@ fun SyncingOverlay() {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(
-                color = WatchOrderColors.AccentGold,
+                color = theme.accent,
                 modifier = Modifier.size(48.dp),
                 strokeWidth = 4.dp
             )
@@ -155,6 +160,7 @@ private const val AUTO_DISMISS_MS = 6_000L
 
 @Composable
 private fun CompletionBanner(visible: Boolean) {
+    val theme = LocalAppTheme.current
     var dismissed by remember { mutableStateOf(false) }
 
     LaunchedEffect(visible) {
@@ -166,13 +172,6 @@ private fun CompletionBanner(visible: Boolean) {
     }
 
     val showBanner = visible && !dismissed
-
-    val shimmerOffset by rememberInfiniteTransition(label = "shimmer").animateFloat(
-        initialValue  = -1f,
-        targetValue   = 2f,
-        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing)),
-        label         = "shimmerOffset"
-    )
 
     AnimatedVisibility(
         visible = showBanner,
@@ -196,9 +195,9 @@ private fun CompletionBanner(visible: Boolean) {
                 .background(
                     Brush.horizontalGradient(
                         colors = listOf(
-                            Color(0xFF1A1200),
-                            Color(0xFF3D2B00),
-                            Color(0xFF1A1200)
+                            theme.accent.copy(alpha = 0.15f),
+                            theme.accent.copy(alpha = 0.3f),
+                            theme.accent.copy(alpha = 0.15f)
                         )
                     )
                 )
@@ -206,9 +205,9 @@ private fun CompletionBanner(visible: Boolean) {
                     width = 1.5.dp,
                     brush = Brush.horizontalGradient(
                         colors = listOf(
-                            WatchOrderColors.AccentGold.copy(alpha = 0.4f),
-                            WatchOrderColors.AccentGold,
-                            WatchOrderColors.AccentGold.copy(alpha = 0.4f)
+                            theme.accent.copy(alpha = 0.4f),
+                            theme.accent,
+                            theme.accent.copy(alpha = 0.4f)
                         )
                     ),
                     shape = RoundedCornerShape(20.dp)
@@ -240,13 +239,13 @@ private fun CompletionBanner(visible: Boolean) {
                         text       = "UNIVERSE CONQUERED!",
                         fontSize   = 15.sp,
                         fontWeight = FontWeight.Black,
-                        color      = WatchOrderColors.AccentGold,
+                        color      = theme.accent,
                         letterSpacing = 1.sp
                     )
                     Text(
                         text     = "You've completed every entry in this timeline.",
                         fontSize = 11.sp,
-                        color    = Color.White.copy(alpha = 0.65f),
+                        color    = theme.textPrimary.copy(alpha = 0.65f),
                         lineHeight = 16.sp
                     )
                 }
@@ -255,12 +254,12 @@ private fun CompletionBanner(visible: Boolean) {
                     onClick  = { dismissed = true },
                     modifier = Modifier
                         .size(28.dp)
-                        .background(Color.White.copy(alpha = 0.06f), CircleShape)
+                        .background(theme.textPrimary.copy(alpha = 0.06f), CircleShape)
                 ) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Dismiss",
-                        tint     = Color.White.copy(alpha = 0.5f),
+                        tint     = theme.textPrimary.copy(alpha = 0.5f),
                         modifier = Modifier.size(14.dp)
                     )
                 }
@@ -275,8 +274,12 @@ private fun TimelineHeader(
     onBack: () -> Unit,
     onSpoilerToggle: () -> Unit
 ) {
+    val theme = LocalAppTheme.current
+    val context = LocalContext.current
     val universeName = (uiState as? TimelineUiState.Success)?.universe?.name ?: "Skill Tree"
     val spoilerEnabled = (uiState as? TimelineUiState.Success)?.spoilerShieldEnabled ?: true
+    val completedCount = (uiState as? TimelineUiState.Success)?.completedCount ?: 0
+    val totalCount = (uiState as? TimelineUiState.Success)?.totalNodeCount ?: 0
     
     Row(
         modifier = Modifier
@@ -287,39 +290,49 @@ private fun TimelineHeader(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = WatchOrderColors.TextPrimary)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = theme.textPrimary)
             }
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f, fill = false)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Share, null, tint = WatchOrderColors.AccentGold, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        universeName,
-                        color = WatchOrderColors.TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                }
-                Text("Progress Tracker", color = WatchOrderColors.TextSecondary, fontSize = 10.sp)
+                Text(
+                    universeName,
+                    color = theme.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text("Progress Tracker", color = theme.textSecondary, fontSize = 10.sp)
             }
         }
         
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(
+                onClick = {
+                    val shareText = "Check out my watch order for $universeName on Watch Order Engine! I've completed $completedCount/$totalCount entries."
+                    val sendIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                        type = "text/plain"
+                    }
+                    context.startActivity(Intent.createChooser(sendIntent, null))
+                },
+                modifier = Modifier.size(36.dp).background(theme.surface, CircleShape)
+            ) {
+                Icon(Icons.Default.Share, "Share", tint = theme.accent, modifier = Modifier.size(18.dp))
+            }
+
+            IconButton(
                 onClick = onSpoilerToggle,
                 modifier = Modifier.size(36.dp).background(
-                    if (spoilerEnabled) WatchOrderColors.SpoilerPurple.copy(alpha = 0.2f) else WatchOrderColors.ElevatedSurface, 
+                    if (spoilerEnabled) theme.statusMixed.copy(alpha = 0.2f) else theme.surface, 
                     CircleShape
                 )
             ) {
                 Icon(
                     if (spoilerEnabled) Icons.Default.VisibilityOff else Icons.Default.Visibility, 
                     null, 
-                    tint = if (spoilerEnabled) WatchOrderColors.SpoilerPurple else WatchOrderColors.TextSecondary,
+                    tint = if (spoilerEnabled) theme.statusMixed else theme.textSecondary,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -332,15 +345,16 @@ private fun TimelineContent(
     state: TimelineUiState.Success,
     viewModel: TimelineViewModel
 ) {
+    val theme = LocalAppTheme.current
     Column(modifier = Modifier.fillMaxSize()) {
         // Floating Hint
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            color = WatchOrderColors.AccentGold.copy(alpha = 0.1f),
+            color = theme.accent.copy(alpha = 0.1f),
             shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, WatchOrderColors.AccentGold.copy(alpha = 0.2f))
+            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.2f))
         ) {
             Row(
                 modifier = Modifier.padding(12.dp),
@@ -349,13 +363,13 @@ private fun TimelineContent(
                 Icon(
                     imageVector = Icons.Default.Lightbulb,
                     contentDescription = null,
-                    tint = WatchOrderColors.AccentGold,
+                    tint = theme.accent,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "Tip: Long-press any hexagonal node to toggle its watch status.",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = theme.textPrimary.copy(alpha = 0.7f),
                     fontSize = 11.sp,
                     lineHeight = 16.sp
                 )

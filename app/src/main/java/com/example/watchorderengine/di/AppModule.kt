@@ -42,6 +42,11 @@ object AppModule {
         UserPreferencesRepository(context)
 
     @Provides
+    @Singleton
+    fun provideConnectivityObserver(@ApplicationContext context: Context): com.example.watchorderengine.util.ConnectivityObserver =
+        com.example.watchorderengine.util.NetworkConnectivityObserver(context)
+
+    @Provides
     fun provideReviewDao(db: WatchOrderDatabase): com.example.watchorderengine.data.db.dao.ReviewDao =
         db.reviewDao()
 
@@ -54,7 +59,8 @@ object AppModule {
     fun provideAnimeListImportRepository(
         anilistApi: com.example.watchorderengine.network.AnilistApiService,
         tmdbApi: com.example.watchorderengine.network.TmdbApiService,
-        db: WatchOrderDatabase
+        db: WatchOrderDatabase,
+        mediaRepository: com.example.watchorderengine.data.repository.MediaRepository
     ): com.example.watchorderengine.data.import_list.AnimeListImportRepository =
-        com.example.watchorderengine.data.import_list.AnimeListImportRepository(anilistApi, tmdbApi, db)
+        com.example.watchorderengine.data.import_list.AnimeListImportRepository(anilistApi, tmdbApi, db, mediaRepository)
 }

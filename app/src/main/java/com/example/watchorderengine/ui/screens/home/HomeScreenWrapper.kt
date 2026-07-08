@@ -3,8 +3,7 @@ package com.example.watchorderengine.ui.screens.home
 import androidx.compose.runtime.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.watchorderengine.data.model.MediaCategory
-import com.example.watchorderengine.data.model.MediaSummary
+import androidx.paging.compose.collectAsLazyPagingItems
 import com.example.watchorderengine.ui.viewmodel.HomeViewModel
 
 @Composable
@@ -15,54 +14,46 @@ fun HomeScreenWrapper(
     onProfileClick: () -> Unit
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
-    val watching by viewModel.watchingList.collectAsStateWithLifecycle()
-    val planned by viewModel.plannedList.collectAsStateWithLifecycle()
-    val completed by viewModel.completedList.collectAsStateWithLifecycle()
-    val dropped by viewModel.droppedList.collectAsStateWithLifecycle()
-    val paused by viewModel.pausedList.collectAsStateWithLifecycle()
-    val trending by viewModel.trendingList.collectAsStateWithLifecycle()
+    
+    val watchlist = viewModel.watchlistPaged.collectAsLazyPagingItems()
+    val activeCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
     val nextUpItem by viewModel.nextUp.collectAsStateWithLifecycle()
     val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
-    var state by remember {
-        mutableStateOf(
-            HomeUiState(
-                shows = emptyList()
-            )
-        )
-    }
+    val watchingCount by viewModel.watchingCount.collectAsStateWithLifecycle()
+    val plannedCount by viewModel.plannedCount.collectAsStateWithLifecycle()
+    val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
+    val droppedCount by viewModel.droppedCount.collectAsStateWithLifecycle()
+    val pausedCount by viewModel.pausedCount.collectAsStateWithLifecycle()
 
-    LaunchedEffect(avatarUrl, isLoading) {
-        state = state.copy(profilePictureUrl = avatarUrl, isLoading = isLoading)
-    }
+    var isSearchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    val realShows = remember(watching, planned, completed, dropped, paused, trending, recommendations) {
-        val mappedWatching = watching.map { it.toMediaShowItem("Watching") }
-        val mappedPlanned = planned.map { it.toMediaShowItem("Planned") }
-        val mappedCompleted = completed.map { it.toMediaShowItem("Completed") }
-        val mappedDropped = dropped.map { it.toMediaShowItem("Dropped") }
-        val mappedPaused = paused.map { it.toMediaShowItem("Paused") }
-        val mappedTrending = trending.map { it.toMediaShowItem(null) }
-
-        (mappedWatching + mappedPlanned + mappedCompleted + mappedDropped + mappedPaused + mappedTrending)
-            .distinctBy { it.internalId }
-    }
-
-    LaunchedEffect(realShows) {
-        state = state.copy(shows = realShows)
-    }
+    val state = HomeUiState(
+        activeCategory = activeCategory,
+        searchQuery = searchQuery,
+        isSearchOpen = isSearchOpen,
+        isLoading = isLoading,
+        profilePictureUrl = avatarUrl,
+        watchingCount = watchingCount,
+        plannedCount = plannedCount,
+        completedCount = completedCount,
+        droppedCount = droppedCount,
+        pausedCount = pausedCount
+    )
 
     HomeScreen(
         state = state,
-        onCategorySelected = { state = state.copy(activeCategory = it) },
-        onSearchQueryChanged = { state = state.copy(searchQuery = it) },
+        watchlist = watchlist,
+        onCategorySelected = { viewModel.setCategory(it) },
+        onSearchQueryChanged = { searchQuery = it },
         onSearchToggle = { 
             if (it) onSearchClick() 
-            else state = state.copy(isSearchOpen = false) 
+            else isSearchOpen = false 
         },
-        onShowClick = { onMediaClick(it.internalId) },
+        onShowClick = { onMediaClick(it) },
         onSettingsClick = onSettingsClick,
         onProfileClick = onProfileClick,
         nextUpItem = nextUpItem,
@@ -70,13 +61,3 @@ fun HomeScreenWrapper(
         recommendations = recommendations
     )
 }
-
-private fun MediaSummary.toMediaShowItem(status: String?) = MediaShowItem(
-    id = tmdbId,
-    internalId = id,
-    title = title,
-    imageUrl = posterUrl ?: "",
-    genres = genres,
-    badge = mediaCategory.name,
-    watchlistStatus = status
-)

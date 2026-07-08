@@ -10,15 +10,11 @@ import com.example.watchorderengine.data.recommendation.RecommendationEngine
 import com.example.watchorderengine.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-import kotlinx.coroutines.flow.first
 import java.util.Calendar
 
 @HiltViewModel
@@ -28,20 +24,8 @@ class HomeViewModel @Inject constructor(
     private val userPrefs: UserPreferencesRepository
 ) : ViewModel() {
 
-    private val _watchingList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val watchingList: StateFlow<List<MediaSummary>> = _watchingList.asStateFlow()
-
-    private val _plannedList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val plannedList: StateFlow<List<MediaSummary>> = _plannedList.asStateFlow()
-
-    private val _completedList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val completedList: StateFlow<List<MediaSummary>> = _completedList.asStateFlow()
-
-    private val _droppedList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val droppedList: StateFlow<List<MediaSummary>> = _droppedList.asStateFlow()
-
-    private val _pausedList = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val pausedList: StateFlow<List<MediaSummary>> = _pausedList.asStateFlow()
+    private val _selectedCategory = MutableStateFlow("Watching")
+    val selectedCategory: StateFlow<String> = _selectedCategory.asStateFlow()
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -55,6 +39,34 @@ class HomeViewModel @Inject constructor(
     private val _nextUp = MutableStateFlow<com.example.watchorderengine.ui.screens.home.NextUpItem?>(null)
     val nextUp: StateFlow<com.example.watchorderengine.ui.screens.home.NextUpItem?> = _nextUp.asStateFlow()
 
+    val watchingCount: StateFlow<Int> = repository.observeCountByState(com.example.watchorderengine.data.model.TrackingState.WATCHING)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    
+    val plannedCount: StateFlow<Int> = repository.observeCountByState(com.example.watchorderengine.data.model.TrackingState.PLANNED)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    
+    val completedCount: StateFlow<Int> = repository.observeCountByState(com.example.watchorderengine.data.model.TrackingState.COMPLETED)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    
+    val droppedCount: StateFlow<Int> = repository.observeCountByState(com.example.watchorderengine.data.model.TrackingState.DROPPED)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    
+    val pausedCount: StateFlow<Int> = repository.observeCountByState(com.example.watchorderengine.data.model.TrackingState.PAUSED)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val watchlistPaged: Flow<PagingData<MediaSummary>> = _selectedCategory.flatMapLatest { cat ->
+        val state = when (cat) {
+            "Watching"  -> com.example.watchorderengine.data.model.TrackingState.WATCHING
+            "Planned"   -> com.example.watchorderengine.data.model.TrackingState.PLANNED
+            "Completed" -> com.example.watchorderengine.data.model.TrackingState.COMPLETED
+            "Dropped"   -> com.example.watchorderengine.data.model.TrackingState.DROPPED
+            "Paused"    -> com.example.watchorderengine.data.model.TrackingState.PAUSED
+            else        -> com.example.watchorderengine.data.model.TrackingState.WATCHING
+        }
+        repository.observeListByStatePaged(state)
+    }.cachedIn(viewModelScope)
+
     val avatarUrl: StateFlow<String?> = userPrefs.avatarUrl.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -67,6 +79,20 @@ class HomeViewModel @Inject constructor(
             updateDailyStreak()
         }
         observeTasteProfile()
+        observeNextUp()
+    }
+
+    private fun observeNextUp() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.observeCountByState(com.example.watchorderengine.data.model.TrackingState.WATCHING).collect {
+                val watching = repository.getWatchingList()
+                updateNextUp(watching)
+            }
+        }
+    }
+
+    fun setCategory(category: String) {
+        _selectedCategory.value = category
     }
 
     private fun observeTasteProfile() {
@@ -127,42 +153,14 @@ class HomeViewModel @Inject constructor(
     private suspend fun refreshData() {
         _isLoading.value = true
         try {
-            // Load trending immediately to show SOMETHING
             _trendingList.value = repository.getTrending()
-            
-            val watching = repository.getWatchingList()
-            val planned = repository.getPlannedList()
-            val completed = repository.getCompletedList()
-            val dropped = repository.getDroppedList()
-            val paused = repository.getPausedList()
-
-            // Update UI with what we have locally
-            _watchingList.value = watching
-            _plannedList.value = planned
-            _completedList.value = completed
-            _droppedList.value = dropped
-            _pausedList.value = paused
-            
-            // Generate initial recs from cache
             generateRecommendations()
-            updateNextUp(watching)
 
-            // If everything is empty but user is logged in, try a sync once
-            if (!hasAttemptedSync && watching.isEmpty() && planned.isEmpty() && completed.isEmpty()) {
+            val watching = repository.getWatchingList()
+            if (!hasAttemptedSync && watching.isEmpty()) {
                 hasAttemptedSync = true
-                
-                // This call was optimized to only fetch Media metadata, not episodes.
                 repository.syncAllFromCloud()
-                
-                // Refresh lists after sync
-                _watchingList.value = repository.getWatchingList()
-                _plannedList.value = repository.getPlannedList()
-                _completedList.value = repository.getCompletedList()
-                _droppedList.value = repository.getDroppedList()
-                _pausedList.value = repository.getPausedList()
-                
                 generateRecommendations()
-                updateNextUp(_watchingList.value)
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeViewModel", "Refresh failed", e)
@@ -173,7 +171,10 @@ class HomeViewModel @Inject constructor(
 
     private fun updateNextUp(watching: List<MediaSummary>) {
         viewModelScope.launch(Dispatchers.IO) {
-            val mostRecent = watching.firstOrNull() ?: return@launch
+            val mostRecent = watching.firstOrNull() ?: run {
+                _nextUp.value = null
+                return@launch
+            }
             val mediaId = mostRecent.id
             val isMovie = mostRecent.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE
 
@@ -190,8 +191,6 @@ class HomeViewModel @Inject constructor(
                 val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
                 val watchedNormalized = repository.getNormalizedWatchedIds(mediaId)
 
-                // FIX: Exclude Season 0 (Specials / OVAs / Trailers) so they are
-                // never surfaced as the "next" episode before S1E1 proper.
                 val nextEp = episodes
                     .filter { it.seasonNumber > 0 }
                     .find { ep ->
@@ -204,8 +203,6 @@ class HomeViewModel @Inject constructor(
                     }
 
                 if (nextEp != null) {
-                    // UPGRADE IMAGE QUALITY: If the stored stillUrl is low-res (w185), 
-                    // swap it for HD (w780) specifically for this prominent home card.
                     val highResBackdrop = nextEp.stillUrl?.replace("/w185/", "/w780/") 
                         ?: mostRecent.backdropUrl
 
@@ -230,25 +227,18 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val preferredGenres = userPrefs.selectedGenres.first()
-                
-                // PRIMARY filter: exact Room ID match
                 val trackedIds = repository.getAllTrackedMediaIds().toList()
                 if (trackedIds.isEmpty() && preferredGenres.isEmpty()) return@launch
 
-                // Fetch tracked entities in one go
                 val trackedEntities = db.mediaDao().getByIds(trackedIds).associateBy { it.id }
                 val trackedTmdbIds: Set<Int> = trackedEntities.values.map { it.tmdbId }.toSet()
 
-                // Build the "taste profile" from what the user is actively tracking
                 val trackedPairs = trackedIds.mapNotNull { id ->
                     val entity   = trackedEntities[id]                   ?: return@mapNotNull null
                     val progress = db.userProgressDao().getByMediaId(id) ?: return@mapNotNull null
                     entity to progress
                 }
 
-                // Candidates: exclude by both ID string AND raw tmdbId
-                // OPTIMIZATION: Instead of getAll(), maybe we just need some diversity?
-                // But the engine uses the candidates list.
                 val allMedia   = db.mediaDao().getAll()
                 val candidates = allMedia.filter { media ->
                     media.id    !in trackedEntities.keys &&

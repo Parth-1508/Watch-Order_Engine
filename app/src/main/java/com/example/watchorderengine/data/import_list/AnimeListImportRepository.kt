@@ -2,7 +2,6 @@ package com.example.watchorderengine.data.import_list
 
 import android.util.Log
 import com.example.watchorderengine.data.db.WatchOrderDatabase
-import com.example.watchorderengine.data.db.entity.EpisodeWatchedEntity
 import com.example.watchorderengine.data.db.entity.MediaEntity
 import com.example.watchorderengine.data.db.entity.UserProgressEntity
 import com.example.watchorderengine.data.model.TrackingState
@@ -10,6 +9,7 @@ import com.example.watchorderengine.network.AnilistApiService
 import com.example.watchorderengine.network.AnilistRequest
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbConfig
+import com.example.watchorderengine.util.retry
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
@@ -28,15 +28,12 @@ private const val TAG = "AnimeListImport"
 class AnimeListImportRepository @Inject constructor(
     private val anilistApi: AnilistApiService,
     private val tmdbApi: TmdbApiService,
-    private val db: WatchOrderDatabase
+    private val db: WatchOrderDatabase,
+    private val mediaRepository: com.example.watchorderengine.data.repository.MediaRepository
 ) {
 
     /**
      * Fetches the given AniList user's complete anime list via the public GraphQL API.
-     * No OAuth token required for public profiles.
-     *
-     * @param username The AniList display name (case-insensitive).
-     * @return List of [ImportedAnimeEntry] or throws on network/parse errors.
      */
     suspend fun fetchAniListEntries(username: String): List<ImportedAnimeEntry> {
         val body = AnilistRequest(
@@ -60,8 +57,6 @@ class AnimeListImportRepository @Inject constructor(
             throw Exception("AniList error: $msg")
         }
 
-        // We use the parsed model if available, but fallback to manual parsing if needed.
-        // Since we updated AnilistData, we can use it.
         val collection = response.body()?.data?.mediaListCollection
         if (collection != null) {
             return collection.lists?.flatMap { list ->
@@ -76,7 +71,9 @@ class AnimeListImportRepository @Inject constructor(
                         title         = title,
                         coverImageUrl = media?.coverImage?.large,
                         trackingState = anilistStatusToTrackingState(e.status ?: listStatus),
-                        userRating    = e.score?.let { if (it > 0) (it / 2f).coerceIn(0.5f, 5f) else null },
+                        userRating    = e.score?.let { if (it > 0) it.coerceIn(0.5f, 10f) else null },
+                        progress      = e.progress ?: 0,
+                        totalEpisodes = media?.episodes,
                         source        = ImportedAnimeEntry.Source.ANILIST
                     )
                 } ?: emptyList()
@@ -88,11 +85,6 @@ class AnimeListImportRepository @Inject constructor(
 
     /**
      * Fetches a MAL user's anime list via Jikan v4.
-     * No OAuth required — Jikan scrapes public MAL lists.
-     * Automatically paginates through all pages.
-     *
-     * @param username MAL username.
-     * @return Flat list of [ImportedAnimeEntry].
      */
     suspend fun fetchMalEntries(username: String): List<ImportedAnimeEntry> {
         val allEntries = mutableListOf<ImportedAnimeEntry>()
@@ -126,7 +118,9 @@ class AnimeListImportRepository @Inject constructor(
                         coverImageUrl = entry.node.images?.jpg?.largeImageUrl
                                      ?: entry.node.images?.jpg?.imageUrl,
                         trackingState = malStatusToTrackingState(status),
-                        userRating    = if (score > 0) (score / 2f).coerceIn(0.5f, 5f) else null,
+                        userRating    = if (score > 0) score.toFloat().coerceIn(0.5f, 10f) else null,
+                        progress      = entry.listStatus.numEpisodesWatched,
+                        totalEpisodes = null, // Jikan user list doesn't reliably give series total here
                         source        = ImportedAnimeEntry.Source.MAL
                     )
                 )
@@ -146,12 +140,15 @@ class AnimeListImportRepository @Inject constructor(
      */
     suspend fun persistEntriesToRoom(
         entries: List<ImportedAnimeEntry>,
-        overwrite: Boolean = false
+        overwrite: Boolean = false,
+        onProgress: (Int, Int) -> Unit = { _, _ -> }
     ): Int {
         var written = 0
         val now = System.currentTimeMillis()
+        val total = entries.size
 
-        for (entry in entries) {
+        for ((index, entry) in entries.withIndex()) {
+            onProgress(index + 1, total)
             try {
                 // Ensure the show exists in our local Media cache first
                 var mediaId = resolveMediaId(entry)
@@ -170,6 +167,9 @@ class AnimeListImportRepository @Inject constructor(
                     continue
                 }
 
+                // Ensure full details exist before marking episodes
+                mediaRepository.ensureDetailsFetched(mediaId)
+
                 db.userProgressDao().upsert(
                     UserProgressEntity(
                         mediaId       = mediaId,
@@ -181,9 +181,39 @@ class AnimeListImportRepository @Inject constructor(
                     )
                 )
 
-                // If completed, also mark all episodes as watched
-                if (entry.trackingState == TrackingState.COMPLETED) {
-                    markAllEpisodesWatched(mediaId)
+                // Sync the tracking state (and potentially rating) to cloud
+                mediaRepository.updateTrackingState(mediaId, entry.trackingState)
+                if (entry.userRating != null) {
+                    mediaRepository.updateRating(mediaId, entry.userRating)
+                }
+
+                // Handle episode marking
+                if (entry.trackingState == TrackingState.COMPLETED || 
+                    (entry.trackingState == TrackingState.WATCHING && entry.progress > 0)) {
+                    
+                    val seasons = db.seasonDao().getSeasonsByMedia(mediaId)
+                    val matchingSeason = seasons.find { 
+                        it.name.contains(entry.title, ignoreCase = true) || 
+                        entry.title.contains(it.name, ignoreCase = true) 
+                    }
+
+                    if (matchingSeason != null && entry.trackingState == TrackingState.COMPLETED) {
+                        Log.d(TAG, "Segmented show detected: marking season ${matchingSeason.seasonNumber} for '${entry.title}'")
+                        mediaRepository.markSeasonAsWatched(mediaId, matchingSeason.seasonNumber)
+                    } else {
+                        // Fallback to absolute episode marking
+                        val upTo = if (entry.trackingState == TrackingState.COMPLETED) {
+                            (entry.totalEpisodes ?: 0) + 1
+                        } else {
+                            entry.progress + 1
+                        }
+                        
+                        if (upTo > 1) {
+                            mediaRepository.markAllPreviousAsWatched(mediaId, upTo)
+                        } else if (entry.trackingState == TrackingState.COMPLETED) {
+                            mediaRepository.markAllAsWatched(mediaId)
+                        }
+                    }
                 }
 
                 written++
@@ -198,13 +228,10 @@ class AnimeListImportRepository @Inject constructor(
 
     private suspend fun attemptDiscoveryAndCache(entry: ImportedAnimeEntry): String? {
         try {
-            // 1. Search TMDB for the anime title
-            val searchResponse = tmdbApi.searchMulti(query = entry.title)
+            val searchResponse = retry { tmdbApi.searchMulti(query = entry.title) }
             if (!searchResponse.isSuccessful) return null
             
             val results = searchResponse.body()?.results ?: return null
-            
-            // 2. Find the best match (TV show preferred for anime)
             val bestMatch = results.firstOrNull { it.mediaType == "tv" } 
                 ?: results.firstOrNull { it.mediaType == "movie" }
                 ?: return null
@@ -212,8 +239,6 @@ class AnimeListImportRepository @Inject constructor(
             val type = bestMatch.mediaType ?: "tv"
             val mediaId = buildMediaId(bestMatch.id, type)
             
-            // 3. Create a minimal entity so the import has something to link to
-            // This allows the user to click it later to fetch full details
             val genresList = TmdbConfig.genreNamesFor(bestMatch.genreIds ?: emptyList(), type == "movie")
             
             db.mediaDao().upsert(
@@ -236,24 +261,10 @@ class AnimeListImportRepository @Inject constructor(
                     trailerKey = null, castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
                 )
             )
-            
             return mediaId
         } catch (e: Exception) {
             Log.w(TAG, "Discovery failed for '${entry.title}': ${e.message}")
             return null
-        }
-    }
-
-    private suspend fun markAllEpisodesWatched(mediaId: String) {
-        try {
-            val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
-            if (episodes.isEmpty()) return
-            
-            val watchedEntities = episodes.map { EpisodeWatchedEntity(it.id, mediaId) }
-            db.episodeWatchedDao().markWatchedAll(watchedEntities)
-            Log.d(TAG, "Marked ${episodes.size} episodes watched for $mediaId")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to mark episodes watched for $mediaId: ${e.message}")
         }
     }
 
@@ -278,7 +289,6 @@ class AnimeListImportRepository @Inject constructor(
             cleanTitle.contains(it.title.lowercase())
         }
         if (match != null) return match.id
-
         return null
     }
 
@@ -291,6 +301,7 @@ class AnimeListImportRepository @Inject constructor(
               entries {
                 score(format: POINT_10)
                 status
+                progress
                 media {
                   id
                   idMal

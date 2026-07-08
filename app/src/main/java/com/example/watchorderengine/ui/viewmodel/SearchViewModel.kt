@@ -23,11 +23,25 @@ class SearchViewModel @Inject constructor(
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
 
+    private val _categoryFilter = MutableStateFlow<String?>(null)
+    val categoryFilter: StateFlow<String?> = _categoryFilter
+
+    private var lastQuery = ""
     private var searchJob: Job? = null
 
     fun search(query: String) {
+        lastQuery = query
+        triggerSearch()
+    }
+
+    fun setCategoryFilter(category: String?) {
+        _categoryFilter.value = category
+        triggerSearch()
+    }
+
+    private fun triggerSearch() {
         searchJob?.cancel()
-        if (query.isBlank()) {
+        if (lastQuery.isBlank()) {
             _searchResults.value = emptyList()
             return
         }
@@ -36,7 +50,14 @@ class SearchViewModel @Inject constructor(
             _isSearching.value = true
             delay(500) // Debounce
             try {
-                _searchResults.value = repository.searchMedia(query)
+                val results = repository.searchMedia(lastQuery)
+                val filtered = when (_categoryFilter.value) {
+                    "MOVIE" -> results.filter { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE }
+                    "TV" -> results.filter { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.TV_SHOW }
+                    "ANIME" -> results.filter { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME }
+                    else -> results
+                }
+                _searchResults.value = filtered
             } finally {
                 _isSearching.value = false
             }

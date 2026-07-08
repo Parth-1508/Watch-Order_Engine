@@ -17,7 +17,11 @@ data class HomeUiState(
     val activeCategory: String = "Watching",
     val searchQuery: String = "",
     val isSearchOpen: Boolean = false,
-    val shows: List<MediaShowItem> = emptyList(),
     val isLoading: Boolean = true,
-    val profilePictureUrl: String? = null
+    val profilePictureUrl: String? = null,
+    val watchingCount: Int = 0,
+    val plannedCount: Int = 0,
+    val completedCount: Int = 0,
+    val droppedCount: Int = 0,
+    val pausedCount: Int = 0
 )

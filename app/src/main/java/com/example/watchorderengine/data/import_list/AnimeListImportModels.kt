@@ -19,7 +19,7 @@ data class JikanUserListPagination(
 @JsonClass(generateAdapter = true)
 data class JikanUserListEntry(
     @Json(name = "node")             val node: JikanAnimeNode,
-    /** 0–10 score; 0 = unscored. Divide by 2 for our 0.5–5.0 rating scale. */
+    /** 0–10 score; 0 = unscored. */
     @Json(name = "list_status")      val listStatus: JikanListStatus
 )
 
@@ -35,7 +35,9 @@ data class JikanListStatus(
     /** 1=Watching 2=Completed 3=On-Hold 4=Dropped 6=Plan to Watch */
     @Json(name = "status") val status: String,
     /** MAL score 0–10 (0 = unrated). */
-    @Json(name = "score")  val score: Int
+    @Json(name = "score")  val score: Int,
+    /** Number of episodes watched. */
+    @Json(name = "num_episodes_watched") val numEpisodesWatched: Int
 )
 
 @JsonClass(generateAdapter = true)
@@ -56,8 +58,10 @@ data class ImportedAnimeEntry(
     val title: String,
     val coverImageUrl: String?,
     val trackingState: TrackingState,
-    /** User's 0.5–5.0 rating (null if unrated). */
+    /** User's 1.0–10.0 rating (null if unrated). */
     val userRating: Float?,
+    val progress: Int,
+    val totalEpisodes: Int?,
     val source: Source
 ) {
     enum class Source { ANILIST, MAL }

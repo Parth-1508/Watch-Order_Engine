@@ -13,20 +13,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit
 ) {
-    val theme = LocalAppTheme.current
     val auth = FirebaseAuth.getInstance()
     var isLoading by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isSignUp by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Lock to default "Engine" colors for consistency with OpeningScreen
+    val engineAccent = Color(0xFFFFBF3C)
 
     Box(
         modifier = Modifier
@@ -42,7 +43,7 @@ fun LoginScreen(
                 "WATCH ORDER",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Black,
-                color = theme.accent
+                color = engineAccent
             )
             Text(
                 "ENGINE",
@@ -59,9 +60,9 @@ fun LoginScreen(
                 label = { Text("Email") },
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = theme.accent,
+                    focusedBorderColor = engineAccent,
                     unfocusedBorderColor = Color.Gray,
-                    focusedLabelColor = theme.accent,
+                    focusedLabelColor = engineAccent,
                     unfocusedLabelColor = Color.Gray,
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White
@@ -77,9 +78,9 @@ fun LoginScreen(
                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = theme.accent,
+                    focusedBorderColor = engineAccent,
                     unfocusedBorderColor = Color.Gray,
-                    focusedLabelColor = theme.accent,
+                    focusedLabelColor = engineAccent,
                     unfocusedLabelColor = Color.Gray,
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White
@@ -98,7 +99,7 @@ fun LoginScreen(
             Spacer(Modifier.height(24.dp))
 
             if (isLoading) {
-                CircularProgressIndicator(color = theme.accent)
+                CircularProgressIndicator(color = engineAccent)
             } else {
                 Button(
                     onClick = {
@@ -125,7 +126,7 @@ fun LoginScreen(
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
+                    colors = ButtonDefaults.buttonColors(containerColor = engineAccent)
                 ) {
                     Text(
                         if (isSignUp) "CREATE ACCOUNT" else "LOGIN",
@@ -137,7 +138,7 @@ fun LoginScreen(
                 TextButton(onClick = { isSignUp = !isSignUp }) {
                     Text(
                         if (isSignUp) "Already have an account? Login" else "New user? Create account",
-                        color = theme.accent
+                        color = engineAccent
                     )
                 }
 

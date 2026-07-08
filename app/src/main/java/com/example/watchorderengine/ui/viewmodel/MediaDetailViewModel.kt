@@ -41,6 +41,12 @@ class MediaDetailViewModel @Inject constructor(
     private val _reviews = MutableStateFlow<List<ReviewEntity>>(emptyList())
     val reviews: StateFlow<List<ReviewEntity>> = _reviews.asStateFlow()
 
+    private val _aggregatedReviews = MutableStateFlow<List<com.example.watchorderengine.data.model.ReviewItem>>(emptyList())
+    val aggregatedReviews: StateFlow<List<com.example.watchorderengine.data.model.ReviewItem>> = _aggregatedReviews.asStateFlow()
+
+    private val _isReviewsLoading = MutableStateFlow(false)
+    val isReviewsLoading: StateFlow<Boolean> = _isReviewsLoading.asStateFlow()
+
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
 
@@ -143,8 +149,39 @@ class MediaDetailViewModel @Inject constructor(
     private fun observeReviews(mediaId: String) {
         reviewsJob?.cancel()
         reviewsJob = viewModelScope.launch {
-            reviewRepository.observeReviewsForMedia(mediaId).collect {
-                _reviews.value = it
+            _isReviewsLoading.value = true
+            try {
+                // Combine local DB flow with one-time external fetch
+                val localFlow = reviewRepository.observeReviewsForMedia(mediaId)
+                
+                // Fetch external reviews once per detail load
+                val aggregated = reviewRepository.getAggregatedReviews(mediaId)
+                _aggregatedReviews.value = aggregated
+                
+                // Also update the legacy _reviews state for backward compatibility if needed,
+                // or just let it be. But we should probably keep _aggregatedReviews updated
+                // when local reviews change.
+                localFlow.collect { localEntities ->
+                    _reviews.value = localEntities
+                    // Re-merge local into aggregated to reflect new submissions/deletions instantly
+                    val currentAgg = _aggregatedReviews.value.filter { it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL }
+                    val newLocal = localEntities.map { entity ->
+                        com.example.watchorderengine.data.model.ReviewItem(
+                            id = entity.id,
+                            authorName = "You",
+                            authorAvatarUrl = null,
+                            rating = entity.rating,
+                            reviewText = entity.reviewText,
+                            source = com.example.watchorderengine.data.model.ReviewSource.LOCAL,
+                            createdAt = entity.updatedAt,
+                            hasSpoilers = entity.hasSpoilers
+                        )
+                    }
+                    _aggregatedReviews.value = (newLocal + currentAgg).sortedByDescending { it.createdAt }
+                    _isReviewsLoading.value = false
+                }
+            } catch (e: Exception) {
+                _isReviewsLoading.value = false
             }
         }
     }

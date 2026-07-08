@@ -22,7 +22,7 @@ private val STATE_WEIGHT = mapOf(
 
 private fun ratingMultiplier(userRating: Float?): Double {
     if (userRating == null) return 1.0
-    return 0.5 + (userRating / 5.0) * 1.0
+    return 0.5 + (userRating / 10.0) * 1.0
 }
 
 object RecommendationEngine {

@@ -126,8 +126,15 @@ interface UserProgressDao {
     @Query("SELECT * FROM user_progress WHERE trackingState = :state ORDER BY updatedAt DESC")
     suspend fun getByState(state: String): List<UserProgressEntity>
 
+    @Transaction
+    @Query("SELECT * FROM user_progress WHERE trackingState = :state ORDER BY updatedAt DESC")
+    fun getByStatePaging(state: String): androidx.paging.PagingSource<Int, JoinedProgressMedia>
+
     @Query("SELECT mediaId FROM user_progress WHERE trackingState = 'COMPLETED'")
     fun observeCompletedMediaIds(): Flow<List<String>>
+
+    @Query("SELECT COUNT(*) FROM user_progress WHERE trackingState = :state")
+    fun observeCountByState(state: String): Flow<Int>
 
     @Query("SELECT * FROM user_progress ORDER BY updatedAt DESC")
     suspend fun getAll(): List<UserProgressEntity>
@@ -220,6 +227,9 @@ interface ReviewDao {
 
     @Query("SELECT * FROM user_reviews WHERE mediaId = :mediaId ORDER BY createdAt DESC")
     fun observeReviewsForMedia(mediaId: String): Flow<List<ReviewEntity>>
+
+    @Query("SELECT * FROM user_reviews WHERE mediaId = :mediaId ORDER BY createdAt DESC")
+    suspend fun getReviewsForMedia(mediaId: String): List<ReviewEntity>
 
     @Query("SELECT * FROM user_reviews WHERE userId = :userId ORDER BY updatedAt DESC")
     fun observeReviewsByUser(userId: String): Flow<List<ReviewEntity>>

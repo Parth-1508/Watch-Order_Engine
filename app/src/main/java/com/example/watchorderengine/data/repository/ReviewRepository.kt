@@ -5,9 +5,12 @@ import com.example.watchorderengine.data.WatchOrderRepository
 import com.example.watchorderengine.data.db.entity.PendingSyncTaskEntity
 import com.example.watchorderengine.data.db.entity.ReviewEntity
 import com.example.watchorderengine.data.db.entity.TaskType
-import com.example.watchorderengine.data.model.ReviewDocument
-import com.example.watchorderengine.data.model.toFirestoreDocument
-import com.example.watchorderengine.data.model.toRoomEntity
+import com.example.watchorderengine.data.model.*
+import com.example.watchorderengine.network.AnilistApiService
+import com.example.watchorderengine.network.AnilistRequest
+import com.example.watchorderengine.network.JikanApiService
+import com.example.watchorderengine.network.TmdbApiService
+import com.example.watchorderengine.network.TmdbConfig
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -18,7 +21,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import java.util.UUID
+import java.text.SimpleDateFormat
+import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,7 +34,10 @@ class ReviewRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth,
     private val userPrefs: com.example.watchorderengine.data.prefs.UserPreferencesRepository,
-    private val watchOrderRepository: WatchOrderRepository
+    private val watchOrderRepository: WatchOrderRepository,
+    private val tmdbApi: TmdbApiService,
+    private val anilistApi: AnilistApiService,
+    private val jikanApi: JikanApiService
 ) {
 
     fun observeReviewsForMedia(mediaId: String): Flow<List<ReviewEntity>> =
@@ -153,4 +160,149 @@ class ReviewRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    // ─── External Reviews ───────────────────────────────────────────────────────
+
+    suspend fun getAggregatedReviews(mediaId: String): List<ReviewItem> = withContext(Dispatchers.IO) {
+        val media = mediaDao.getById(mediaId) ?: return@withContext emptyList()
+        val isMovie = media.mediaCategory == "MOVIE"
+        val tmdbId = media.tmdbId
+        
+        // Resolve IDs
+        var anilistId = media.anilistId
+        var malIdToUse: Int? = null
+
+        val isAnime = media.genres.contains("Animation") || media.mediaCategory == "ANIME" || media.originalLanguage == "ja"
+
+        val localReviews = reviewDao.getReviewsForMedia(mediaId).map { it.toReviewItem() }
+        val externalReviews = mutableListOf<ReviewItem>()
+
+        // 1. TMDB Reviews
+        try {
+            val tmdbResponse = if (isMovie) tmdbApi.getMovieReviews(tmdbId) else tmdbApi.getTvReviews(tmdbId)
+            if (tmdbResponse.isSuccessful) {
+                tmdbResponse.body()?.results?.map {
+                    ReviewItem(
+                        id = "tmdb_${it.id}",
+                        authorName = it.author,
+                        authorAvatarUrl = it.authorDetails?.avatarPath?.let { path -> TmdbConfig.buildImageUrl(path) },
+                        rating = it.authorDetails?.rating?.toFloat(), // TMDB is 1-10
+                        reviewText = it.content,
+                        source = ReviewSource.TMDB,
+                        createdAt = try { 
+                            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+                                timeZone = TimeZone.getTimeZone("UTC")
+                            }.parse(it.createdAt)?.time ?: 0L
+                        } catch (e: Exception) { 0L },
+                        externalUrl = it.url
+                    )
+                }?.let { externalReviews.addAll(it) }
+            }
+        } catch (e: Exception) { /* ignore */ }
+
+        // 2. Resolve AniList/MAL IDs if missing and it's an anime
+        if (isAnime) {
+            if (anilistId == null) {
+                try {
+                    // Clean title for search (remove years like (2023))
+                    val cleanTitle = media.title.replace(Regex("\\(\\d{4}\\)"), "").trim()
+                    
+                    val searchBody = AnilistRequest(
+                        query = "query(${'$'}search: String) { Media(search: ${'$'}search, type: ANIME) { id idMal } }",
+                        variables = mapOf("search" to cleanTitle)
+                    )
+                    val resp = anilistApi.query(searchBody)
+                    if (resp.isSuccessful) {
+                        val aniMedia = resp.body()?.data?.media
+                        anilistId = aniMedia?.id
+                        malIdToUse = aniMedia?.idMal
+                        
+                        // Persist discovered IDs for future use
+                        if (anilistId != null) {
+                            db.mediaDao().upsert(media.copy(anilistId = anilistId))
+                        }
+                    }
+                } catch (e: Exception) { /* ignore */ }
+            }
+            
+            if (malIdToUse == null) {
+                malIdToUse = media.id.substringAfterLast("_").toIntOrNull()
+            }
+        }
+
+        // 3. AniList Reviews
+        if (anilistId != null) {
+            try {
+                val query = """
+                    query(${'$'}id: Int) {
+                      Media(id: ${'$'}id) {
+                        reviews(perPage: 10, sort: [ID_DESC]) {
+                          nodes {
+                            id
+                            summary
+                            body
+                            score
+                            createdAt
+                            user { name avatar { large } }
+                          }
+                        }
+                      }
+                    }
+                """.trimIndent()
+                val response = anilistApi.query(AnilistRequest(query, mapOf("id" to anilistId)))
+                if (response.isSuccessful) {
+                    val mediaData = response.body()?.data?.media
+                    mediaData?.reviews?.nodes?.map {
+                        ReviewItem(
+                            id = "anilist_${it.id}",
+                            authorName = it.user?.name ?: "AniList User",
+                            authorAvatarUrl = it.user?.avatar?.large,
+                            rating = it.score?.toFloat()?.div(10f), // AniList score is 0-100
+                            reviewText = it.body ?: it.summary ?: "",
+                            source = ReviewSource.ANILIST,
+                            createdAt = it.createdAt?.toLong()?.times(1000L) ?: 0L,
+                            externalUrl = "https://anilist.co/review/${it.id}"
+                        )
+                    }?.let { externalReviews.addAll(it) }
+                }
+            } catch (e: Exception) { /* ignore */ }
+        }
+
+        // 4. MAL (Jikan) Reviews
+        if (malIdToUse != null) {
+            try {
+                val jikanResponse = jikanApi.getAnimeReviews(malIdToUse)
+                if (jikanResponse.isSuccessful) {
+                    jikanResponse.body()?.data?.map {
+                        ReviewItem(
+                            id = "mal_${it.malId}",
+                            authorName = it.user.username,
+                            authorAvatarUrl = it.user.images?.jpg?.imageUrl,
+                            rating = it.score.toFloat(), 
+                            reviewText = it.review,
+                            source = ReviewSource.MAL,
+                            createdAt = try { 
+                                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).parse(it.date)?.time ?: 0L
+                            } catch (e: Exception) { 0L },
+                            hasSpoilers = it.isSpoiler,
+                            externalUrl = it.url
+                        )
+                    }?.let { externalReviews.addAll(it) }
+                }
+            } catch (e: Exception) { /* ignore */ }
+        }
+
+        (localReviews + externalReviews).sortedByDescending { it.createdAt }
+    }
+
+    private fun ReviewEntity.toReviewItem() = ReviewItem(
+        id = id,
+        authorName = "You",
+        authorAvatarUrl = null,
+        rating = rating,
+        reviewText = reviewText,
+        source = ReviewSource.LOCAL,
+        createdAt = updatedAt,
+        hasSpoilers = hasSpoilers
+    )
 }

@@ -306,6 +306,26 @@ data class TmdbWatchProvider(
     @Json(name = "provider_name")    val providerName: String,
 )
 
+// ─── Reviews ──────────────────────────────────────────────────────────────────
+
+@JsonClass(generateAdapter = true)
+data class TmdbReview(
+    @Json(name = "author")         val author: String,
+    @Json(name = "author_details") val authorDetails: TmdbAuthorDetails?,
+    @Json(name = "content")        val content: String,
+    @Json(name = "created_at")     val createdAt: String,
+    @Json(name = "id")             val id: String,
+    @Json(name = "url")            val url: String
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbAuthorDetails(
+    @Json(name = "name")        val name: String?,
+    @Json(name = "username")    val username: String,
+    @Json(name = "avatar_path") val avatarPath: String?,
+    @Json(name = "rating")      val rating: Double?
+)
+
 data class TmdbMediaDetail(
     val tmdbId: Int,
     val title: String,

@@ -128,6 +128,15 @@ data class UserProgressEntity(
     val spoilerShieldEnabled: Boolean = false
 )
 
+data class JoinedProgressMedia(
+    @Embedded val progress: UserProgressEntity,
+    @Relation(
+        parentColumn = "mediaId",
+        entityColumn = "id"
+    )
+    val media: MediaEntity?
+)
+
 @Entity(
     tableName = "episode_watched",
     primaryKeys = ["episodeId"],

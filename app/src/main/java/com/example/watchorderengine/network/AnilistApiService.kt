@@ -55,6 +55,7 @@ data class AnilistMediaList(
 data class AnilistListEntry(
     val score: Float?,
     val status: String?,
+    val progress: Int?,
     val media: AnilistMedia?
 )
 
@@ -77,6 +78,7 @@ data class AnilistMedia(
     val tags: List<AnilistTag>?,
     val relations: AnilistRelations?,
     val characters: AnilistCharacters?,
+    val reviews: AnilistReviews? = null,
     // "TV" | "TV_SHORT" | "MOVIE" | "SPECIAL" | "OVA" | "ONA" | "MUSIC" — used to
     // pick out franchise movies/specials from a media's relations list.
     val format: String? = null,
@@ -160,4 +162,32 @@ data class AnilistVoiceActor(
     val name: AnilistCharacterName?,
     val language: String?,
     val image: AnilistCharacterImage?
+)
+
+// ─── Reviews ──────────────────────────────────────────────────────────────────
+
+@JsonClass(generateAdapter = true)
+data class AnilistReviews(
+    val nodes: List<AnilistReviewNode>?
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistReviewNode(
+    val id: Int,
+    val summary: String?,
+    val body: String?,
+    val score: Int?,
+    val createdAt: Int?,
+    val user: AnilistUser?
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistUser(
+    val name: String,
+    val avatar: AnilistAvatar?
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistAvatar(
+    val large: String?
 )

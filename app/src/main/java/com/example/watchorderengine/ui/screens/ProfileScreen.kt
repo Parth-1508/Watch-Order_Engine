@@ -8,8 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -87,8 +86,6 @@ fun ProfileScreen(
     var isEditingName by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf(username) }
 
-    val scrollState = rememberScrollState()
-
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -96,12 +93,6 @@ fun ProfileScreen(
             coroutineScope.launch {
                 val localPath = copyImageToAppStorage(context, uri)
                 if (localPath != null) {
-                    // No manual cache-busting needed: Coil already includes
-                    // the file's last-modified timestamp in its cache key
-                    // for file:// URIs (fixed in Coil well before the 2.6.0
-                    // version this project uses), so overwriting
-                    // profile_avatar.jpg with new bytes is already enough
-                    // for Coil to detect the change and skip its stale cache.
                     viewModel.updateAvatarUrl("file://$localPath")
                 }
             }
@@ -109,163 +100,167 @@ fun ProfileScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(theme.background)) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(bottom = 80.dp)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 80.dp)
         ) {
             // Header: Avatar + Identity
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-            ) {
-                // Background Gradient
+            item {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(theme.accent.copy(alpha = 0.3f), theme.background)
-                            )
-                        )
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                        .fillMaxWidth()
+                        .height(240.dp)
                 ) {
-                    Box(contentAlignment = Alignment.BottomEnd) {
-                        AsyncImage(
-                            model = avatarUrl ?: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?crop=faces&fit=crop&w=200&h=200",
-                            contentDescription = "Profile Picture",
-                            modifier = Modifier
-                                .size(100.dp)
-                                .clip(CircleShape)
-                                .border(3.dp, theme.accent, CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                        Surface(
-                            onClick = {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    // Background Gradient
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(theme.accent.copy(alpha = 0.3f), theme.background)
                                 )
-                            },
-                            shape = CircleShape,
-                            color = theme.accent,
-                            modifier = Modifier.size(32.dp).offset(x = 4.dp, y = 4.dp)
-                        ) {
-                            Icon(Icons.Default.CameraAlt, null, tint = Color.Black, modifier = Modifier.padding(6.dp))
+                            )
+                    )
+
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(contentAlignment = Alignment.BottomEnd) {
+                            AsyncImage(
+                                model = avatarUrl ?: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?crop=faces&fit=crop&w=200&h=200",
+                                contentDescription = "Profile Picture",
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .clip(CircleShape)
+                                    .border(3.dp, theme.accent, CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                            Surface(
+                                onClick = {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                shape = CircleShape,
+                                color = theme.accent,
+                                modifier = Modifier.size(32.dp).offset(x = 4.dp, y = 4.dp)
+                            ) {
+                                Icon(Icons.Default.CameraAlt, "Change profile picture", tint = Color.Black, modifier = Modifier.padding(6.dp))
+                            }
                         }
-                    }
 
-                    Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(16.dp))
 
-                    if (isEditingName) {
-                        OutlinedTextField(
-                            value = editedName,
-                            onValueChange = { editedName = it },
-                            modifier = Modifier.padding(horizontal = 32.dp),
-                            singleLine = true,
-                            textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontWeight = FontWeight.Black),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = theme.accent,
-                                unfocusedBorderColor = theme.border
-                            ),
-                            trailingIcon = {
-                                IconButton(onClick = {
-                                    viewModel.updateUsername(editedName)
-                                    isEditingName = false
+                        if (isEditingName) {
+                            OutlinedTextField(
+                                value = editedName,
+                                onValueChange = { editedName = it },
+                                modifier = Modifier.padding(horizontal = 32.dp),
+                                singleLine = true,
+                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontWeight = FontWeight.Black),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = theme.accent,
+                                    unfocusedBorderColor = theme.border
+                                ),
+                                trailingIcon = {
+                                    IconButton(onClick = {
+                                        viewModel.updateUsername(editedName)
+                                        isEditingName = false
+                                    }) {
+                                        Icon(Icons.Default.Check, "Save name", tint = theme.accent)
+                                    }
+                                }
+                            )
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    username.uppercase(),
+                                    color = theme.textPrimary,
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                IconButton(onClick = { 
+                                    editedName = username
+                                    isEditingName = true 
                                 }) {
-                                    Icon(Icons.Default.Check, null, tint = theme.accent)
+                                    Icon(Icons.Default.Edit, "Edit name", tint = theme.textSecondary, modifier = Modifier.size(16.dp))
                                 }
                             }
-                        )
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                username.uppercase(),
-                                color = theme.textPrimary,
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            IconButton(onClick = { 
-                                editedName = username
-                                isEditingName = true 
-                            }) {
-                                Icon(Icons.Default.Edit, null, tint = theme.textSecondary, modifier = Modifier.size(16.dp))
-                            }
                         }
+                        
+                        Text(
+                            text = "Level ${((stats?.totalEpisodesWatched ?: 0) / 50) + 1} Cinephile",
+                            color = theme.accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    
-                    Text(
-                        text = "Level ${((stats?.totalEpisodesWatched ?: 0) / 50) + 1} Cinephile",
-                        color = theme.accent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
             }
 
             // Streak Banner
             if ((stats?.streakDays ?: 0) > 0) {
-                StreakBanner(stats!!.streakDays)
+                item { StreakBanner(stats!!.streakDays) }
             }
 
             // Quick Stats Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                StatCard(
-                    label = "Episodes",
-                    value = stats?.totalEpisodesWatched?.toString() ?: "0",
-                    icon = Icons.Default.Tv,
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    label = "Movies",
-                    value = stats?.totalMoviesWatched?.toString() ?: "0",
-                    icon = Icons.Default.Movie,
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    label = "Rating",
-                    value = String.format("%.1f", stats?.averageRating ?: 0f),
-                    icon = Icons.Default.Star,
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    label = "Points",
-                    value = stats?.profileScore?.toString() ?: "0",
-                    icon = Icons.Default.EmojiEvents,
-                    modifier = Modifier.weight(1f)
-                )
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StatCard(
+                        label = "Episodes",
+                        value = stats?.totalEpisodesWatched?.toString() ?: "0",
+                        icon = Icons.Default.Tv,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCard(
+                        label = "Movies",
+                        value = stats?.totalMoviesWatched?.toString() ?: "0",
+                        icon = Icons.Default.Movie,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCard(
+                        label = "Rating",
+                        value = String.format("%.1f", stats?.averageRating ?: 0f),
+                        icon = Icons.Default.Star,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatCard(
+                        label = "Points",
+                        value = stats?.profileScore?.toString() ?: "0",
+                        icon = Icons.Default.EmojiEvents,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             // Recently Watched
             if (stats?.recentlyWatched?.isNotEmpty() == true) {
-                SectionHeader("RECENTLY WATCHED")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(vertical = 12.dp)
-                ) {
-                    items(stats!!.recentlyWatched) { media ->
-                        RecentlyWatchedItem(media, onClick = { onMediaClick(media.id) })
+                item { SectionHeader("RECENTLY WATCHED") }
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    ) {
+                        items(stats!!.recentlyWatched) { media ->
+                            RecentlyWatchedItem(media, onClick = { onMediaClick(media.id) })
+                        }
                     }
                 }
             }
 
             // User Reviews
             if (userReviews.isNotEmpty()) {
-                SectionHeader("YOUR REVIEWS")
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    userReviews.forEach { review ->
+                item { SectionHeader("YOUR REVIEWS") }
+                items(userReviews) { review ->
+                    Box(Modifier.padding(horizontal = 16.dp)) {
                         ReviewItemSmall(
                             review = review,
                             onMediaClick = { onMediaClick(review.mediaId) },
@@ -276,89 +271,95 @@ fun ProfileScreen(
             }
 
             // Import Button
-            Surface(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .height(64.dp)
-                    .then(ThemeBorderModifier())
-                    .clickable { onImportClick() },
-                color = theme.surface
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
-                    verticalAlignment = Alignment.CenterVertically
+            item {
+                Surface(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .then(ThemeBorderModifier())
+                        .clickable { onImportClick() },
+                    color = theme.surface
                 ) {
-                    Icon(Icons.Default.ImportExport, null, tint = theme.textPrimary)
-                    Spacer(Modifier.width(16.dp))
-                    Column {
-                        Text("IMPORT ANIME LIST", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
-                        Text("Sync from AniList or MyAnimeList", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.ImportExport, null, tint = theme.textPrimary)
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text("IMPORT ANIME LIST", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
+                            Text("Sync from AniList or MyAnimeList", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
 
             // Detailed Stats List
-            SectionHeader("WATCHLIST METRICS")
-            Surface(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .then(ThemeBorderModifier()),
-                color = theme.surface.copy(alpha = 0.5f)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    MetricRow("Completed Shows", stats?.showsCompleted ?: 0, theme.statusCanon)
-                    MetricRow("Currently Watching", stats?.showsWatching ?: 0, theme.accent)
-                    MetricRow("Planned to Watch", stats?.showsPlanned ?: 0, theme.textSecondary)
-                    MetricRow("Paused / On Hold", stats?.showsPaused ?: 0, theme.statusMixed)
-                    MetricRow("Dropped", stats?.showsDropped ?: 0, theme.statusFiller)
+            item {
+                SectionHeader("WATCHLIST METRICS")
+                Surface(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                        .then(ThemeBorderModifier()),
+                    color = theme.surface.copy(alpha = 0.5f)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        MetricRow("Completed Shows", stats?.showsCompleted ?: 0, theme.statusCanon)
+                        MetricRow("Currently Watching", stats?.showsWatching ?: 0, theme.accent)
+                        MetricRow("Planned to Watch", stats?.showsPlanned ?: 0, theme.textSecondary)
+                        MetricRow("Paused / On Hold", stats?.showsPaused ?: 0, theme.statusMixed)
+                        MetricRow("Dropped", stats?.showsDropped ?: 0, theme.statusFiller)
+                    }
                 }
             }
 
             // Genre Affinity
-            SectionHeader("TASTE PROFILE")
-            if (stats?.topGenres?.isNotEmpty() == true) {
-                Box(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(theme.surface)
-                        .padding(20.dp)
-                ) {
-                    Column {
-                        Text(
-                            "Top Genre: ${stats?.favoriteGenre}",
-                            color = theme.textPrimary,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 18.sp
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            stats!!.topGenres.forEach { genre ->
-                                Surface(
-                                    color = theme.accent.copy(alpha = 0.1f),
-                                    shape = CircleShape,
-                                    border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.3f))
-                                ) {
-                                    Text(
-                                        genre,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        color = theme.accent,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+            item {
+                SectionHeader("TASTE PROFILE")
+                if (stats?.topGenres?.isNotEmpty() == true) {
+                    Box(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(theme.surface)
+                            .padding(20.dp)
+                    ) {
+                        Column {
+                            Text(
+                                "Top Genre: ${stats?.favoriteGenre}",
+                                color = theme.textPrimary,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 18.sp
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                stats!!.topGenres.forEach { genre ->
+                                    Surface(
+                                        color = theme.accent.copy(alpha = 0.1f),
+                                        shape = CircleShape,
+                                        border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.3f))
+                                    ) {
+                                        Text(
+                                            genre,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            color = theme.accent,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+                } else {
+                    EmptyTasteProfile(
+                        accentColor   = theme.accent,
+                        onRateMedia   = onRateMediaClick
+                    )
                 }
-            } else {
-                EmptyTasteProfile(
-                    accentColor   = theme.accent,
-                    onRateMedia   = onRateMediaClick
-                )
             }
         }
         
@@ -525,12 +526,12 @@ private fun ReviewItemSmall(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    repeat(5) { index ->
+                    repeat(10) { index ->
                         Icon(
                             imageVector = if (index < review.rating) Icons.Default.Star else Icons.Default.StarBorder,
                             contentDescription = null,
                             tint = if (index < review.rating) Color(0xFFFFD700) else Color.Gray,
-                            modifier = Modifier.size(10.dp)
+                            modifier = Modifier.size(8.dp)
                         )
                     }
                     Spacer(Modifier.width(8.dp))

@@ -78,6 +78,31 @@ data class JikanEpisode(
     @Json(name = "filler") val filler: Boolean = false
 )
 
+// ─── Reviews ──────────────────────────────────────────────────────────────────
+
+@JsonClass(generateAdapter = true)
+data class JikanReviewResponse(
+    @Json(name = "data")       val data:       List<JikanReview>,
+    @Json(name = "pagination") val pagination: JikanPagination?
+)
+
+@JsonClass(generateAdapter = true)
+data class JikanReview(
+    @Json(name = "mal_id")     val malId: Int,
+    @Json(name = "url")        val url: String,
+    @Json(name = "date")       val date: String,
+    @Json(name = "review")     val review: String,
+    @Json(name = "score")      val score: Int,
+    @Json(name = "is_spoiler") val isSpoiler: Boolean,
+    @Json(name = "user")       val user: JikanReviewUser
+)
+
+@JsonClass(generateAdapter = true)
+data class JikanReviewUser(
+    @Json(name = "username") val username: String,
+    @Json(name = "images")   val images: com.example.watchorderengine.data.import_list.JikanImages?
+)
+
 // ─── Jikan v4 Retrofit Interface ──────────────────────────────────────────────
 
 /**
@@ -156,4 +181,15 @@ interface JikanApiService {
         @Query("limit")   limit: Int = 300,
         @Query("page")    page: Int = 1
     ): Response<com.example.watchorderengine.data.import_list.JikanUserListResponse>
+
+    /**
+     * Fetches reviews for a given anime.
+     *
+     * Endpoint: GET /v4/anime/{id}/reviews
+     */
+    @GET("anime/{id}/reviews")
+    suspend fun getAnimeReviews(
+        @Path("id")    malId: Int,
+        @Query("page") page:  Int = 1
+    ): Response<JikanReviewResponse>
 }
