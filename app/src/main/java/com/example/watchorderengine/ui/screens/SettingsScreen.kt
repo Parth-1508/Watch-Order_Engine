@@ -24,8 +24,9 @@ import com.example.watchorderengine.BuildConfig
 import com.example.watchorderengine.data.prefs.ThemeMode
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
+import com.example.watchorderengine.ui.viewmodel.ChangePasswordState
 import com.example.watchorderengine.ui.viewmodel.SettingsViewModel
-import com.example.watchorderengine.ui.viewmodel.WipeGraphsState
+import com.example.watchorderengine.ui.viewmodel.WipeAccountState
 import kotlinx.coroutines.delay
 
 @Composable
@@ -40,13 +41,22 @@ fun SettingsScreen(
     val hideFiller by viewModel.hideFiller.collectAsStateWithLifecycle()
     val hideUnwatchedSpoilers by viewModel.hideUnwatchedSpoilers.collectAsStateWithLifecycle()
     val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsStateWithLifecycle()
-    val wipeGraphsState by viewModel.wipeGraphsState.collectAsStateWithLifecycle()
+    val wipeAccountState by viewModel.wipeAccountState.collectAsStateWithLifecycle()
+    val changePasswordState by viewModel.changePasswordState.collectAsStateWithLifecycle()
+
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
+    
     var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+
     var showClearedToast by remember { mutableStateOf(false) }
-    var showWipeGraphsDialog by remember { mutableStateOf(false) }
+    var showWipeAccountDialog by remember { mutableStateOf(false) }
+
+    // Lock to default "Engine" colors for critical account actions
+    val engineAccent = Color(0xFFFFBF3C)
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -66,30 +76,114 @@ fun SettingsScreen(
 
     if (showChangePasswordDialog) {
         AlertDialog(
-            onDismissRequest = { showChangePasswordDialog = false },
-            title = { Text("Change Password", fontWeight = FontWeight.Black) },
+            onDismissRequest = { 
+                if (changePasswordState !is ChangePasswordState.Loading) {
+                    showChangePasswordDialog = false
+                    viewModel.acknowledgePasswordResult()
+                    newPassword = ""; confirmPassword = ""; passwordError = null
+                }
+            },
+            containerColor = theme.surface,
+            titleContentColor = engineAccent,
+            title = { Text("Update Password", fontWeight = FontWeight.Black) },
             text = {
-                Column {
-                    Text("Enter your new password below.")
-                    Spacer(Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = newPassword,
-                        onValueChange = { newPassword = it },
-                        label = { Text("New Password") },
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (changePasswordState) {
+                        is ChangePasswordState.Idle, is ChangePasswordState.Loading, is ChangePasswordState.Error -> {
+                            Text("Enter and confirm your new password (min. 6 characters).", color = Color.Gray, fontSize = 12.sp)
+                            
+                            OutlinedTextField(
+                                value = newPassword,
+                                onValueChange = { newPassword = it; passwordError = null },
+                                label = { Text("New Password") },
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = changePasswordState !is ChangePasswordState.Loading,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = engineAccent,
+                                    unfocusedBorderColor = theme.border,
+                                    focusedTextColor = theme.textPrimary,
+                                    unfocusedTextColor = theme.textPrimary
+                                )
+                            )
+
+                            OutlinedTextField(
+                                value = confirmPassword,
+                                onValueChange = { confirmPassword = it; passwordError = null },
+                                label = { Text("Confirm New Password") },
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = changePasswordState !is ChangePasswordState.Loading,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = engineAccent,
+                                    unfocusedBorderColor = theme.border,
+                                    focusedTextColor = theme.textPrimary,
+                                    unfocusedTextColor = theme.textPrimary
+                                )
+                            )
+
+                            val displayError = passwordError ?: (changePasswordState as? ChangePasswordState.Error)?.message
+                            if (displayError != null) {
+                                Text(displayError, color = Color.Red, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            
+                            if (changePasswordState is ChangePasswordState.Loading) {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = engineAccent)
+                            }
+                        }
+                        is ChangePasswordState.Success -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.CheckCircle, null, tint = Color.Green, modifier = Modifier.size(48.dp))
+                                Spacer(Modifier.height(8.dp))
+                                Text("Password updated successfully!", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    if (newPassword.length >= 6) {
-                        viewModel.changePassword(newPassword)
+                if (changePasswordState is ChangePasswordState.Success) {
+                    TextButton(onClick = { 
                         showChangePasswordDialog = false
-                        newPassword = ""
+                        viewModel.acknowledgePasswordResult()
+                        newPassword = ""; confirmPassword = ""; passwordError = null
+                    }) {
+                        Text("DONE", color = engineAccent, fontWeight = FontWeight.Black)
                     }
-                }) { Text("Update", fontWeight = FontWeight.Bold) }
+                } else {
+                    Button(
+                        enabled = changePasswordState !is ChangePasswordState.Loading,
+                        onClick = {
+                            if (newPassword.length < 6) {
+                                passwordError = "Password must be at least 6 characters."
+                                return@Button
+                            }
+                            if (newPassword != confirmPassword) {
+                                passwordError = "Passwords do not match."
+                                return@Button
+                            }
+                            viewModel.changePassword(newPassword)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = engineAccent)
+                    ) {
+                        Text("UPDATE", color = Color.Black, fontWeight = FontWeight.Black)
+                    }
+                }
             },
-            dismissButton = { TextButton(onClick = { showChangePasswordDialog = false }) { Text("Cancel") } }
+            dismissButton = {
+                if (changePasswordState !is ChangePasswordState.Success) {
+                    TextButton(
+                        enabled = changePasswordState !is ChangePasswordState.Loading,
+                        onClick = { 
+                            showChangePasswordDialog = false
+                            viewModel.acknowledgePasswordResult()
+                            newPassword = ""; confirmPassword = ""; passwordError = null
+                        }
+                    ) {
+                        Text("CANCEL", color = Color.Gray)
+                    }
+                }
+            }
         )
     }
 
@@ -114,25 +208,24 @@ fun SettingsScreen(
         )
     }
 
-    if (showWipeGraphsDialog) {
+    if (showWipeAccountDialog) {
         AlertDialog(
-            onDismissRequest = { showWipeGraphsDialog = false },
+            onDismissRequest = { showWipeAccountDialog = false },
             icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF4500)) },
-            title = { Text("Delete All Generated Graphs?", fontWeight = FontWeight.Black) },
+            title = { Text("Clear All Account Data?", fontWeight = FontWeight.Black) },
             text = {
                 Text(
-                    "This permanently deletes every AI-generated watch-order graph — and your progress on " +
-                    "all of them — from the cloud. This cannot be undone. Local cache is untouched; only the " +
-                    "data in Firestore is wiped."
+                    "This permanently deletes all your watch progress, ratings, and generated watch orders from the cloud and this device. " +
+                    "This action is irreversible and you will be logged out."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    showWipeGraphsDialog = false
-                    viewModel.wipeAllCloudGraphs()
-                }) { Text("Delete Everything", fontWeight = FontWeight.Bold, color = Color(0xFFFF4500)) }
+                    showWipeAccountDialog = false
+                    viewModel.wipeAllAccountData()
+                }) { Text("Clear Everything", fontWeight = FontWeight.Bold, color = Color(0xFFFF4500)) }
             },
-            dismissButton = { TextButton(onClick = { showWipeGraphsDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showWipeAccountDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -323,56 +416,48 @@ fun SettingsScreen(
             modifier = Modifier
                 .padding(16.dp)
                 .fillMaxWidth()
-                .border(2.dp, Color(0xFFFF4500), RoundedCornerShape(4.dp))
-                .clickable(enabled = wipeGraphsState != WipeGraphsState.InProgress) { showWipeGraphsDialog = true },
+                .border(2.dp, Color.Red, RoundedCornerShape(4.dp))
+                .clickable(enabled = wipeAccountState != WipeAccountState.InProgress) { showWipeAccountDialog = true },
             color = theme.surface
         ) {
             Row(
                 modifier = Modifier.padding(16.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (wipeGraphsState == WipeGraphsState.InProgress) {
+                if (wipeAccountState == WipeAccountState.InProgress) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = Color(0xFFFF4500),
+                        color = Color.Red,
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Icon(Icons.Default.DeleteForever, null, tint = Color(0xFFFF4500))
+                    Icon(Icons.Default.DeleteForever, null, tint = Color.Red)
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
-                    Text("DELETE ALL GENERATED GRAPHS", fontWeight = FontWeight.Black, fontSize = 14.sp, color = Color(0xFFFF4500))
+                    Text("CLEAR ALL ACCOUNT DATA", fontWeight = FontWeight.Black, fontSize = 14.sp, color = Color.Red)
                     Text(
-                        "Permanently wipes every AI-generated watch order from the cloud",
+                        "Permanently wipes your progress and cloud data",
                         fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold
                     )
                 }
             }
         }
 
-        when (val state = wipeGraphsState) {
-            is WipeGraphsState.Success -> {
+        when (val state = wipeAccountState) {
+            is WipeAccountState.Success -> {
                 LaunchedEffect(state) {
-                    delay(3000)
-                    viewModel.acknowledgeWipeResult()
-                }
-                Surface(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    color = Color(0xFF4ADE80).copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("All generated graphs deleted.", modifier = Modifier.padding(12.dp), color = Color(0xFF4ADE80), fontWeight = FontWeight.Bold)
+                    onLogout()
                 }
             }
-            is WipeGraphsState.Failure -> {
+            is WipeAccountState.Failure -> {
                 Surface(
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                     color = Color(0xFFFF4500).copy(alpha = 0.15f),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Couldn't delete graphs.", color = Color(0xFFFF4500), fontWeight = FontWeight.Bold)
+                        Text("Couldn't wipe account.", color = Color(0xFFFF4500), fontWeight = FontWeight.Bold)
                         Text(state.message, color = Color(0xFFFF4500), fontSize = 11.sp)
                         TextButton(onClick = { viewModel.acknowledgeWipeResult() }) { Text("Dismiss") }
                     }

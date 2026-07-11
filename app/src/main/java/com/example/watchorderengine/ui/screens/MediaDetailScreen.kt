@@ -67,6 +67,7 @@ fun MediaDetailScreen(
     val isBulkSyncing by viewModel.isBulkSyncing.collectAsStateWithLifecycle()
     val generationError by viewModel.generationError.collectAsStateWithLifecycle()
     val generationSuccess by viewModel.generationSuccess.collectAsStateWithLifecycle()
+    val aggregatedReviews by viewModel.aggregatedReviews.collectAsStateWithLifecycle()
 
     LaunchedEffect(mediaId) {
         android.util.Log.d("MediaDetail", "Loading mediaId: $mediaId")
@@ -94,6 +95,7 @@ fun MediaDetailScreen(
                     generationSuccess = generationSuccess,
                     bulkMarkPrompt = bulkMarkPrompt,
                     showWelcomeTip = showWelcomeTip,
+                    aggregatedReviews = aggregatedReviews,
                     onDismissGenerationError = { viewModel.dismissGenerationError() },
                     onDismissGenerationSuccess = { viewModel.dismissGenerationSuccess() },
                     onBack = onBack,
@@ -177,6 +179,7 @@ private fun DetailContent(
     generationSuccess: Boolean,
     bulkMarkPrompt: EpisodeItem?,
     showWelcomeTip: Boolean,
+    aggregatedReviews: List<com.example.watchorderengine.data.model.ReviewItem>,
     onDismissGenerationError: () -> Unit,
     onDismissGenerationSuccess: () -> Unit,
     onBack: () -> Unit,
@@ -197,10 +200,12 @@ private fun DetailContent(
     val totalEps = detail.numberOfEpisodes ?: 0
     val progress = if (totalEps > 0) (watchedCount.toFloat() / totalEps).coerceAtMost(1f) else 0f
 
-    val tabs = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) {
-        listOf("chronology", "characters", "reviews")
-    } else {
-        listOf("episodes", "characters", "chronology", "reviews")
+    val tabs = remember(detail.mediaCategory) {
+        if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) {
+            listOf("chronology", "characters", "reviews")
+        } else {
+            listOf("episodes", "characters", "chronology", "reviews")
+        }
     }
 
     val listState = rememberLazyListState()
@@ -614,6 +619,7 @@ private fun DetailContent(
                     item {
                         ReviewsTab(
                             mediaId = detail.id,
+                            mediaTitle = detail.title,
                             viewModel = viewModel
                         )
                     }
@@ -626,6 +632,7 @@ private fun DetailContent(
 @Composable
 private fun ReviewsTab(
     mediaId: String,
+    mediaTitle: String,
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
@@ -651,13 +658,24 @@ private fun ReviewsTab(
                 CircularProgressIndicator(color = theme.accent)
             }
         } else if (reviews.isEmpty()) {
-            Text(
-                "No reviews yet. Be the first to share your thoughts!",
-                color = Color.Gray,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp)
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "No reviews yet. Be the first to share your thoughts!",
+                    color = Color.Gray,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                OutlinedButton(
+                    onClick = { uriHandler.openUri("https://www.google.com/search?q=${mediaTitle}+movie+reviews") },
+                    modifier = Modifier.padding(bottom = 32.dp)
+                ) {
+                    Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("SEARCH ON GOOGLE")
+                }
+            }
         } else {
             reviews.forEach { review ->
                 ReviewItem(
@@ -702,7 +720,7 @@ private fun ReviewItem(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AsyncImage(
-                        model = review.authorAvatarUrl,
+                        model = review.authorAvatarUrl ?: "https://ui-avatars.com/api/?name=${review.authorName.ifBlank { "User" }}&background=random&color=fff",
                         contentDescription = null,
                         modifier = Modifier.size(32.dp).clip(CircleShape).background(Color.Gray),
                         contentScale = ContentScale.Crop

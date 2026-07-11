@@ -217,6 +217,17 @@ interface TmdbApiService {
     ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
 
     /**
+     * Searches for movies by keyword.
+     */
+    @GET("search/movie")
+    suspend fun searchMovie(
+        @Query("query")          query: String,
+        @Query("language")       language: String = "en-US",
+        @Query("page")           page: Int = 1,
+        @Query("include_adult")  includeAdult: Boolean = false
+    ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
+
+    /**
      * Fetches TMDB collections that contain a specific keyword in their name.
      *
      * Used by the franchise-anchor reverse lookup to find parent collection IDs

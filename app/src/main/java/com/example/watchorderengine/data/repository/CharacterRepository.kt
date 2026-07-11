@@ -50,20 +50,21 @@ class CharacterRepository @Inject constructor(
 
             Log.d(TAG, "getCharacterDetail: id=$tmdbPersonId, name='$cleanCharName', show='$cleanShowTitle'")
 
-            val tmdbDeferred = async { tmdbApi.getPersonDetail(tmdbPersonId) }
-            val aniListDeferred = async {
-                if (isAnime) fetchAniListMedia(anilistId, cleanShowTitle) else null
-            }
-            val wikiDeferred = async { getCharacterLore(cleanCharName, cleanShowTitle) }
-
-            val tmdbResp = tmdbDeferred.await()
-            val media = aniListDeferred.await()
-            val (wikiLore, wikiImageUrl) = wikiDeferred.await()
-
+            // 1. Fetch TMDB Person first to get their real name for high-context Wiki search
+            val tmdbResp = tmdbApi.getPersonDetail(tmdbPersonId)
             if (!tmdbResp.isSuccessful) {
                 error("TMDB person fetch failed: HTTP ${tmdbResp.code()}")
             }
             val person = tmdbResp.body() ?: error("Empty TMDB person response")
+
+            // 2. Fetch others in parallel
+            val aniListDeferred = async {
+                if (isAnime) fetchAniListMedia(anilistId, cleanShowTitle) else null
+            }
+            val wikiDeferred = async { getCharacterLore(cleanCharName, cleanShowTitle, person.name) }
+
+            val media = aniListDeferred.await()
+            val (wikiLore, wikiImageUrl) = wikiDeferred.await()
 
             val aniListEdges = media?.characters?.edges ?: emptyList()
             
@@ -90,20 +91,15 @@ class CharacterRepository @Inject constructor(
             val validWikiImg = wikiImageUrl?.takeIf { TmdbConfig.isValidImageUrl(it) }
             validWikiImg?.let { if (!fictionalArt.contains(it)) fictionalArt.add(it) }
 
-            // Fictional/in-character art (AniList renders, TMDB tagged stills) is only
-            // reliable for anime — for live-action, TMDB "tagged images" frequently
-            // resolve to broken or mismatched placeholders, so we skip them entirely
-            // and fall back strictly to the actor's real profile photo instead.
             if (isAnime) {
-                // TMDB "tagged images" tied to THIS specific production
                 person.taggedImages?.results.orEmpty()
                     .filter { it.imageType == "still" || it.imageType == null }
                     .filter { tagged ->
-                        val mediaTitle = tagged.media?.title ?: tagged.media?.name
-                        mediaTitle != null && (
-                            mediaTitle.equals(cleanShowTitle, ignoreCase = true) ||
-                            mediaTitle.contains(cleanShowTitle, ignoreCase = true) ||
-                            cleanShowTitle.contains(mediaTitle, ignoreCase = true)
+                        val mTitle = tagged.media?.title ?: tagged.media?.name
+                        mTitle != null && (
+                            mTitle.equals(cleanShowTitle, ignoreCase = true) ||
+                            mTitle.contains(cleanShowTitle, ignoreCase = true) ||
+                            cleanShowTitle.contains(mTitle, ignoreCase = true)
                         )
                     }
                     .sortedByDescending { it.voteAverage ?: 0.0 }
@@ -163,12 +159,6 @@ class CharacterRepository @Inject constructor(
             val aniListDescription = cleanAniListText(aniChar?.description)
             val characterLore = aniListDescription ?: wikiLore ?: ""
 
-            // Primary Character Image Strategy:
-            // 1. AniList image (anime — purpose-drawn for this exact character)
-            // 2. Wikipedia infobox image (usually a real photo/render tied
-            //    specifically to this character's page, when one exists)
-            // 3. A TMDB still tagged to THIS production (in-costume, in-context)
-            // 4. Fallback to the TMDB actor headshot
             val primaryCharImg = aniImg
                 ?: validWikiImg
                 ?: fictionalArt.firstOrNull { it != aniImg && it != validWikiImg }
@@ -269,9 +259,28 @@ class CharacterRepository @Inject constructor(
         return a.contains(b) || b.contains(a)
     }
 
-    suspend fun getCharacterLore(characterName: String, mediaTitle: String): Pair<String?, String?> {
+    suspend fun getCharacterLore(characterName: String, mediaTitle: String, actorName: String? = null): Pair<String?, String?> {
         val nameParts = characterName.split("/").map { it.trim() }.filter { it.isNotBlank() }
         for (part in nameParts) {
+            // Context-aware search queries to prevent common name ambiguity (Bug F fix)
+            val contextQueries = mutableListOf(
+                "$part ($mediaTitle character)",
+                "$part $mediaTitle movie character",
+                "$part from $mediaTitle",
+                "$part ($mediaTitle)",
+                "$part $mediaTitle"
+            )
+            
+            if (!actorName.isNullOrBlank()) {
+                contextQueries.add(0, "$part played by $actorName")
+                contextQueries.add(1, "$part $actorName")
+            }
+
+            for (q in contextQueries) {
+                val result = fetchWikipediaSummary(q)
+                if (result != null) return result
+            }
+
             // Wikipedia is very sensitive to the exact title. Fictional characters 
             // almost always have a suffix in parentheses if they are popular.
             val contexts = listOf(
@@ -282,11 +291,10 @@ class CharacterRepository @Inject constructor(
                 "comics",
                 "film",
                 "character",
-                "video game",
-                mediaTitle
+                "video game"
             )
             
-            // Try specific contexts first
+            // Try specific contexts
             for (ctx in contexts) {
                 val qualifiedQuery = "$part ($ctx)"
                 val result = fetchWikipediaSummary(qualifiedQuery)
@@ -294,7 +302,7 @@ class CharacterRepository @Inject constructor(
             }
             
             // Try "CharacterName Marvel" etc.
-            val simpleContexts = listOf("Marvel", "DC", "Disney", mediaTitle)
+            val simpleContexts = listOf("Marvel", "DC", "Disney")
             for (ctx in simpleContexts) {
                 val result = fetchWikipediaSummary("$part $ctx")
                 if (result != null) return result
@@ -314,22 +322,12 @@ class CharacterRepository @Inject constructor(
             val response = wikipediaApi.getPageSummary(pathTitle)
             if (!response.isSuccessful) {
                 if (response.code() != 404) {
-                    // 404 is the expected, common outcome (most queries won't
-                    // have a page) — anything else (5xx, 429 rate limit, etc.)
-                    // is worth knowing about when chasing a "no images" report.
                     Log.d(TAG, "Wikipedia HTTP ${response.code()} for '$query'")
                 }
                 return null
             }
             val body = response.body() ?: return null
 
-            // Allowlist, not denylist — per the @Path doc comment's original
-            // intent ("MUST check type == standard"), which the previous
-            // denylist version (excluding only "disambiguation"/"no-extract")
-            // didn't actually do. Wikipedia's REST API can return other
-            // non-article types (e.g. "mainpage" for some redirects); treating
-            // anything-not-explicitly-bad as good risked pulling an
-            // unrelated page's image in edge cases this denylist didn't cover.
             if (body.type != null && body.type != "standard") {
                 Log.d(TAG, "Wikipedia type='${body.type}' for '$query' — skipping (not a standard article)")
                 return null
@@ -338,7 +336,6 @@ class CharacterRepository @Inject constructor(
             val extract = body.extract?.trim()?.takeIf { it.isNotBlank() }
             var imageUrl = body.thumbnail?.source ?: body.originalImage?.source
 
-            // Handle protocol-relative URLs (//upload.wikimedia.org/...)
             if (imageUrl?.startsWith("//") == true) {
                 imageUrl = "https:$imageUrl"
             }

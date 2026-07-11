@@ -171,13 +171,5 @@ fun OpeningScreen(
                 Text("ENTER THE ENGINE", fontWeight = FontWeight.Black, letterSpacing = 2.sp, color = Color.Black)
             }
         }
-        
-        // Skip Button
-        TextButton(
-            onClick = onSkip,
-            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
-        ) {
-            Text("SKIP", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
     }
 }

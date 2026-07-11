@@ -923,6 +923,9 @@ class MediaRepository @Inject constructor(
             // FIX: If moving from Neutral to something else, don't clear.
             // But if we're technically re-adding it, clear from skipped.
             db.discoverySkippedDao().removeSkipped(mediaId)
+
+            // Ensure MediaEntity knows it is in the watchlist
+            db.mediaDao().updateWatchlistStatus(mediaId, true)
         }
 
     /** Removes a show from the user's watchlist by deleting its progress record and history. */
@@ -971,6 +974,9 @@ class MediaRepository @Inject constructor(
                 Log.w(TAG, "Failed to sync removal to graph: ${e.message}")
             }
         }
+
+        // Set inWatchlist to false
+        db.mediaDao().updateWatchlistStatus(mediaId, false)
     }
 
     suspend fun getAllTrackedMediaIds(): Set<String> = withContext(Dispatchers.IO) {
@@ -1233,10 +1239,12 @@ class MediaRepository @Inject constructor(
 
     suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int) =
         withContext(Dispatchers.IO) {
-            val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
-                .filter { it.absoluteEpisodeNumber < upToAbsoluteNumber }
-            
-            episodes.forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
+            val now = System.currentTimeMillis()
+            // 1. Optimized Room update
+            db.episodeWatchedDao().markAllPreviousAsWatched(mediaId, upToAbsoluteNumber - 1, now)
+
+            // 2. Optimized Firestore sync (still needs IDs for bulk update)
+            val episodes = db.episodeDao().getEpisodesInRange(mediaId, 1, upToAbsoluteNumber - 1)
             syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
         }
 

@@ -1,5 +1,6 @@
 package com.example.watchorderengine.data.import_list
 
+import com.example.watchorderengine.data.model.MediaCategory
 import com.example.watchorderengine.data.model.TrackingState
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
@@ -27,7 +28,8 @@ data class JikanUserListEntry(
 data class JikanAnimeNode(
     @Json(name = "mal_id") val malId: Int,
     @Json(name = "title")  val title: String,
-    @Json(name = "images") val images: JikanImages?
+    @Json(name = "images") val images: JikanImages?,
+    @Json(name = "type")   val type: String?
 )
 
 @JsonClass(generateAdapter = true)
@@ -62,7 +64,8 @@ data class ImportedAnimeEntry(
     val userRating: Float?,
     val progress: Int,
     val totalEpisodes: Int?,
-    val source: Source
+    val source: Source,
+    val mediaCategory: MediaCategory
 ) {
     enum class Source { ANILIST, MAL }
 }

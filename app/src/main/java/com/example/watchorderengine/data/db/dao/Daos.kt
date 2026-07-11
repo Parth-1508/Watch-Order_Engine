@@ -50,6 +50,9 @@ interface MediaDao {
     @Query("DELETE FROM media WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("UPDATE media SET inWatchlist = :inWatchlist WHERE id = :mediaId")
+    suspend fun updateWatchlistStatus(mediaId: String, inWatchlist: Boolean)
+
     /** Marks Jikan filler sync as complete so it is never re-run. */
     @Query("UPDATE media SET jikanFillerSynced = 1 WHERE id = :mediaId")
     suspend fun markJikanSynced(mediaId: String)
@@ -218,6 +221,18 @@ interface EpisodeWatchedDao {
 
     @Query("SELECT watchedAt FROM episode_watched ORDER BY watchedAt DESC")
     suspend fun getAllWatchedTimestamps(): List<Long>
+
+    /**
+     * Efficiently marks all episodes of a show up to a certain absolute number as watched.
+     * Uses a subquery to find all episode IDs from the main 'episodes' table that match
+     * the criteria and inserts them into the 'episode_watched' tracking table.
+     */
+    @Query("""
+        INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
+        SELECT id, mediaId, :watchedAt FROM episodes
+        WHERE mediaId = :mediaId AND absoluteEpisodeNumber <= :latestWatchedEp
+    """)
+    suspend fun markAllPreviousAsWatched(mediaId: String, latestWatchedEp: Int, watchedAt: Long)
 }
 
 // ─── ReviewDao ───────────────────────────────────────────────────────────────

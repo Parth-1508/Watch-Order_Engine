@@ -8,31 +8,41 @@ import com.example.watchorderengine.data.prefs.LayoutStyle
 import com.example.watchorderengine.data.prefs.ThemeMode
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-/** Outcome of the Danger Zone "wipe my cloud graphs" action, surfaced to the UI as a one-shot result. */
-sealed interface WipeGraphsState {
-    data object Idle : WipeGraphsState
-    data object InProgress : WipeGraphsState
-    data object Success : WipeGraphsState
-    data class Failure(val message: String) : WipeGraphsState
+/** Outcome of the Danger Zone "wipe my cloud data" action, surfaced to the UI as a one-shot result. */
+sealed interface WipeAccountState {
+    data object Idle : WipeAccountState
+    data object InProgress : WipeAccountState
+    data object Success : WipeAccountState
+    data class Failure(val message: String) : WipeAccountState
+}
+
+sealed interface ChangePasswordState {
+    data object Idle : ChangePasswordState
+    data object Loading : ChangePasswordState
+    data object Success : ChangePasswordState
+    data class Error(val message: String) : ChangePasswordState
 }
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     val prefsRepository: UserPreferencesRepository,
-    private val watchOrderRepository: WatchOrderRepository,
     private val db: WatchOrderDatabase,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
     val themeMode: StateFlow<ThemeMode> = prefsRepository.themeMode
@@ -50,8 +60,11 @@ class SettingsViewModel @Inject constructor(
     val cloudSyncEnabled: StateFlow<Boolean> = prefsRepository.cloudSyncEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
-    private val _wipeGraphsState = MutableStateFlow<WipeGraphsState>(WipeGraphsState.Idle)
-    val wipeGraphsState: StateFlow<WipeGraphsState> = _wipeGraphsState.asStateFlow()
+    private val _wipeAccountState = MutableStateFlow<WipeAccountState>(WipeAccountState.Idle)
+    val wipeAccountState: StateFlow<WipeAccountState> = _wipeAccountState.asStateFlow()
+
+    private val _changePasswordState = MutableStateFlow<ChangePasswordState>(ChangePasswordState.Idle)
+    val changePasswordState: StateFlow<ChangePasswordState> = _changePasswordState.asStateFlow()
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { prefsRepository.setThemeMode(mode) }
@@ -75,12 +88,17 @@ class SettingsViewModel @Inject constructor(
 
     fun signOut() {
         viewModelScope.launch {
-            // 1. Reset onboarding flags and local taste profile
+            // 1. Reset local profile data
             prefsRepository.setTasteProfileCompleted(false)
             prefsRepository.setSelectedGenres(emptySet())
+            prefsRepository.updateUsername("Guest")
+            prefsRepository.updateAvatarUrl(null)
+            prefsRepository.updateStreak(0, 0)
+            
             // 2. Sign out from Firebase
             auth.signOut()
-            // 3. Clear local cache for security/privacy if desired
+            
+            // 3. Clear local cache for security/privacy
             withContext(Dispatchers.IO) {
                 db.clearAllTables()
             }
@@ -88,8 +106,30 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun changePassword(newPassword: String) {
-        val user = auth.currentUser ?: return
-        user.updatePassword(newPassword)
+        val user = auth.currentUser
+        if (user == null) {
+            _changePasswordState.value = ChangePasswordState.Error("User not logged in.")
+            return
+        }
+        
+        _changePasswordState.value = ChangePasswordState.Loading
+        user.updatePassword(newPassword).addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                _changePasswordState.value = ChangePasswordState.Success
+            } else {
+                val msg = task.exception?.message ?: "Failed to update password."
+                // Check if it's a "requires recent login" error
+                if (msg.contains("recent login", ignoreCase = true)) {
+                    _changePasswordState.value = ChangePasswordState.Error("Security check: Please log out and back in to change your password.")
+                } else {
+                    _changePasswordState.value = ChangePasswordState.Error(msg)
+                }
+            }
+        }
+    }
+
+    fun acknowledgePasswordResult() {
+        _changePasswordState.value = ChangePasswordState.Idle
     }
 
     fun clearCache() {
@@ -99,24 +139,56 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Danger Zone: permanently deletes every AI-generated graph this user
-     * has in Firestore, plus their progress on all of them. Irreversible —
-     * the UI must confirm with the user before calling this.
+     * Danger Zone: Permanently deletes all user data from Firestore AND local Room,
+     * then signs the user out.
      */
-    fun wipeAllCloudGraphs() {
+    fun wipeAllAccountData() {
         viewModelScope.launch {
-            _wipeGraphsState.value = WipeGraphsState.InProgress
-            val result = watchOrderRepository.deleteAllGeneratedUniverses()
-            _wipeGraphsState.value = if (result.isSuccess) {
-                WipeGraphsState.Success
-            } else {
-                WipeGraphsState.Failure(result.exceptionOrNull()?.message ?: "Unknown error.")
+            _wipeAccountState.value = WipeAccountState.InProgress
+            try {
+                val uid = auth.currentUser?.uid
+                if (uid != null) {
+                    // 1. Wipe Firestore data (Watchlist, Progress, Episodes, Profile)
+                    val collections = listOf("watchlist", "progress", "episode_progress", "profile")
+                    for (collection in collections) {
+                        val docs = firestore.collection("users").document(uid)
+                            .collection(collection).get().await()
+                        
+                        docs.documents.chunked(450).forEach { chunk ->
+                            val batch = firestore.batch()
+                            chunk.forEach { batch.delete(it.reference) }
+                            batch.commit().await()
+                        }
+                    }
+                    
+                    // Also delete the user root doc
+                    firestore.collection("users").document(uid).delete().await()
+                }
+
+                // 2. Clear local Room database
+                withContext(Dispatchers.IO) {
+                    db.clearAllTables()
+                }
+
+                // 3. Reset local preferences
+                prefsRepository.setTasteProfileCompleted(false)
+                prefsRepository.setSelectedGenres(emptySet())
+                prefsRepository.updateUsername("Guest")
+                prefsRepository.updateAvatarUrl(null)
+                prefsRepository.updateStreak(0, 0)
+
+                // 4. Sign out
+                auth.signOut()
+
+                _wipeAccountState.value = WipeAccountState.Success
+            } catch (e: Exception) {
+                _wipeAccountState.value = WipeAccountState.Failure(e.message ?: "Unknown error.")
             }
         }
     }
 
     /** Lets the UI dismiss/reset the one-shot result after it's been shown. */
     fun acknowledgeWipeResult() {
-        _wipeGraphsState.value = WipeGraphsState.Idle
+        _wipeAccountState.value = WipeAccountState.Idle
     }
 }

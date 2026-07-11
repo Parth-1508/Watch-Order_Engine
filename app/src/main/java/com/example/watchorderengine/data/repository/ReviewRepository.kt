@@ -174,7 +174,9 @@ class ReviewRepository @Inject constructor(
 
         val isAnime = media.genres.contains("Animation") || media.mediaCategory == "ANIME" || media.originalLanguage == "ja"
 
-        val localReviews = reviewDao.getReviewsForMedia(mediaId).map { it.toReviewItem() }
+        val userAvatar = userPrefs.avatarUrl.first()
+        val userName = userPrefs.username.first()
+        val localReviews = reviewDao.getReviewsForMedia(mediaId).map { it.toReviewItem(userName, userAvatar) }
         val externalReviews = mutableListOf<ReviewItem>()
 
         // 1. TMDB Reviews
@@ -182,10 +184,16 @@ class ReviewRepository @Inject constructor(
             val tmdbResponse = if (isMovie) tmdbApi.getMovieReviews(tmdbId) else tmdbApi.getTvReviews(tmdbId)
             if (tmdbResponse.isSuccessful) {
                 tmdbResponse.body()?.results?.map {
+                    val avatarPath = it.authorDetails?.avatarPath
+                    val avatarUrl = when {
+                        avatarPath.isNullOrEmpty() -> "https://ui-avatars.com/api/?name=${it.author}"
+                        avatarPath.startsWith("/") -> "https://image.tmdb.org/t/p/w200$avatarPath"
+                        else -> avatarPath
+                    }
                     ReviewItem(
                         id = "tmdb_${it.id}",
                         authorName = it.author,
-                        authorAvatarUrl = it.authorDetails?.avatarPath?.let { path -> TmdbConfig.buildImageUrl(path) },
+                        authorAvatarUrl = avatarUrl,
                         rating = it.authorDetails?.rating?.toFloat(), // TMDB is 1-10
                         reviewText = it.content,
                         source = ReviewSource.TMDB,
@@ -295,10 +303,10 @@ class ReviewRepository @Inject constructor(
         (localReviews + externalReviews).sortedByDescending { it.createdAt }
     }
 
-    private fun ReviewEntity.toReviewItem() = ReviewItem(
+    private fun ReviewEntity.toReviewItem(authorName: String, avatarUrl: String?) = ReviewItem(
         id = id,
-        authorName = "You",
-        authorAvatarUrl = null,
+        authorName = authorName,
+        authorAvatarUrl = avatarUrl,
         rating = rating,
         reviewText = reviewText,
         source = ReviewSource.LOCAL,

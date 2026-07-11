@@ -28,6 +28,17 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Deep Link for Password Reset & Success Redirect -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="watch-order-engine.firebaseapp.com" android:pathPrefix="/success" />
+                <data android:scheme="https" android:host="watch-order-engine.web.app" android:pathPrefix="/success" />
+                <data android:scheme="https" android:host="watch-order-engine.firebaseapp.com" android:pathPrefix="/__/auth/action" />
+                <data android:scheme="https" android:host="watch-order-engine.web.app" android:pathPrefix="/__/auth/action" />
+            </intent-filter>
         </activity>
     </application>
 

@@ -35,6 +35,7 @@ data class MediaEntity(
     val releaseYear: String = "",
     val trailerKey: String?,
     val originalLanguage: String? = null,
+    val inWatchlist: Boolean = false,
 
     /**
      * JSON-serialised `List<WatchProviderItem>`.

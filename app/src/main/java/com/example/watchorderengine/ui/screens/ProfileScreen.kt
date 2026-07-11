@@ -129,7 +129,7 @@ fun ProfileScreen(
                     ) {
                         Box(contentAlignment = Alignment.BottomEnd) {
                             AsyncImage(
-                                model = avatarUrl ?: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?crop=faces&fit=crop&w=200&h=200",
+                                model = avatarUrl ?: "https://ui-avatars.com/api/?name=${username.ifBlank { "User" }}&background=random&color=fff",
                                 contentDescription = "Profile Picture",
                                 modifier = Modifier
                                     .size(100.dp)
@@ -191,11 +191,20 @@ fun ProfileScreen(
                         }
                         
                         Text(
-                            text = "Level ${((stats?.totalEpisodesWatched ?: 0) / 50) + 1} Cinephile",
+                            text = if (viewModel.userEmail != null) "Level ${((stats?.totalEpisodesWatched ?: 0) / 50) + 1} Cinephile" else "Guest Account",
                             color = theme.accent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        
+                        viewModel.userEmail?.let { email ->
+                            Text(
+                                text = email,
+                                color = theme.textSecondary,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
                     }
                 }
             }

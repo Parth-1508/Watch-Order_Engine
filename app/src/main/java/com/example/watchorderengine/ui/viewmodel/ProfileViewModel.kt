@@ -35,6 +35,7 @@ class ProfileViewModel @Inject constructor(
 
     val username: StateFlow<String> = userPrefs.username
     val avatarUrl: StateFlow<String?> = userPrefs.avatarUrl
+    val userEmail: String? = auth.currentUser?.email
 
     private val _liveAverageRating = MutableStateFlow<Float?>(null)
     private var hasAttemptedSync = false

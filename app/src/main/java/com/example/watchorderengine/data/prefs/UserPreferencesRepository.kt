@@ -122,7 +122,10 @@ class UserPreferencesRepository(private val context: Context) {
         context.dataStore.edit { it[PreferencesKeys.USERNAME] = name }
     }
 
-    suspend fun updateAvatarUrl(url: String) {
-        context.dataStore.edit { it[PreferencesKeys.AVATAR_URL] = url }
+    suspend fun updateAvatarUrl(url: String?) {
+        context.dataStore.edit { 
+            if (url == null) it.remove(PreferencesKeys.AVATAR_URL)
+            else it[PreferencesKeys.AVATAR_URL] = url 
+        }
     }
 }

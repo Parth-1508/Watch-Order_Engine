@@ -22,7 +22,8 @@ class NavViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val reviewRepository: ReviewRepository,
     private val auth: FirebaseAuth,
-    private val connectivityObserver: ConnectivityObserver
+    private val connectivityObserver: ConnectivityObserver,
+    private val db: com.example.watchorderengine.data.db.WatchOrderDatabase
 ) : ViewModel() {
 
     val connectivityStatus: StateFlow<ConnectivityObserver.Status> = connectivityObserver.observe()
@@ -35,11 +36,35 @@ class NavViewModel @Inject constructor(
         }
     }
 
+    fun logout() {
+        auth.signOut()
+        viewModelScope.launch(Dispatchers.IO) {
+            db.clearAllTables()
+            // Reset local prefs as well to clear User A's data
+            userPrefs.setTasteProfileCompleted(false)
+            userPrefs.updateStreak(0, 0)
+            userPrefs.setSelectedGenres(emptySet())
+            userPrefs.updateUsername("Guest")
+            userPrefs.updateAvatarUrl(null)
+        }
+    }
+
     suspend fun getInitialRoute(): String {
-        val isLoggedIn = auth.currentUser != null
-        if (!isLoggedIn) return "login"
+        val user = auth.currentUser
+        
+        // 1. If not logged in at all, go to Login
+        if (user == null) return "login"
         
         val isTasteDone = userPrefs.isTasteProfileCompleted.first()
+
+        // 2. If the user is Anonymous and hasn't finished onboarding, 
+        // force them to the Login screen. This prevents "Ghost Guests" 
+        // from bypassing the sign-in choice.
+        if (user.isAnonymous && !isTasteDone) {
+            return "login"
+        }
+        
+        // 3. Otherwise, follow standard onboarding flow
         return if (!isTasteDone) "taste_profile_setup" else "home"
     }
 }

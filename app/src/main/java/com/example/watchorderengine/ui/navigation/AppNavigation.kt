@@ -50,6 +50,11 @@ sealed class Screen(val route: String) {
     object Profile            : Screen("profile")
     object Settings           : Screen("settings")
     object ImportList         : Screen("import_list")
+    object ManualReset        : Screen("manual_reset")
+    object ResetSuccess       : Screen("reset_success")
+    object ResetPassword      : Screen("reset-password?oobCode={oobCode}&all={all}") {
+        fun route(oobCode: String) = "reset-password?oobCode=$oobCode"
+    }
     object Detail    : Screen("detail/{mediaId}") {
         fun route(mediaId: String) = "detail/$mediaId"
     }
@@ -214,23 +219,23 @@ fun AppNavigation() {
             ) {
                 composable(Screen.Opening.route) {
                     OpeningScreen(
-                        onEnter = {
-                            scope.launch {
-                                val target = navViewModel.getInitialRoute()
-                                if (target != "login") {
-                                    navViewModel.syncDataOnLogin()
-                                }
-                                navController.navigate(target) {
-                                    popUpTo(Screen.Opening.route) { inclusive = true }
-                                }
+                    onEnter = {
+                        scope.launch {
+                            val target = navViewModel.getInitialRoute()
+                            if (target != "login") {
+                                navViewModel.syncDataOnLogin()
                             }
-                        },
-                        onSkip = {
-                            navController.navigate(Screen.Home.route) {
+                            navController.navigate(target) {
                                 popUpTo(Screen.Opening.route) { inclusive = true }
                             }
                         }
-                    )
+                    },
+                    onSkip = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Opening.route) { inclusive = true }
+                        }
+                    }
+                )
                 }
 
                 composable(Screen.Login.route) {
@@ -243,6 +248,12 @@ fun AppNavigation() {
                                     popUpTo(Screen.Login.route) { inclusive = true }
                                 }
                             }
+                        },
+                        onManualResetClick = {
+                            navController.navigate(Screen.ManualReset.route)
+                        },
+                        onCodeDetected = { code ->
+                            navController.navigate(Screen.ResetPassword.route(code))
                         }
                     )
                 }
@@ -332,6 +343,78 @@ fun AppNavigation() {
 
                 composable(Screen.ImportList.route) {
                     ImportListScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Screen.ManualReset.route) {
+                    ManualResetScreen(
+                        onCodeExtracted = { code ->
+                            navController.navigate(Screen.ResetPassword.route(code))
+                        },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(
+                    route = Screen.ResetSuccess.route,
+                    deepLinks = listOf(
+                        navDeepLink {
+                            uriPattern = "https://watch-order-engine.firebaseapp.com/success"
+                        },
+                        navDeepLink {
+                            uriPattern = "https://watch-order-engine.web.app/success"
+                        }
+                    )
+                ) {
+                    ResetSuccessScreen(
+                        onDone = {
+                            navController.navigate(Screen.Login.route) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+
+                composable(
+                    route = Screen.ResetPassword.route,
+                    arguments = listOf(
+                        navArgument("oobCode") { type = NavType.StringType; defaultValue = "" },
+                        navArgument("all") { type = NavType.StringType; defaultValue = "" }
+                    ),
+                    deepLinks = listOf(
+                        navDeepLink {
+                            uriPattern = "https://watch-order-engine.firebaseapp.com/__/auth/action?{all}"
+                        },
+                        navDeepLink {
+                            uriPattern = "https://watch-order-engine.web.app/__/auth/action?{all}"
+                        }
+                    )
+                ) { backStackEntry ->
+                    val oobCodeArg = backStackEntry.arguments?.getString("oobCode") ?: ""
+                    val allArg = backStackEntry.arguments?.getString("all") ?: ""
+                    
+                    val finalCode = if (oobCodeArg.isNotBlank()) oobCodeArg else {
+                        // Safe extraction: Decode nested 'link' parameter with null check
+                        val decodedUrl = try {
+                            if (allArg.contains("link=")) {
+                                allArg.substringAfter("link=").substringBefore("&")
+                                    .let { java.net.URLDecoder.decode(it, "UTF-8") }
+                            } else allArg
+                        } catch (e: Exception) { allArg }
+                        
+                        Regex("oobCode(?:=|%3D)([^&%\\s]+)").find(decodedUrl ?: "")?.groupValues?.get(1) ?: ""
+                    }
+                    
+                    ResetPasswordScreen(
+                        oobCode = finalCode,
+                        onSuccess = {
+                            navController.navigate(Screen.Login.route) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        },
+                        onBack = {
+                            navController.popBackStack()
+                        }
+                    )
                 }
 
                 composable(

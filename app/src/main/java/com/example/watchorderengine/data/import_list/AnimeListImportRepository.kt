@@ -74,7 +74,9 @@ class AnimeListImportRepository @Inject constructor(
                         userRating    = e.score?.let { if (it > 0) it.coerceIn(0.5f, 10f) else null },
                         progress      = e.progress ?: 0,
                         totalEpisodes = media?.episodes,
-                        source        = ImportedAnimeEntry.Source.ANILIST
+                        source        = ImportedAnimeEntry.Source.ANILIST,
+                        mediaCategory = if (media?.format == "MOVIE") com.example.watchorderengine.data.model.MediaCategory.MOVIE 
+                                        else com.example.watchorderengine.data.model.MediaCategory.TV_SHOW
                     )
                 } ?: emptyList()
             } ?: emptyList()
@@ -121,7 +123,11 @@ class AnimeListImportRepository @Inject constructor(
                         userRating    = if (score > 0) score.toFloat().coerceIn(0.5f, 10f) else null,
                         progress      = entry.listStatus.numEpisodesWatched,
                         totalEpisodes = null, // Jikan user list doesn't reliably give series total here
-                        source        = ImportedAnimeEntry.Source.MAL
+                        source        = ImportedAnimeEntry.Source.MAL,
+                        mediaCategory = when (entry.node.type?.lowercase()) {
+                            "movie" -> com.example.watchorderengine.data.model.MediaCategory.MOVIE
+                            else -> com.example.watchorderengine.data.model.MediaCategory.TV_SHOW
+                        }
                     )
                 )
             }
@@ -164,6 +170,8 @@ class AnimeListImportRepository @Inject constructor(
 
                 val existing = db.userProgressDao().getProgress(mediaId)
                 if (existing != null && !overwrite) {
+                    // Still ensure it's marked as being in watchlist if we have it
+                    db.mediaDao().updateWatchlistStatus(mediaId, true)
                     continue
                 }
 
@@ -201,7 +209,7 @@ class AnimeListImportRepository @Inject constructor(
                         Log.d(TAG, "Segmented show detected: marking season ${matchingSeason.seasonNumber} for '${entry.title}'")
                         mediaRepository.markSeasonAsWatched(mediaId, matchingSeason.seasonNumber)
                     } else {
-                        // Fallback to absolute episode marking
+                        // Optimized bulk marking
                         val upTo = if (entry.trackingState == TrackingState.COMPLETED) {
                             (entry.totalEpisodes ?: 0) + 1
                         } else {
@@ -214,6 +222,9 @@ class AnimeListImportRepository @Inject constructor(
                             mediaRepository.markAllAsWatched(mediaId)
                         }
                     }
+
+                    // Update parent show watchlist status
+                    db.mediaDao().updateWatchlistStatus(mediaId, true)
                 }
 
                 written++
@@ -228,18 +239,32 @@ class AnimeListImportRepository @Inject constructor(
 
     private suspend fun attemptDiscoveryAndCache(entry: ImportedAnimeEntry): String? {
         try {
-            val searchResponse = retry { tmdbApi.searchMulti(query = entry.title) }
-            if (!searchResponse.isSuccessful) return null
+            val isMovie = entry.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE
             
-            val results = searchResponse.body()?.results ?: return null
-            val bestMatch = results.firstOrNull { it.mediaType == "tv" } 
-                ?: results.firstOrNull { it.mediaType == "movie" }
-                ?: return null
+            val searchResponse = if (isMovie) {
+                retry { tmdbApi.searchMovie(query = entry.title) }
+            } else {
+                retry { tmdbApi.searchTv(query = entry.title) }
+            }
 
-            val type = bestMatch.mediaType ?: "tv"
+            if (!searchResponse.isSuccessful) {
+                Log.w(TAG, "TMDB search failed for '${entry.title}' (${entry.mediaCategory})")
+                return null
+            }
+            
+            val results = searchResponse.body()?.results ?: emptyList()
+            if (results.isEmpty()) {
+                Log.w(TAG, "No results found on TMDB for '${entry.title}' as ${entry.mediaCategory}")
+                return null
+            }
+
+            // Pick the best match. TMDB search results for specific types don't have mediaType field 
+            // always populated in the same way as searchMulti, so we infer it from isMovie.
+            val bestMatch = results.first()
+            val type = if (isMovie) "movie" else "tv"
             val mediaId = buildMediaId(bestMatch.id, type)
             
-            val genresList = TmdbConfig.genreNamesFor(bestMatch.genreIds ?: emptyList(), type == "movie")
+            val genresList = TmdbConfig.genreNamesFor(bestMatch.genreIds ?: emptyList(), isMovie)
             
             db.mediaDao().upsert(
                 MediaEntity(
@@ -251,14 +276,15 @@ class AnimeListImportRepository @Inject constructor(
                     overview = "", tagline = "", status = "",
                     posterUrl   = TmdbConfig.buildImageUrl(bestMatch.posterPath),
                     backdropUrl = TmdbConfig.buildImageUrl(bestMatch.backdropPath, TmdbConfig.PosterSize.HD),
-                    mediaCategory = if (type == "movie") "MOVIE" else "TV_SHOW",
+                    mediaCategory = if (isMovie) "MOVIE" else "TV_SHOW",
                     genres = genresList, ageRating = "NR",
                     voteAverage = bestMatch.voteAverage?.toFloat() ?: 0f, 
                     voteCount = bestMatch.voteCount ?: 0,
                     runtime = null, numberOfSeasons = null, numberOfEpisodes = null,
                     releaseDate = bestMatch.releaseDate ?: bestMatch.firstAirDate,
                     releaseYear = (bestMatch.releaseDate ?: bestMatch.firstAirDate)?.take(4) ?: "",
-                    trailerKey = null, castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
+                    trailerKey = null, castJson = "[]", recommendationsJson = "[]", arcsJson = "[]",
+                    inWatchlist = true
                 )
             )
             return mediaId
@@ -284,9 +310,16 @@ class AnimeListImportRepository @Inject constructor(
         }
         val cleanTitle = entry.title.trim().lowercase()
         val allMedia = db.mediaDao().getAll()
+        
+        // Strict match first
+        val strictMatch = allMedia.find { it.title.lowercase() == cleanTitle }
+        if (strictMatch != null) return strictMatch.id
+
+        // Category-aware fuzzy match
         val match = allMedia.firstOrNull {
-            it.title.lowercase().contains(cleanTitle) ||
-            cleanTitle.contains(it.title.lowercase())
+            val catMatch = it.mediaCategory == entry.mediaCategory.name
+            val titleMatch = it.title.lowercase().contains(cleanTitle) || cleanTitle.contains(it.title.lowercase())
+            catMatch && titleMatch
         }
         if (match != null) return match.id
         return null
@@ -308,6 +341,7 @@ class AnimeListImportRepository @Inject constructor(
                   title { english romaji }
                   coverImage { large }
                   episodes
+                  format
                 }
               }
             }
