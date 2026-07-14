@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -320,6 +321,9 @@ class ReviewRepository @Inject constructor(
         val malDeferred = async(Dispatchers.IO) {
             val mid = malIdToUse ?: return@async emptyList<ReviewItem>()
             try {
+                // Add a small delay to avoid hitting Jikan's 3 req/sec rate limit 
+                // if searchAnime was called just before.
+                delay(1200L)
                 val jikanResponse = jikanApi.getAnimeReviews(mid)
                 if (jikanResponse.isSuccessful) {
                     jikanResponse.body()?.data?.map {
@@ -337,9 +341,13 @@ class ReviewRepository @Inject constructor(
                             emojiReaction = getEmojiForRating(rating)
                         )
                     } ?: emptyList()
-                } else emptyList()
+                } else {
+                    Log.w("ReviewRepo", "MAL Reviews failed: ${jikanResponse.code()} for $mid")
+                    emptyList()
+                }
             } catch (e: Exception) {
-                Log.e("ReviewRepo", "MAL error", e); emptyList()
+                Log.e("ReviewRepo", "MAL Reviews error for $mid", e)
+                emptyList()
             }
         }
 
