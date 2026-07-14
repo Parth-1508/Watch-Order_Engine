@@ -393,35 +393,47 @@ private fun TimelineHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = theme.textPrimary)
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f, fill = false)) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Column {
                 Text(
                     universeName,
                     color = theme.textPrimary,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Black,
                     fontSize = 18.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text("Progress Tracker", color = theme.textSecondary, fontSize = 10.sp)
+                Text("SKILL TREE", color = theme.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             }
         }
         
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically, 
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(end = 8.dp)
+        ) {
             Box {
-                IconButton(
+                Surface(
                     onClick = { showShareMenu = true },
-                    modifier = Modifier.size(36.dp).background(theme.surface, CircleShape)
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = theme.surface,
+                    border = BorderStroke(1.dp, theme.border.copy(alpha = 0.1f)),
+                    tonalElevation = 2.dp
                 ) {
-                    Icon(Icons.Default.Share, "Share", tint = theme.accent, modifier = Modifier.size(18.dp))
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Share, "Share", tint = theme.accent, modifier = Modifier.size(20.dp))
+                    }
                 }
 
                 DropdownMenu(
@@ -454,19 +466,25 @@ private fun TimelineHeader(
                 }
             }
 
-            IconButton(
+            Surface(
                 onClick = onSpoilerToggle,
-                modifier = Modifier.size(36.dp).background(
-                    if (spoilerEnabled) theme.statusMixed.copy(alpha = 0.2f) else theme.surface, 
-                    CircleShape
-                )
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = if (spoilerEnabled) theme.statusMixed.copy(alpha = 0.15f) else theme.surface,
+                border = BorderStroke(
+                    width = 1.dp, 
+                    color = if (spoilerEnabled) theme.statusMixed.copy(alpha = 0.5f) else theme.border.copy(alpha = 0.1f)
+                ),
+                tonalElevation = 2.dp
             ) {
-                Icon(
-                    if (spoilerEnabled) Icons.Default.VisibilityOff else Icons.Default.Visibility, 
-                    null, 
-                    tint = if (spoilerEnabled) theme.statusMixed else theme.textSecondary,
-                    modifier = Modifier.size(18.dp)
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (spoilerEnabled) Icons.Default.VisibilityOff else Icons.Default.Visibility, 
+                        contentDescription = "Toggle Spoilers", 
+                        tint = if (spoilerEnabled) theme.statusMixed else theme.textSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }

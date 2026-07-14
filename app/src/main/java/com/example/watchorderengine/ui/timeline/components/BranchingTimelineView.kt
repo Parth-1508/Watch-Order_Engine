@@ -1,5 +1,6 @@
 package com.example.watchorderengine.ui.timeline.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -13,14 +14,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.watchorderengine.data.graph.GraphEngine
-import com.example.watchorderengine.ui.theme.WatchOrderColors
 import com.example.watchorderengine.viewmodel.DisplayNode
 import com.example.watchorderengine.viewmodel.TimelineRow
 
@@ -58,10 +60,19 @@ fun BranchingTimelineView(
 
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(ZOOM_MIN, ZOOM_MAX)
-        offset += panChange
+        
+        // Pan with scale-awareness and dampen it slightly for comfort
+        val newOffset = offset + (panChange * scale)
+        
+        // Basic bounding box to prevent total loss of context
+        // This is a naive clamp but prevents hexagons from flying away to infinity
+        offset = Offset(
+            x = newOffset.x.coerceIn(-2000f * scale, 2000f * scale),
+            y = newOffset.y.coerceIn(-2000f * scale, 2000f * scale)
+        )
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().clipToBounds()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -152,11 +163,13 @@ private fun ZoomControls(
     onReset: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = com.example.watchorderengine.ui.theme.LocalAppTheme.current
     Surface(
         modifier  = modifier,
         shape     = RoundedCornerShape(14.dp),
-        color     = WatchOrderColors.ElevatedSurface.copy(alpha = 0.92f),
-        tonalElevation = 4.dp
+        color     = theme.surface.copy(alpha = 0.95f),
+        border    = BorderStroke(1.dp, theme.border.copy(alpha = 0.2f)),
+        tonalElevation = 8.dp
     ) {
         Column(
             modifier            = Modifier.padding(4.dp),
@@ -166,50 +179,51 @@ private fun ZoomControls(
             IconButton(
                 onClick  = onZoomIn,
                 enabled  = scale < ZOOM_MAX,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(40.dp)
             ) {
                 Icon(
                     Icons.Default.Add,
                     contentDescription = "Zoom in",
-                    tint     = if (scale < ZOOM_MAX) WatchOrderColors.TextPrimary else WatchOrderColors.TextSecondary,
-                    modifier = Modifier.size(18.dp)
+                    tint     = if (scale < ZOOM_MAX) theme.textPrimary else theme.textSecondary.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
             Text(
                 text     = "${(scale * 100).toInt()}%",
-                color    = WatchOrderColors.TextSecondary,
-                style    = androidx.compose.material3.MaterialTheme.typography.labelSmall
+                color    = theme.accent,
+                style    = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold
             )
 
             IconButton(
                 onClick  = onZoomOut,
                 enabled  = scale > ZOOM_MIN,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(40.dp)
             ) {
                 Icon(
                     Icons.Default.Remove,
                     contentDescription = "Zoom out",
-                    tint     = if (scale > ZOOM_MIN) WatchOrderColors.TextPrimary else WatchOrderColors.TextSecondary,
-                    modifier = Modifier.size(18.dp)
+                    tint     = if (scale > ZOOM_MIN) theme.textPrimary else theme.textSecondary.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
             HorizontalDivider(
-                modifier  = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                color     = WatchOrderColors.CardBorder,
-                thickness = 0.5.dp
+                modifier  = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                color     = theme.border.copy(alpha = 0.1f),
+                thickness = 1.dp
             )
 
             IconButton(
                 onClick  = onReset,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(40.dp)
             ) {
                 Icon(
                     Icons.Default.CenterFocusStrong,
                     contentDescription = "Reset view",
-                    tint     = WatchOrderColors.AccentGold,
-                    modifier = Modifier.size(18.dp)
+                    tint     = theme.accent,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -266,10 +280,11 @@ private fun ConnectorStrip(
     columnGapPx: Float,
     modifier: Modifier = Modifier
 ) {
-    val colorCompleted  = WatchOrderColors.ConnectorActive
-    val colorPending    = WatchOrderColors.ConnectorIdle
-    val colorDotActive  = WatchOrderColors.CompletedGreen
-    val colorDotIdle    = WatchOrderColors.CardBorder
+    val theme = com.example.watchorderengine.ui.theme.LocalAppTheme.current
+    val colorCompleted  = theme.accent
+    val colorPending    = theme.textSecondary.copy(alpha = 0.3f)
+    val colorDotActive  = theme.statusCanon
+    val colorDotIdle    = theme.border.copy(alpha = 0.2f)
 
     Canvas(modifier = modifier) {
         if (totalColumns == 0) return@Canvas

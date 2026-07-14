@@ -52,6 +52,9 @@ class CommunityViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _selectedTag = MutableStateFlow<String?>(null)
+    val selectedTag: StateFlow<String?> = _selectedTag.asStateFlow()
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
@@ -86,7 +89,7 @@ class CommunityViewModel @Inject constructor(
                 .collect { result ->
                     result.onSuccess { posts ->
                         allPosts = posts
-                        filterPosts(_searchQuery.value)
+                        filterPosts(_searchQuery.value, _selectedTag.value)
                     }.onFailure { e ->
                         _uiState.value = CommunityUiState.Error(e.message ?: "Failed to load the community feed.")
                     }
@@ -96,20 +99,31 @@ class CommunityViewModel @Inject constructor(
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
-        filterPosts(query)
+        filterPosts(query, _selectedTag.value)
     }
 
-    private fun filterPosts(query: String) {
-        if (query.isBlank()) {
-            _uiState.value = CommunityUiState.Success(allPosts)
-        } else {
-            val filtered = allPosts.filter { 
+    fun selectTag(tag: String?) {
+        _selectedTag.value = tag
+        filterPosts(_searchQuery.value, tag)
+    }
+
+    private fun filterPosts(query: String, tag: String?) {
+        var filtered = allPosts
+        
+        if (tag != null) {
+            filtered = filtered.filter { it.tags.contains(tag) }
+        }
+        
+        if (query.isNotBlank()) {
+            filtered = filtered.filter { 
                 it.universeTitle.contains(query, ignoreCase = true) || 
                 it.universeDescription.contains(query, ignoreCase = true) ||
-                it.authorName.contains(query, ignoreCase = true)
+                it.authorName.contains(query, ignoreCase = true) ||
+                it.tags.any { t -> t.contains(query, ignoreCase = true) }
             }
-            _uiState.value = CommunityUiState.Success(filtered)
         }
+        
+        _uiState.value = CommunityUiState.Success(filtered)
     }
 
     fun refreshFeed() {

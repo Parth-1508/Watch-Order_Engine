@@ -58,6 +58,9 @@ data class CommunityPost(
 
     /** System.currentTimeMillis() at creation. Used for feed sort order. */
     var timestamp: Long = 0L,
+
+    var tags: List<String> = emptyList(),
+    var isOfficial: Boolean = false,
 )
 
 // ─── Shared graph payload envelope ─────────────────────────────────────────────

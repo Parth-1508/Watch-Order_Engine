@@ -70,6 +70,7 @@ fun CommunityScreen(
     val importState   by viewModel.importState.collectAsStateWithLifecycle()
     val selectedPost  by viewModel.selectedPost.collectAsStateWithLifecycle()
     val searchQuery   by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedTag   by viewModel.selectedTag.collectAsStateWithLifecycle()
     
     val currentUserId = viewModel.currentUserId
     val listState     = rememberLazyListState()
@@ -120,11 +121,8 @@ fun CommunityScreen(
                     // 2. Quick Tags / Filters
                     item { 
                         TrendingTagsSection(
-                            selectedTag = searchQuery,
-                            onTagClick = { tag -> 
-                                if (searchQuery == tag) viewModel.onSearchQueryChanged("")
-                                else viewModel.onSearchQueryChanged(tag)
-                            }
+                            selectedTag = selectedTag,
+                            onTagClick = { viewModel.selectTag(it) }
                         ) 
                     }
 
@@ -301,12 +299,23 @@ fun HeroPostCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        "by ${post.authorName}",
-                        color = theme.accent.copy(alpha = 0.8f),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (post.isOfficial) {
+                        Surface(color = theme.accent, shape = RoundedCornerShape(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                            Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Verified, null, tint = Color.White, modifier = Modifier.size(10.dp))
+                                Spacer(Modifier.width(3.dp))
+                                Text("CREATED BY WOE", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White)
+                            }
+                        }
+                    } else {
+                        Text(
+                            "by ${post.authorName}",
+                            color = theme.accent.copy(alpha = 0.8f),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 // Big Like Button for Hero
@@ -476,8 +485,8 @@ fun DiscussionHubSection() {
 
 @Composable
 fun TrendingTagsSection(
-    selectedTag: String,
-    onTagClick: (String) -> Unit
+    selectedTag: String?,
+    onTagClick: (String?) -> Unit
 ) {
     val theme = LocalAppTheme.current
     val tags = listOf("Marvel", "Star Wars", "DC Universe", "Anime", "Horror", "Sci-Fi", "Game of Thrones")
@@ -490,7 +499,7 @@ fun TrendingTagsSection(
             val isSelected = selectedTag.equals(tag, ignoreCase = true)
             FilterChip(
                 selected = isSelected,
-                onClick = { onTagClick(tag) },
+                onClick = { onTagClick(if (isSelected) null else tag) },
                 label = { Text(tag, fontSize = 12.sp) },
                 colors = FilterChipDefaults.filterChipColors(
                     containerColor = Color.Transparent,
@@ -609,35 +618,44 @@ fun CommunityPostCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val isOfficial = post.userId == "woe_admin"
+                    if (!post.isOfficial) {
+                        Text(
+                            "by ${post.authorName}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = theme.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.width(12.dp))
+                    }
                     
-                    Text(
-                        if (isOfficial) "Watch Order Engine" else "by ${post.authorName}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isOfficial) theme.accent else theme.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = if (isOfficial) FontWeight.Bold else FontWeight.Normal
-                    )
-                    
-                    if (isOfficial) {
-                        Spacer(Modifier.width(8.dp))
+                    if (post.isOfficial) {
                         Surface(
-                            color = theme.accent.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(4.dp),
-                            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.5f))
+                            color = theme.accent, 
+                            shape = RoundedCornerShape(4.dp)
                         ) {
-                            Text(
-                                "Created by WOE",
-                                color = theme.accent,
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Black,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Verified, 
+                                    contentDescription = null, 
+                                    tint = Color.White, 
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Spacer(Modifier.width(3.dp))
+                                Text(
+                                    "CREATED BY WOE", 
+                                    fontSize = 8.sp, 
+                                    fontWeight = FontWeight.Black, 
+                                    color = Color.White
+                                )
+                            }
                         }
+                        Spacer(Modifier.width(12.dp))
                     }
 
-                    Spacer(Modifier.width(12.dp))
                     Icon(
                         imageVector = Icons.Default.Favorite,
                         contentDescription = null,
@@ -752,12 +770,23 @@ fun CommunityPostDetailSheet(
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                "shared by ${post.authorName}",
-                                color = theme.accent,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
+                            if (post.isOfficial) {
+                                Surface(color = theme.accent, shape = RoundedCornerShape(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                                    Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Verified, null, tint = Color.White, modifier = Modifier.size(10.dp))
+                                        Spacer(Modifier.width(3.dp))
+                                        Text("CREATED BY WOE", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White)
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    "shared by ${post.authorName}",
+                                    color = theme.accent,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     }
                     

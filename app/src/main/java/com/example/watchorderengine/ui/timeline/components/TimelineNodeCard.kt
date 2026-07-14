@@ -25,7 +25,6 @@ import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.MediaCategory
 import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.data.cache.TmdbFetchState
-import com.example.watchorderengine.ui.theme.WatchOrderColors
 import com.example.watchorderengine.viewmodel.DisplayNode
 
 val HexagonShape = object : Shape {
@@ -55,6 +54,7 @@ fun TimelineNodeCard(
     onCardClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val theme = com.example.watchorderengine.ui.theme.LocalAppTheme.current
     val node = displayNode.node
     val metadata = displayNode.metadata
 
@@ -66,9 +66,9 @@ fun TimelineNodeCard(
     )
 
     val borderColor = when {
-        displayNode.isCompleted      -> WatchOrderColors.CompletedGreen
-        displayNode.isSpoilerBlurred -> WatchOrderColors.SpoilerPurple.copy(alpha = 0.5f)
-        else                         -> WatchOrderColors.CardBorder.copy(alpha = 0.3f)
+        displayNode.isCompleted      -> theme.statusCanon
+        displayNode.isSpoilerBlurred -> theme.statusMixed.copy(alpha = 0.5f)
+        else                         -> theme.border.copy(alpha = 0.3f)
     }
 
     val spoilerModifier: Modifier = if (displayNode.isSpoilerBlurred) {
@@ -116,11 +116,11 @@ fun TimelineNodeCard(
                     }
                     close()
                 }
-                drawPath(path, color = WatchOrderColors.CardSurface)
+                drawPath(path, color = theme.surface)
                 drawPath(path, color = borderColor, style = Stroke(width = 2.dp.toPx()))
 
                 if (displayNode.isCompleted) {
-                    drawPath(path, color = WatchOrderColors.CompletedGreen.copy(alpha = 0.1f))
+                    drawPath(path, color = theme.statusCanon.copy(alpha = 0.1f))
                 }
             }
 
@@ -128,7 +128,7 @@ fun TimelineNodeCard(
                 modifier = Modifier
                     .size(72.dp)
                     .clip(HexagonShape)
-                    .background(WatchOrderColors.ElevatedSurface)
+                    .background(theme.surfaceHover)
                     .then(spoilerModifier),
                 contentAlignment = Alignment.Center
             ) {
@@ -142,13 +142,13 @@ fun TimelineNodeCard(
                         )
                     }
                     is TmdbFetchState.Loading -> {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = WatchOrderColors.AccentGold)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = theme.accent)
                     }
                     else -> {
                         Icon(
                             imageVector = node.type.icon(),
                             contentDescription = null,
-                            tint = WatchOrderColors.AccentBlue.copy(alpha = 0.5f),
+                            tint = theme.accent.copy(alpha = 0.5f),
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -159,14 +159,14 @@ fun TimelineNodeCard(
                 Icon(
                     Icons.Default.Lock,
                     null,
-                    tint = WatchOrderColors.SpoilerPurple,
+                    tint = theme.statusMixed,
                     modifier = Modifier.size(20.dp)
                 )
             } else if (displayNode.isCompleted) {
                 Icon(
                     Icons.Default.CheckCircle,
                     null,
-                    tint = WatchOrderColors.CompletedGreen,
+                    tint = theme.statusCanon,
                     modifier = Modifier.align(Alignment.BottomEnd).size(20.dp).offset(x = 8.dp, y = 8.dp)
                 )
             }
@@ -186,7 +186,7 @@ fun TimelineNodeCard(
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 4,
                 overflow = TextOverflow.Visible,
-                color = if (displayNode.isCompleted) WatchOrderColors.TextPrimary else WatchOrderColors.TextSecondary,
+                color = if (displayNode.isCompleted) theme.textPrimary else theme.textSecondary,
                 modifier = Modifier.padding(horizontal = 2.dp),
                 textAlign = TextAlign.Center,
                 fontSize = 9.sp,
@@ -201,15 +201,16 @@ fun TimelineNodeCard(
 /** A small pill-shaped badge showing which phase/arc this node belongs to. */
 @Composable
 private fun PhaseBadge(phase: String) {
+    val theme = com.example.watchorderengine.ui.theme.LocalAppTheme.current
     Surface(
         shape = RoundedCornerShape(4.dp),
-        color = WatchOrderColors.ElevatedSurface,
+        color = theme.surface,
         tonalElevation = 0.dp,
     ) {
         Text(
             text = phase,
             style = MaterialTheme.typography.labelSmall,
-            color = WatchOrderColors.TextSecondary,
+            color = theme.textSecondary,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
