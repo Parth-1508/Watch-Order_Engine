@@ -552,6 +552,8 @@ private fun ReviewItemSmall(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(Modifier.width(4.dp))
+                    Text(review.emojiReaction, fontSize = 10.sp)
                 }
                 if (review.reviewText.isNotBlank()) {
                     Text(

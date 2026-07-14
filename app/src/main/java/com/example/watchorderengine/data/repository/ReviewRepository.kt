@@ -16,6 +16,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.toObject
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -51,6 +52,12 @@ class ReviewRepository @Inject constructor(
             .map { snapshot ->
                 snapshot.documents.mapNotNull { it.toObject<ReviewDocument>()?.toReviewItem() }
             }
+
+    fun observeReviewsByUser(userId: String): Flow<List<ReviewEntity>> =
+        reviewDao.observeReviewsByUser(userId)
+
+    fun observeGlobalAverageRating(): Flow<Float?> =
+        reviewDao.observeGlobalAverageRating()
 
     suspend fun submitReview(
         mediaId: String,
@@ -172,14 +179,18 @@ class ReviewRepository @Inject constructor(
 
     suspend fun getAggregatedReviews(mediaId: String): List<ReviewItem> = withContext(Dispatchers.IO) {
         val media = mediaDao.getById(mediaId) ?: return@withContext emptyList()
-        val isMovie = media.mediaCategory == "MOVIE"
+        val category = media.mediaCategory.uppercase()
+        val isMovie = category == "MOVIE" || category == "SHORT"
         val tmdbId = media.tmdbId
         
         // Resolve IDs
         var anilistId = media.anilistId
         var malIdToUse: Int? = null
 
-        val isAnime = media.genres.contains("Animation") || media.mediaCategory == "ANIME" || media.originalLanguage == "ja"
+        // Lenient Anime check: Animation genre OR Japanese origin OR Category ANIME
+        val isAnime = media.genres.contains("Animation") || 
+                     media.mediaCategory == "ANIME" || 
+                     media.originalLanguage == "ja"
 
         val userAvatar = userPrefs.avatarUrl.first()
         val userName = userPrefs.username.first()
@@ -213,19 +224,20 @@ class ReviewRepository @Inject constructor(
                     )
                 }?.let { externalReviews.addAll(it) }
             }
-        } catch (e: Exception) { /* ignore */ }
+        } catch (e: Exception) {
+            Log.e("ReviewRepo", "TMDB Reviews error for $tmdbId", e)
+        }
 
-        // 2. Resolve AniList/MAL IDs if missing and it's an anime
+        // 2. Resolve AniList/MAL IDs if it's potentially an anime
         if (isAnime) {
+            val cleanTitle = media.title.replace(Regex("\\(\\d{4}\\)"), "")
+                .replace(Regex("\\[.*?\\]"), "")
+                .trim()
+
             if (anilistId == null) {
                 try {
-                    // Clean title for search (remove years like (2023))
-                    val cleanTitle = media.title.replace(Regex("\\(\\d{4}\\)"), "")
-                        .replace(Regex("\\[.*?\\]"), "")
-                        .trim()
-                    
                     val searchBody = AnilistRequest(
-                        query = "query(${'$'}search: String) { Media(search: ${'$'}search, type: ANIME) { id idMal title { romaji english } } }",
+                        query = "query(${'$'}search: String) { Media(search: ${'$'}search, type: ANIME) { id idMal } }",
                         variables = mapOf("search" to cleanTitle)
                     )
                     val resp = anilistApi.query(searchBody)
@@ -234,25 +246,27 @@ class ReviewRepository @Inject constructor(
                         if (aniMedia != null) {
                             anilistId = aniMedia.id
                             malIdToUse = aniMedia.idMal
-                            
-                            // Persist discovered IDs for future use
                             db.mediaDao().upsert(media.copy(anilistId = anilistId))
                         }
                     }
                 } catch (e: Exception) { /* ignore */ }
+            } else {
+                // We have anilistId, check if we can get idMal if it's missing
+                try {
+                    val query = "query(${'$'}id: Int) { Media(id: ${'$'}id) { idMal } }"
+                    val resp = anilistApi.query(AnilistRequest(query, mapOf("id" to anilistId)))
+                    if (resp.isSuccessful) malIdToUse = resp.body()?.data?.media?.idMal
+                } catch (e: Exception) {}
             }
             
-            if (malIdToUse == null && media.anilistId != null) {
-                 // Try fetching malId specifically if we have anilistId but not malId
-                 try {
-                     val query = "query(${'$'}id: Int) { Media(id: ${'$'}id) { idMal } }"
-                     val resp = anilistApi.query(AnilistRequest(query, mapOf("id" to media.anilistId)))
-                     if (resp.isSuccessful) malIdToUse = resp.body()?.data?.media?.idMal
-                 } catch (e: Exception) {}
-            }
-
+            // Tertiary Fallback: Jikan Search
             if (malIdToUse == null) {
-                malIdToUse = media.id.substringAfterLast("_").toIntOrNull()
+                try {
+                    val jikanSearch = jikanApi.searchAnime(cleanTitle)
+                    if (jikanSearch.isSuccessful) {
+                        malIdToUse = jikanSearch.body()?.data?.firstOrNull()?.malId
+                    }
+                } catch (e: Exception) { /* ignore */ }
             }
         }
 
@@ -291,7 +305,9 @@ class ReviewRepository @Inject constructor(
                         )
                     }?.let { externalReviews.addAll(it) }
                 }
-            } catch (e: Exception) { /* ignore */ }
+            } catch (e: Exception) {
+                Log.e("ReviewRepo", "AniList Reviews error for $anilistId", e)
+            }
         }
 
         // 4. MAL (Jikan) Reviews
@@ -308,14 +324,23 @@ class ReviewRepository @Inject constructor(
                             reviewText = it.review,
                             source = ReviewSource.MAL,
                             createdAt = try { 
-                                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).parse(it.date)?.time ?: 0L
-                            } catch (e: Exception) { 0L },
+                                // MAL dates can be ISO 8601 or simple strings. Try ISO first.
+                                val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+                                sdf.parse(it.date)?.time ?: 0L
+                            } catch (e: Exception) {
+                                // Fallback: just use current time or try a simpler format if needed
+                                System.currentTimeMillis() 
+                            },
                             hasSpoilers = it.isSpoiler,
                             externalUrl = it.url
                         )
                     }?.let { externalReviews.addAll(it) }
+                } else {
+                    Log.w("ReviewRepo", "MAL Reviews failed: ${jikanResponse.code()} for $malIdToUse")
                 }
-            } catch (e: Exception) { /* ignore */ }
+            } catch (e: Exception) {
+                Log.e("ReviewRepo", "MAL Reviews error for $malIdToUse", e)
+            }
         }
 
         (localReviews + externalReviews).sortedByDescending { it.createdAt }

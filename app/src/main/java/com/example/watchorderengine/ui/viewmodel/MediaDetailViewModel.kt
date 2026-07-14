@@ -151,19 +151,26 @@ class MediaDetailViewModel @Inject constructor(
         reviewsJob = viewModelScope.launch {
             _isReviewsLoading.value = true
             try {
-                // Combine real-time GLOBAL Firestore flow with one-time external fetch
-                val globalFlow = reviewRepository.observeReviewsForMedia(mediaId)
-                
-                // Fetch external reviews once per detail load
-                val externalAgg = reviewRepository.getAggregatedReviews(mediaId)
-                    .filter { it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL }
-                
-                globalFlow.collect { globalReviews ->
-                    // Re-merge global (Firestore) into aggregated
-                    _aggregatedReviews.value = (globalReviews + externalAgg).sortedByDescending { it.createdAt }
-                    _isReviewsLoading.value = false
+                // 1. Initial comprehensive fetch (includes Local DB + External APIs like TMDB/MAL)
+                val initialAggregated = reviewRepository.getAggregatedReviews(mediaId)
+                _aggregatedReviews.value = initialAggregated
+                _isReviewsLoading.value = false
+
+                // 2. Real-time GLOBAL Firestore observation for Engine-specific reviews
+                // We keep the external reviews from step 1 and just refresh the Engine reviews from Firestore
+                reviewRepository.observeReviewsForMedia(mediaId).collect { globalReviews ->
+                    // Always re-fetch external reviews if our current set is too small or missing them
+                    // but usually keeping them from the initial fetch is enough and more performant.
+                    val currentExternal = _aggregatedReviews.value.filter { 
+                        it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL 
+                    }.ifEmpty { 
+                        initialAggregated.filter { it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL }
+                    }
+                    
+                    _aggregatedReviews.value = (globalReviews + currentExternal).sortedByDescending { it.createdAt }
                 }
             } catch (e: Exception) {
+                android.util.Log.e("MediaDetailVM", "Error observing reviews", e)
                 _isReviewsLoading.value = false
             }
         }

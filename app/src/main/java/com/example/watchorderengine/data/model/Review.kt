@@ -83,6 +83,7 @@ fun ReviewEntity.toFirestoreDocument(authorName: String, authorAvatarUrl: String
         watchedDate    = watchedDate?.let { sdf.format(Date(it)) },
         authorName      = authorName,
         authorAvatarUrl = authorAvatarUrl,
+        emojiReaction   = emojiReaction
     )
 }
 
@@ -101,6 +102,7 @@ fun ReviewDocument.toRoomEntity(): ReviewEntity {
         createdAt   = createdAt?.toDate()?.time ?: System.currentTimeMillis(),
         updatedAt   = updatedAt?.toDate()?.time ?: System.currentTimeMillis(),
         isSynced    = true,
+        emojiReaction = emojiReaction
     )
 }
 

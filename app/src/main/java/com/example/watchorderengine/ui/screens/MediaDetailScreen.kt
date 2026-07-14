@@ -843,6 +843,7 @@ private fun SourceBadge(source: com.example.watchorderengine.data.model.ReviewSo
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReviewSubmissionDialog(
     onDismiss: () -> Unit,
@@ -853,72 +854,81 @@ private fun ReviewSubmissionDialog(
     var text by remember { mutableStateOf("") }
     var hasSpoilers by remember { mutableStateOf(false) }
     
-    val emojiOptions = listOf(
-        "🤬" to 1f, // Sad/Angry
-        "😐" to 4f, // Neutral
-        "🙂" to 7f, // Happy
-        "🤩" to 10f // Star Eyes
+    val ratingEmojis = listOf(
+        "🤬", // 1
+        "😡", // 2
+        "☹️", // 3
+        "😐", // 4
+        "🤨", // 5
+        "🙂", // 6
+        "😊", // 7
+        "🤩", // 8
+        "😍", // 9
+        "🤯"  // 10
     )
-    var selectedEmoji by remember { mutableStateOf(emojiOptions[2]) } // Happy as default
+    
+    val emojiLabels = listOf(
+        "Horrible", "Bad", "Poor", "Meh", "Hmm", 
+        "Okay", "Good", "Great", "Amazing", "Masterpiece"
+    )
+
+    val currentEmojiIndex = (rating.toInt() - 1).coerceIn(0, 9)
+    val currentEmoji = ratingEmojis[currentEmojiIndex]
+    val currentLabel = emojiLabels[currentEmojiIndex]
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = theme.surface,
         title = { Text("Write a Review", fontWeight = FontWeight.Black) },
         text = {
-            Column {
-                Text("How was your experience?", fontSize = 12.sp, color = Color.Gray)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Drag to rate your experience", fontSize = 12.sp, color = Color.Gray)
+                
+                Spacer(Modifier.height(24.dp))
+                
+                // Emoji and Label Display
+                Text(currentEmoji, fontSize = 48.sp)
+                Text(
+                    text = currentLabel,
+                    color = theme.accent,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
                 Spacer(Modifier.height(16.dp))
                 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    emojiOptions.forEach { (emoji, value) ->
-                        val isSelected = selectedEmoji.first == emoji
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) theme.accent.copy(alpha = 0.2f) else Color.Transparent)
-                                .clickable { 
-                                    selectedEmoji = emoji to value
-                                    rating = value
-                                }
-                                .padding(8.dp)
-                        ) {
-                            Text(emoji, fontSize = if (isSelected) 32.sp else 24.sp)
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = when(emoji) {
-                                    "🤬" -> "Sad"
-                                    "😐" -> "Meh"
-                                    "🙂" -> "Happy"
-                                    else -> "Loved"
-                                },
-                                color = if (isSelected) theme.accent else Color.Gray,
-                                fontSize = 10.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    }
-                }
-                
-                Spacer(Modifier.height(16.dp))
-                
-                // Keep the slider for fine-tuning but let emoji set the base
                 Slider(
                     value = rating,
                     onValueChange = { rating = it },
                     valueRange = 1f..10f,
-                    steps = 17,
-                    colors = SliderDefaults.colors(thumbColor = theme.accent, activeTrackColor = theme.accent)
+                    steps = 8,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.Transparent,
+                        activeTrackColor = theme.accent,
+                        inactiveTrackColor = theme.textSecondary.copy(alpha = 0.2f)
+                    ),
+                    thumb = {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color.White, CircleShape)
+                                .border(2.dp, theme.accent, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(currentEmoji, fontSize = 20.sp)
+                        }
+                    }
                 )
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    Text("${String.format("%.1f", rating)} / 10", fontWeight = FontWeight.Bold, color = theme.accent)
-                }
                 
-                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "${String.format("%.1f", rating)} / 10", 
+                    fontWeight = FontWeight.Black, 
+                    color = theme.textPrimary,
+                    fontSize = 16.sp
+                )
+                
+                Spacer(Modifier.height(24.dp))
                 
                 OutlinedTextField(
                     value = text,
@@ -934,7 +944,10 @@ private fun ReviewSubmissionDialog(
                 )
                 Text("${text.length}/2000", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.align(Alignment.End))
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Checkbox(
                         checked = hasSpoilers,
                         onCheckedChange = { hasSpoilers = it },
@@ -945,7 +958,7 @@ private fun ReviewSubmissionDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSubmit(rating, text, hasSpoilers, selectedEmoji.first) }) {
+            TextButton(onClick = { onSubmit(rating, text, hasSpoilers, currentEmoji) }) {
                 Text("Submit", fontWeight = FontWeight.Bold, color = theme.accent)
             }
         },
