@@ -122,7 +122,26 @@ class CommunityViewModel @Inject constructor(
         var filtered = allPosts
         
         if (tag != null) {
-            filtered = filtered.filter { it.tags.contains(tag) }
+            val tagLower = tag.lowercase()
+            filtered = filtered.filter { post ->
+                // 1. Check explicit tags
+                val hasTag = post.tags.any { it.equals(tag, ignoreCase = true) }
+                if (hasTag) return@filter true
+                
+                // 2. Keyword fallback for older posts or implicit matching
+                val content = (post.universeTitle + " " + post.universeDescription).lowercase()
+                val matches = when (tagLower) {
+                    "marvel" -> content.contains("spiderman") || content.contains("spider-man") || content.contains("avengers") || content.contains("marvel") || content.contains("iron man") || content.contains("mcu")
+                    "star wars" -> content.contains("star wars") || content.contains("jedi") || content.contains("mandalorian") || content.contains("skywalker")
+                    "dc universe" -> content.contains("batman") || content.contains("superman") || content.contains("wonder woman") || content.contains("justice league") || content.contains("dceu") || content.contains("dc universe")
+                    "anime" -> content.contains("anime") || content.contains("naruto") || content.contains("fate/") || content.contains("one piece") || content.contains("dragon ball") || content.contains("bleach")
+                    "horror" -> content.contains("horror") || content.contains("conjuring") || content.contains("annabelle") || content.contains("nun") || content.contains("insidious") || content.contains("scary")
+                    "game of thrones" -> content.contains("game of thrones") || content.contains("house of the dragon") || content.contains("westeros") || content.contains("targaryen")
+                    "sci-fi" -> content.contains("sci-fi") || content.contains("science fiction") || content.contains("interstellar") || content.contains("star trek") || content.contains("dune")
+                    else -> false
+                }
+                matches
+            }
         }
         
         if (query.isNotBlank()) {

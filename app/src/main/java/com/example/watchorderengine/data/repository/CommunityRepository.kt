@@ -67,13 +67,13 @@ class CommunityRepository @Inject constructor(
             } ?: emptyList()
 
             // Merge logic: Predefined always at top. 
-            // If a predefined ID exists in Firestore (userPosts), use the Firestore version 
-            // to get the real, dynamic likes count, but preserve static nodesJson/metadata.
+            // Add Firestore likes/uids to the base predefined post data.
             val combined = predefined.map { p -> 
                 val fsMatch = userPosts.find { it.postId == p.postId }
                 if (fsMatch != null) {
                     p.copy(
-                        likesCount = fsMatch.likesCount,
+                        // Sum of base likes + additional Firestore likes
+                        likesCount = p.likesCount + fsMatch.likesCount,
                         likedByUsers = fsMatch.likedByUsers
                     )
                 } else p
@@ -90,31 +90,42 @@ class CommunityRepository @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun autoCategorize(nodesJson: String): List<String> {
-        val payload = SharedTimelineCodec.decode(nodesJson) ?: return emptyList()
+    private fun autoCategorize(title: String, description: String, nodesJson: String): List<String> {
         val tags = mutableSetOf<String>()
-        val titles = payload.nodes.map { it.title.lowercase() }
+        val content = (title + " " + description).lowercase()
         
-        if (titles.any { it.contains("spiderman") || it.contains("spider-man") || it.contains("avengers") || it.contains("iron man") || it.contains("captain america") || it.contains("thor") || it.contains("black panther") || it.contains("black widow") || it.contains("mcu") }) {
+        // 1. Check title/description
+        if (content.contains("spiderman") || content.contains("spider-man") || content.contains("avengers") || content.contains("marvel") || content.contains("iron man") || content.contains("mcu")) {
             tags.add("Marvel")
         }
-        if (titles.any { it.contains("star wars") || it.contains("mandalorian") || it.contains("kenobi") || it.contains("andor") }) {
+        if (content.contains("star wars") || content.contains("jedi") || content.contains("mandalorian") || content.contains("kenobi") || content.contains("andor")) {
             tags.add("Star Wars")
         }
-        if (titles.any { it.contains("batman") || it.contains("superman") || it.contains("wonder woman") || it.contains("justice league") || it.contains("shazam") || it.contains("aquaman") || it.contains("dceu") || it.contains("dc universe") }) {
+        if (content.contains("batman") || content.contains("superman") || content.contains("wonder woman") || content.contains("justice league") || content.contains("shazam") || content.contains("aquaman") || content.contains("dceu") || content.contains("dc universe")) {
             tags.add("DC Universe")
         }
-        if (titles.any { it.contains("naruto") || it.contains("shippuden") || it.contains("boruto") || it.contains("fate/") || it.contains("one piece") || it.contains("dragon ball") || it.contains("anime") || it.contains("bleach") || it.contains("jujutsu") }) {
+        if (content.contains("naruto") || content.contains("shippuden") || content.contains("boruto") || content.contains("fate/") || content.contains("one piece") || content.contains("dragon ball") || content.contains("anime") || content.contains("bleach") || content.contains("jujutsu")) {
             tags.add("Anime")
         }
-        if (titles.any { it.contains("conjuring") || it.contains("annabelle") || it.contains("nun") || it.contains("horror") || it.contains("insidious") || it.contains("scream") }) {
+        if (content.contains("conjuring") || content.contains("annabelle") || content.contains("nun") || content.contains("horror") || content.contains("insidious") || content.contains("scream")) {
             tags.add("Horror")
         }
-        if (titles.any { it.contains("game of thrones") || it.contains("house of the dragon") || it.contains("westeros") }) {
+        if (content.contains("game of thrones") || content.contains("house of the dragon") || content.contains("westeros") || content.contains("targaryen")) {
             tags.add("Game of Thrones")
         }
-        if (titles.any { it.contains("star trek") || it.contains("sci-fi") || it.contains("interstellar") || it.contains("dune") || it.contains("alien") }) {
+        if (content.contains("star trek") || content.contains("sci-fi") || content.contains("science fiction") || content.contains("interstellar") || content.contains("dune") || content.contains("alien")) {
             tags.add("Sci-Fi")
+        }
+        
+        // 2. Check individual node titles as fallback
+        if (tags.isEmpty()) {
+            val payload = SharedTimelineCodec.decode(nodesJson)
+            val nodeTitles = payload?.nodes?.map { it.title.lowercase() } ?: emptyList()
+            
+            if (nodeTitles.any { it.contains("spiderman") || it.contains("spider-man") || it.contains("avengers") || it.contains("iron man") || it.contains("captain america") || it.contains("thor") || it.contains("black panther") || it.contains("black widow") || it.contains("mcu") }) {
+                tags.add("Marvel")
+            }
+            // ... (could add more here, but usually title/description is enough)
         }
         
         return tags.toList()
@@ -143,7 +154,7 @@ class CommunityRepository @Inject constructor(
             }
             
             val avatarUrl = userPrefs.avatarUrl.first() ?: firebaseUser?.photoUrl?.toString()
-            val autoTags = autoCategorize(nodesJson)
+            val autoTags = autoCategorize(title, description, nodesJson)
 
             val post = CommunityPost(
                 userId              = uid,
@@ -179,6 +190,7 @@ class CommunityRepository @Inject constructor(
 
             firestore.runTransaction { transaction ->
                 val snapshot = transaction.get(postRef)
+                
                 @Suppress("UNCHECKED_CAST")
                 val likedBy = snapshot.get("likedByUsers") as? List<String> ?: emptyList()
                 val alreadyLiked = currentUserId in likedBy
@@ -192,13 +204,27 @@ class CommunityRepository @Inject constructor(
                         )
                     )
                 } else {
-                    transaction.update(
-                        postRef,
-                        mapOf(
-                            "likedByUsers" to FieldValue.arrayUnion(currentUserId),
-                            "likesCount"   to FieldValue.increment(1L)
+                    if (snapshot.exists()) {
+                        transaction.update(
+                            postRef,
+                            mapOf(
+                                "likedByUsers" to FieldValue.arrayUnion(currentUserId),
+                                "likesCount"   to FieldValue.increment(1L)
+                            )
                         )
-                    )
+                    } else {
+                        // For predefined posts that aren't in Firestore yet, create the skeleton.
+                        // Note: We only need to store the LIKES delta in Firestore for these.
+                        transaction.set(
+                            postRef,
+                            mapOf(
+                                "postId" to postId,
+                                "likedByUsers" to listOf(currentUserId),
+                                "likesCount" to 1L,
+                                "timestamp" to System.currentTimeMillis()
+                            )
+                        )
+                    }
                 }
                 null
             }.await()
