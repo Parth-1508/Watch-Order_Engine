@@ -1,8 +1,8 @@
 package com.example.watchorderengine.data.cache
 
+import androidx.compose.runtime.mutableStateMapOf
 import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.network.model.TmdbMediaDetail
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,7 +26,7 @@ sealed interface TmdbFetchState {
 @Singleton
 class TmdbMetadataCache @Inject constructor() {
 
-    private val store = ConcurrentHashMap<Int, TmdbFetchState>()
+    private val store = mutableStateMapOf<Int, TmdbFetchState>()
 
     /** Returns the current state for [tmdbId], or null if never fetched. */
     fun get(tmdbId: Int): TmdbFetchState? = store[tmdbId]

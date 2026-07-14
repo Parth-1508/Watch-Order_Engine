@@ -3,6 +3,8 @@ package com.example.watchorderengine.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.CommunityPost
+import com.example.watchorderengine.data.model.SharedTimelineCodec
+import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.data.repository.CommunityRepository
 import com.example.watchorderengine.data.repository.TmdbRepository
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
@@ -90,6 +92,15 @@ class CommunityViewModel @Inject constructor(
                     result.onSuccess { posts ->
                         allPosts = posts
                         filterPosts(_searchQuery.value, _selectedTag.value)
+                        
+                        // Automatically fetch metadata for the first node of each post 
+                        // so thumbnails aren't blank if they were left null.
+                        viewModelScope.launch {
+                            val firstNodes = posts.mapNotNull { post ->
+                                SharedTimelineCodec.decode(post.nodesJson)?.nodes?.firstOrNull()
+                            }
+                            tmdbRepo.fetchAndCache(firstNodes)
+                        }
                     }.onFailure { e ->
                         _uiState.value = CommunityUiState.Error(e.message ?: "Failed to load the community feed.")
                     }

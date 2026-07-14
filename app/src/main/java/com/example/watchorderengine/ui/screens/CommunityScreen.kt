@@ -173,7 +173,9 @@ fun CommunityScreen(
                                         post = heroPost,
                                         currentUserId = currentUserId,
                                         onLikeClick = { viewModel.likePost(heroPost.postId) },
-                                        onClick = { viewModel.selectPost(heroPost) }
+                                        onImportClick = { viewModel.importTimeline(heroPost) },
+                                        onClick = { viewModel.selectPost(heroPost) },
+                                        tmdbCache = viewModel.getCache()
                                     )
                                 }
 
@@ -183,8 +185,10 @@ fun CommunityScreen(
                                             post            = post,
                                             currentUserId   = currentUserId,
                                             onLikeClick     = { viewModel.likePost(post.postId) },
+                                            onImportClick   = { viewModel.importTimeline(post) },
                                             onDeleteClick   = { viewModel.deletePost(post.postId, post.userId) },
-                                            onClick         = { viewModel.selectPost(post) }
+                                            onClick         = { viewModel.selectPost(post) },
+                                            tmdbCache       = viewModel.getCache()
                                         )
                                     }
                                 }
@@ -213,10 +217,23 @@ fun HeroPostCard(
     post: CommunityPost,
     currentUserId: String?,
     onLikeClick: () -> Unit,
-    onClick: () -> Unit
+    onImportClick: () -> Unit,
+    onClick: () -> Unit,
+    tmdbCache: TmdbMetadataCache
 ) {
     val theme = LocalAppTheme.current
-    val posterUrls = remember(post.nodesJson) { extractPosterUrls(post.nodesJson) }
+    
+    // Resolve poster: Payload URL > Cache Fallback (Observable via TmdbMetadataCache)
+    val posterUrl by remember(post.nodesJson) {
+        derivedStateOf {
+            val payload = SharedTimelineCodec.decode(post.nodesJson)
+            val firstNode = payload?.nodes?.firstOrNull() ?: return@derivedStateOf null
+            
+            if (!firstNode.posterUrl.isNullOrBlank()) firstNode.posterUrl
+            else (tmdbCache.get(firstNode.tmdb_id) as? TmdbFetchState.Success)?.detail?.posterUrl
+        }
+    }
+
     val isLiked = currentUserId != null && (currentUserId in post.likedByUsers)
     
     Column(modifier = Modifier.padding(16.dp)) {
@@ -244,9 +261,9 @@ fun HeroPostCard(
         ) {
             Box {
                 // Background Image
-                if (posterUrls.isNotEmpty()) {
+                if (posterUrl != null) {
                     AsyncImage(
-                        model = posterUrls.first(),
+                        model = posterUrl,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
@@ -300,12 +317,30 @@ fun HeroPostCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     if (post.isOfficial) {
-                        Surface(color = theme.accent, shape = RoundedCornerShape(4.dp), modifier = Modifier.padding(top = 4.dp)) {
-                            Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Verified, null, tint = Color.White, modifier = Modifier.size(10.dp))
-                                Spacer(Modifier.width(3.dp))
-                                Text("CREATED BY WOE", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White)
+                        Surface(
+                            color = theme.accent, 
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.padding(top = 8.dp),
+                            shadowElevation = 2.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Verified, 
+                                    contentDescription = null, 
+                                    tint = Color.White, 
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    "CREATED BY WOE", 
+                                    fontSize = 10.sp, 
+                                    fontWeight = FontWeight.Black, 
+                                    color = Color.White,
+                                    letterSpacing = 0.5.sp
+                                )
                             }
                         }
                     } else {
@@ -318,25 +353,49 @@ fun HeroPostCard(
                     }
                 }
 
-                // Big Like Button for Hero
-                Surface(
-                    onClick = onLikeClick,
+                // Big Like & Import Buttons for Hero
+                Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .size(52.dp),
-                    shape = CircleShape,
-                    color = if (isLiked) Color(0xFFFF4B6E) else theme.surface.copy(alpha = 0.8f),
-                    border = BorderStroke(2.dp, if (isLiked) Color.White.copy(0.3f) else Color(0xFFFF4B6E).copy(alpha = 0.5f)),
-                    tonalElevation = 12.dp
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = "Like",
-                            tint = if (isLiked) Color.White else Color(0xFFFF4B6E),
-                            modifier = Modifier.size(28.dp)
-                        )
+                    // Import Button
+                    Surface(
+                        onClick = onImportClick,
+                        modifier = Modifier.size(52.dp),
+                        shape = CircleShape,
+                        color = theme.surface.copy(alpha = 0.8f),
+                        border = BorderStroke(2.dp, theme.accent.copy(alpha = 0.5f)),
+                        tonalElevation = 12.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = "Import",
+                                tint = theme.accent,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    // Like Button
+                    Surface(
+                        onClick = onLikeClick,
+                        modifier = Modifier.size(52.dp),
+                        shape = CircleShape,
+                        color = if (isLiked) Color(0xFFFF4B6E) else theme.surface.copy(alpha = 0.8f),
+                        border = BorderStroke(2.dp, if (isLiked) Color.White.copy(0.3f) else Color(0xFFFF4B6E).copy(alpha = 0.5f)),
+                        tonalElevation = 12.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Like",
+                                tint = if (isLiked) Color.White else Color(0xFFFF4B6E),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -562,13 +621,25 @@ fun CommunityPostCard(
     post: CommunityPost,
     currentUserId: String?,
     onLikeClick: () -> Unit,
+    onImportClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    tmdbCache: TmdbMetadataCache
 ) {
     val theme = LocalAppTheme.current
     val isLiked = currentUserId != null && (currentUserId in post.likedByUsers)
     val isOwner = currentUserId != null && currentUserId == post.userId
-    val posterUrls = remember(post.nodesJson) { extractPosterUrls(post.nodesJson) }
+
+    // Resolve poster: Payload URL > Cache Fallback (Observable via TmdbMetadataCache)
+    val posterUrl by remember(post.nodesJson) {
+        derivedStateOf {
+            val payload = SharedTimelineCodec.decode(post.nodesJson)
+            val firstNode = payload?.nodes?.firstOrNull() ?: return@derivedStateOf null
+            
+            if (!firstNode.posterUrl.isNullOrBlank()) firstNode.posterUrl
+            else (tmdbCache.get(firstNode.tmdb_id) as? TmdbFetchState.Success)?.detail?.posterUrl
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -588,7 +659,7 @@ fun CommunityPostCard(
     ) {
         Box(modifier = Modifier.height(160.dp)) {
             AsyncImage(
-                model = posterUrls.firstOrNull(),
+                model = posterUrl,
                 contentDescription = "Cover for ${post.universeTitle}",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
@@ -618,21 +689,11 @@ fun CommunityPostCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!post.isOfficial) {
-                        Text(
-                            "by ${post.authorName}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = theme.textSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.width(12.dp))
-                    }
-                    
                     if (post.isOfficial) {
                         Surface(
                             color = theme.accent, 
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(4.dp),
+                            shadowElevation = 2.dp
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -644,18 +705,27 @@ fun CommunityPostCard(
                                     tint = Color.White, 
                                     modifier = Modifier.size(10.dp)
                                 )
-                                Spacer(Modifier.width(3.dp))
+                                Spacer(Modifier.width(4.dp))
                                 Text(
                                     "CREATED BY WOE", 
                                     fontSize = 8.sp, 
                                     fontWeight = FontWeight.Black, 
-                                    color = Color.White
+                                    color = Color.White,
+                                    letterSpacing = 0.5.sp
                                 )
                             }
                         }
-                        Spacer(Modifier.width(12.dp))
+                    } else {
+                        Text(
+                            "by ${post.authorName}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = theme.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
 
+                    Spacer(Modifier.width(12.dp))
                     Icon(
                         imageVector = Icons.Default.Favorite,
                         contentDescription = null,
@@ -667,25 +737,49 @@ fun CommunityPostCard(
                 }
             }
 
-            // Big Like Button
-            Surface(
-                onClick = onLikeClick,
+            // Big Like & Import Buttons
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-                    .size(44.dp),
-                shape = CircleShape,
-                color = if (isLiked) Color(0xFFFF4B6E) else theme.surface.copy(alpha = 0.8f),
-                border = if (!isLiked) BorderStroke(1.dp, Color(0xFFFF4B6E).copy(alpha = 0.5f)) else null,
-                tonalElevation = 4.dp
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "Like",
-                        tint = if (isLiked) Color.White else Color(0xFFFF4B6E),
-                        modifier = Modifier.size(24.dp)
-                    )
+                // Import Button
+                Surface(
+                    onClick = onImportClick,
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = theme.surface.copy(alpha = 0.8f),
+                    border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.5f)),
+                    tonalElevation = 4.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.CloudDownload,
+                            contentDescription = "Import",
+                            tint = theme.accent,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                // Like Button
+                Surface(
+                    onClick = onLikeClick,
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = if (isLiked) Color(0xFFFF4B6E) else theme.surface.copy(alpha = 0.8f),
+                    border = if (!isLiked) BorderStroke(1.dp, Color(0xFFFF4B6E).copy(alpha = 0.5f)) else null,
+                    tonalElevation = 4.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Like",
+                            tint = if (isLiked) Color.White else Color(0xFFFF4B6E),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
 
@@ -771,12 +865,19 @@ fun CommunityPostDetailSheet(
                                 overflow = TextOverflow.Ellipsis
                             )
                             if (post.isOfficial) {
-                                Surface(color = theme.accent, shape = RoundedCornerShape(4.dp), modifier = Modifier.padding(top = 4.dp)) {
-                                    Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Verified, null, tint = Color.White, modifier = Modifier.size(10.dp))
-                                        Spacer(Modifier.width(3.dp))
-                                        Text("CREATED BY WOE", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White)
+                                Surface(
+                                    color = theme.accent, 
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    shadowElevation = 2.dp
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Verified, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                        Spacer(Modifier.width(5.dp))
+                                        Text("CREATED BY WOE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White)
                                     }
                                 }
                             } else {
@@ -920,11 +1021,6 @@ fun computePreviewRows(payload: SharedTimelinePayload, tmdbCache: TmdbMetadataCa
                 outgoing = connections[level] ?: emptyList()
             )
         }
-}
-
-private fun extractPosterUrls(nodesJson: String): List<String> {
-    val payload = SharedTimelineCodec.decode(nodesJson) ?: return emptyList()
-    return payload.nodes.mapNotNull { it.posterUrl }.filter { it.isNotBlank() }.take(10)
 }
 
 private fun relativeTimeLabel(timestampMillis: Long): String {

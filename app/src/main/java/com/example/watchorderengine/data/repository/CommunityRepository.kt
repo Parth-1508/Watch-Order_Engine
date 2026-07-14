@@ -66,8 +66,21 @@ class CommunityRepository @Inject constructor(
                 }
             } ?: emptyList()
 
-            // Merge predefined at top, then user posts. Distinct by postId to avoid duplicates.
-            val combined = (predefined + userPosts).distinctBy { it.postId }
+            // Merge logic: Predefined always at top. 
+            // If a predefined ID exists in Firestore (userPosts), use the Firestore version 
+            // to get the real, dynamic likes count, but preserve static nodesJson/metadata.
+            val combined = predefined.map { p -> 
+                val fsMatch = userPosts.find { it.postId == p.postId }
+                if (fsMatch != null) {
+                    p.copy(
+                        likesCount = fsMatch.likesCount,
+                        likedByUsers = fsMatch.likedByUsers
+                    )
+                } else p
+            } + userPosts.filter { up -> 
+                predefined.none { it.postId == up.postId } 
+            }
+
             trySend(Result.success(combined))
         }
 
@@ -76,6 +89,36 @@ class CommunityRepository @Inject constructor(
             registration.remove()
         }
     }.flowOn(Dispatchers.IO)
+
+    private fun autoCategorize(nodesJson: String): List<String> {
+        val payload = SharedTimelineCodec.decode(nodesJson) ?: return emptyList()
+        val tags = mutableSetOf<String>()
+        val titles = payload.nodes.map { it.title.lowercase() }
+        
+        if (titles.any { it.contains("spiderman") || it.contains("spider-man") || it.contains("avengers") || it.contains("iron man") || it.contains("captain america") || it.contains("thor") || it.contains("black panther") || it.contains("black widow") || it.contains("mcu") }) {
+            tags.add("Marvel")
+        }
+        if (titles.any { it.contains("star wars") || it.contains("mandalorian") || it.contains("kenobi") || it.contains("andor") }) {
+            tags.add("Star Wars")
+        }
+        if (titles.any { it.contains("batman") || it.contains("superman") || it.contains("wonder woman") || it.contains("justice league") || it.contains("shazam") || it.contains("aquaman") || it.contains("dceu") || it.contains("dc universe") }) {
+            tags.add("DC Universe")
+        }
+        if (titles.any { it.contains("naruto") || it.contains("shippuden") || it.contains("boruto") || it.contains("fate/") || it.contains("one piece") || it.contains("dragon ball") || it.contains("anime") || it.contains("bleach") || it.contains("jujutsu") }) {
+            tags.add("Anime")
+        }
+        if (titles.any { it.contains("conjuring") || it.contains("annabelle") || it.contains("nun") || it.contains("horror") || it.contains("insidious") || it.contains("scream") }) {
+            tags.add("Horror")
+        }
+        if (titles.any { it.contains("game of thrones") || it.contains("house of the dragon") || it.contains("westeros") }) {
+            tags.add("Game of Thrones")
+        }
+        if (titles.any { it.contains("star trek") || it.contains("sci-fi") || it.contains("interstellar") || it.contains("dune") || it.contains("alien") }) {
+            tags.add("Sci-Fi")
+        }
+        
+        return tags.toList()
+    }
 
     /**
      * Publishes the current user's timeline to the global feed.
@@ -100,6 +143,7 @@ class CommunityRepository @Inject constructor(
             }
             
             val avatarUrl = userPrefs.avatarUrl.first() ?: firebaseUser?.photoUrl?.toString()
+            val autoTags = autoCategorize(nodesJson)
 
             val post = CommunityPost(
                 userId              = uid,
@@ -111,10 +155,12 @@ class CommunityRepository @Inject constructor(
                 likesCount          = 0,
                 likedByUsers        = emptyList(),
                 timestamp           = System.currentTimeMillis(),
+                tags                = autoTags,
+                isOfficial          = false
             )
 
             firestore.collection(COLLECTION_GLOBAL_FEED).add(post).await()
-            Log.d(TAG, "Shared timeline '$title' to global feed")
+            Log.d(TAG, "Shared timeline '$title' to global feed with tags: $autoTags")
             Unit
         }.onFailure { e ->
             Log.w(TAG, "shareTimeline failed: ${e.message}")

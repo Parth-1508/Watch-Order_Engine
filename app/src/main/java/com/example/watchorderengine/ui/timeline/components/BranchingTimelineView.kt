@@ -61,14 +61,14 @@ fun BranchingTimelineView(
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(ZOOM_MIN, ZOOM_MAX)
         
-        // Pan with scale-awareness and dampen it slightly for comfort
-        val newOffset = offset + (panChange * scale)
+        // Direct panning for stability.
+        offset += panChange
         
-        // Basic bounding box to prevent total loss of context
-        // This is a naive clamp but prevents hexagons from flying away to infinity
+        // Keep the graph within a reasonable viewport.
+        val limit = 3000f
         offset = Offset(
-            x = newOffset.x.coerceIn(-2000f * scale, 2000f * scale),
-            y = newOffset.y.coerceIn(-2000f * scale, 2000f * scale)
+            x = offset.x.coerceIn(-limit, limit),
+            y = offset.y.coerceIn(-limit, limit)
         )
     }
 
@@ -120,7 +120,7 @@ private fun TransformableTimelineContent(
                 scaleY = scale
                 translationX = offset.x
                 translationY = offset.y
-                transformOrigin = TransformOrigin(0.5f, 0f)
+                transformOrigin = TransformOrigin.Center
             }
     ) {
         Column(
