@@ -689,8 +689,8 @@ private fun ReviewsTab(
     if (showReviewSheet) {
         ReviewSubmissionDialog(
             onDismiss = { showReviewSheet = false },
-            onSubmit = { rating, text, spoilers ->
-                viewModel.submitReview(mediaId, rating, text, spoilers)
+            onSubmit = { rating, text, spoilers, emoji ->
+                viewModel.submitReview(mediaId, rating, text, spoilers, emoji)
                 showReviewSheet = false
             }
         )
@@ -719,20 +719,25 @@ private fun ReviewItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val fallbackAvatar = "https://ui-avatars.com/api/?name=${review.authorName.ifBlank { "User" }}&background=random&color=fff"
                     AsyncImage(
-                        model = review.authorAvatarUrl ?: "https://ui-avatars.com/api/?name=${review.authorName.ifBlank { "User" }}&background=random&color=fff",
+                        model = review.authorAvatarUrl.takeIf { !it.isNullOrBlank() } ?: fallbackAvatar,
                         contentDescription = null,
-                        modifier = Modifier.size(32.dp).clip(CircleShape).background(Color.Gray),
+                        modifier = Modifier.size(36.dp).clip(CircleShape).background(Color.Gray),
                         contentScale = ContentScale.Crop
                     )
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text(
-                            text = review.authorName,
-                            color = theme.textPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = review.authorName,
+                                color = theme.textPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(review.emojiReaction, fontSize = 14.sp)
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             SourceBadge(review.source)
                             if (review.rating != null) {
@@ -841,12 +846,20 @@ private fun SourceBadge(source: com.example.watchorderengine.data.model.ReviewSo
 @Composable
 private fun ReviewSubmissionDialog(
     onDismiss: () -> Unit,
-    onSubmit: (Float, String, Boolean) -> Unit
+    onSubmit: (Float, String, Boolean, String) -> Unit
 ) {
     val theme = LocalAppTheme.current
     var rating by remember { mutableFloatStateOf(8f) }
     var text by remember { mutableStateOf("") }
     var hasSpoilers by remember { mutableStateOf(false) }
+    
+    val emojiOptions = listOf(
+        "🤬" to 1f, // Sad/Angry
+        "😐" to 4f, // Neutral
+        "🙂" to 7f, // Happy
+        "🤩" to 10f // Star Eyes
+    )
+    var selectedEmoji by remember { mutableStateOf(emojiOptions[2]) } // Happy as default
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -854,7 +867,46 @@ private fun ReviewSubmissionDialog(
         title = { Text("Write a Review", fontWeight = FontWeight.Black) },
         text = {
             Column {
-                Text("Rating", fontSize = 12.sp, color = Color.Gray)
+                Text("How was your experience?", fontSize = 12.sp, color = Color.Gray)
+                Spacer(Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    emojiOptions.forEach { (emoji, value) ->
+                        val isSelected = selectedEmoji.first == emoji
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) theme.accent.copy(alpha = 0.2f) else Color.Transparent)
+                                .clickable { 
+                                    selectedEmoji = emoji to value
+                                    rating = value
+                                }
+                                .padding(8.dp)
+                        ) {
+                            Text(emoji, fontSize = if (isSelected) 32.sp else 24.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = when(emoji) {
+                                    "🤬" -> "Sad"
+                                    "😐" -> "Meh"
+                                    "🙂" -> "Happy"
+                                    else -> "Loved"
+                                },
+                                color = if (isSelected) theme.accent else Color.Gray,
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.height(16.dp))
+                
+                // Keep the slider for fine-tuning but let emoji set the base
                 Slider(
                     value = rating,
                     onValueChange = { rating = it },
@@ -872,10 +924,12 @@ private fun ReviewSubmissionDialog(
                     value = text,
                     onValueChange = { if (it.length <= 2000) text = it },
                     placeholder = { Text("Share your thoughts...", fontSize = 14.sp) },
-                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = theme.accent,
-                        unfocusedBorderColor = Color.Gray
+                        unfocusedBorderColor = Color.Gray,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
                     )
                 )
                 Text("${text.length}/2000", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.align(Alignment.End))
@@ -891,7 +945,7 @@ private fun ReviewSubmissionDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSubmit(rating, text, hasSpoilers) }) {
+            TextButton(onClick = { onSubmit(rating, text, hasSpoilers, selectedEmoji.first) }) {
                 Text("Submit", fontWeight = FontWeight.Bold, color = theme.accent)
             }
         },

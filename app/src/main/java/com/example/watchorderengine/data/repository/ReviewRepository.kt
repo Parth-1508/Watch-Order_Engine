@@ -19,6 +19,9 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -40,20 +43,21 @@ class ReviewRepository @Inject constructor(
     private val jikanApi: JikanApiService
 ) {
 
-    fun observeReviewsForMedia(mediaId: String): Flow<List<ReviewEntity>> =
-        reviewDao.observeReviewsForMedia(mediaId)
-
-    fun observeReviewsByUser(userId: String): Flow<List<ReviewEntity>> =
-        reviewDao.observeReviewsByUser(userId)
-
-    fun observeGlobalAverageRating(): Flow<Float?> =
-        reviewDao.observeGlobalAverageRating()
+    fun observeReviewsForMedia(mediaId: String): Flow<List<ReviewItem>> =
+        firestore.collection("reviews")
+            .whereEqualTo("media_id", mediaId)
+            .orderBy("updated_at", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { it.toObject<ReviewDocument>()?.toReviewItem() }
+            }
 
     suspend fun submitReview(
         mediaId: String,
         rating: Float,
         text: String,
         hasSpoilers: Boolean,
+        emojiReaction: String,
         context: Context
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val uid = auth.currentUser?.uid ?: return@withContext Result.failure(Exception("Not authenticated"))
@@ -62,31 +66,36 @@ class ReviewRepository @Inject constructor(
         val media = mediaDao.getById(mediaId)
 
         val reviewId = UUID.randomUUID().toString()
-        val entity = ReviewEntity(
+        val timestamp = com.google.firebase.Timestamp.now()
+        
+        val doc = ReviewDocument(
             id = reviewId,
             mediaId = mediaId,
             mediaTitle = media?.title ?: "Unknown Title",
             mediaPosterUrl = media?.posterUrl,
             userId = uid,
-            rating = rating,
+            rating = rating.toDouble(),
             reviewText = text,
             hasSpoilers = hasSpoilers,
-            isSynced = false
+            authorName = username,
+            authorAvatarUrl = avatarUrl,
+            createdAt = timestamp,
+            updatedAt = timestamp,
+            emojiReaction = emojiReaction
         )
 
-        // 1. Save to Room
+        // 1. Save to Room (Keep local for offline/history)
+        val entity = doc.toRoomEntity().copy(isSynced = false)
         reviewDao.upsert(entity)
 
         // 2. Sync gate
         val syncEnabled = userPrefs.cloudSyncEnabled.first()
         if (!syncEnabled) return@withContext Result.success(Unit)
 
-        // 3. Online: sync immediately
+        // 3. Online: sync immediately to GLOBAL collection
         if (watchOrderRepository.isNetworkAvailable(context)) {
             try {
-                val doc = entity.toFirestoreDocument(username, avatarUrl)
-                firestore.collection("users").document(uid)
-                    .collection("reviews").document(reviewId)
+                firestore.collection("reviews").document(reviewId)
                     .set(doc, SetOptions.merge())
                     .await()
                 
@@ -121,8 +130,7 @@ class ReviewRepository @Inject constructor(
         val avatarUrl = userPrefs.avatarUrl.first()
 
         val doc = entity.toFirestoreDocument(username, avatarUrl)
-        firestore.collection("users").document(uid)
-            .collection("reviews").document(reviewId)
+        firestore.collection("reviews").document(reviewId)
             .set(doc, SetOptions.merge())
             .await()
         
@@ -135,10 +143,9 @@ class ReviewRepository @Inject constructor(
         // 1. Delete from Room
         reviewDao.deleteById(reviewId)
 
-        // 2. Delete from Firestore
+        // 2. Delete from Firestore (Global collection)
         try {
-            firestore.collection("users").document(uid)
-                .collection("reviews").document(reviewId)
+            firestore.collection("reviews").document(reviewId)
                 .delete()
                 .await()
             Result.success(Unit)
@@ -213,26 +220,37 @@ class ReviewRepository @Inject constructor(
             if (anilistId == null) {
                 try {
                     // Clean title for search (remove years like (2023))
-                    val cleanTitle = media.title.replace(Regex("\\(\\d{4}\\)"), "").trim()
+                    val cleanTitle = media.title.replace(Regex("\\(\\d{4}\\)"), "")
+                        .replace(Regex("\\[.*?\\]"), "")
+                        .trim()
                     
                     val searchBody = AnilistRequest(
-                        query = "query(${'$'}search: String) { Media(search: ${'$'}search, type: ANIME) { id idMal } }",
+                        query = "query(${'$'}search: String) { Media(search: ${'$'}search, type: ANIME) { id idMal title { romaji english } } }",
                         variables = mapOf("search" to cleanTitle)
                     )
                     val resp = anilistApi.query(searchBody)
                     if (resp.isSuccessful) {
                         val aniMedia = resp.body()?.data?.media
-                        anilistId = aniMedia?.id
-                        malIdToUse = aniMedia?.idMal
-                        
-                        // Persist discovered IDs for future use
-                        if (anilistId != null) {
+                        if (aniMedia != null) {
+                            anilistId = aniMedia.id
+                            malIdToUse = aniMedia.idMal
+                            
+                            // Persist discovered IDs for future use
                             db.mediaDao().upsert(media.copy(anilistId = anilistId))
                         }
                     }
                 } catch (e: Exception) { /* ignore */ }
             }
             
+            if (malIdToUse == null && media.anilistId != null) {
+                 // Try fetching malId specifically if we have anilistId but not malId
+                 try {
+                     val query = "query(${'$'}id: Int) { Media(id: ${'$'}id) { idMal } }"
+                     val resp = anilistApi.query(AnilistRequest(query, mapOf("id" to media.anilistId)))
+                     if (resp.isSuccessful) malIdToUse = resp.body()?.data?.media?.idMal
+                 } catch (e: Exception) {}
+            }
+
             if (malIdToUse == null) {
                 malIdToUse = media.id.substringAfterLast("_").toIntOrNull()
             }
@@ -311,6 +329,19 @@ class ReviewRepository @Inject constructor(
         reviewText = reviewText,
         source = ReviewSource.LOCAL,
         createdAt = updatedAt,
-        hasSpoilers = hasSpoilers
+        hasSpoilers = hasSpoilers,
+        emojiReaction = "🤩" // Default for old reviews
+    )
+
+    fun ReviewDocument.toReviewItem() = ReviewItem(
+        id = id,
+        authorName = authorName,
+        authorAvatarUrl = authorAvatarUrl,
+        rating = rating.toFloat(),
+        reviewText = reviewText,
+        source = ReviewSource.LOCAL,
+        createdAt = updatedAt?.toDate()?.time ?: createdAt?.toDate()?.time ?: 0L,
+        hasSpoilers = hasSpoilers,
+        emojiReaction = emojiReaction
     )
 }

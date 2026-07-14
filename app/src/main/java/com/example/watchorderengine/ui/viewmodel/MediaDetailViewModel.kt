@@ -151,33 +151,16 @@ class MediaDetailViewModel @Inject constructor(
         reviewsJob = viewModelScope.launch {
             _isReviewsLoading.value = true
             try {
-                // Combine local DB flow with one-time external fetch
-                val localFlow = reviewRepository.observeReviewsForMedia(mediaId)
+                // Combine real-time GLOBAL Firestore flow with one-time external fetch
+                val globalFlow = reviewRepository.observeReviewsForMedia(mediaId)
                 
                 // Fetch external reviews once per detail load
-                val aggregated = reviewRepository.getAggregatedReviews(mediaId)
-                _aggregatedReviews.value = aggregated
+                val externalAgg = reviewRepository.getAggregatedReviews(mediaId)
+                    .filter { it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL }
                 
-                // Also update the legacy _reviews state for backward compatibility if needed,
-                // or just let it be. But we should probably keep _aggregatedReviews updated
-                // when local reviews change.
-                localFlow.collect { localEntities ->
-                    _reviews.value = localEntities
-                    // Re-merge local into aggregated to reflect new submissions/deletions instantly
-                    val currentAgg = _aggregatedReviews.value.filter { it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL }
-                    val newLocal = localEntities.map { entity ->
-                        com.example.watchorderengine.data.model.ReviewItem(
-                            id = entity.id,
-                            authorName = "You",
-                            authorAvatarUrl = null,
-                            rating = entity.rating,
-                            reviewText = entity.reviewText,
-                            source = com.example.watchorderengine.data.model.ReviewSource.LOCAL,
-                            createdAt = entity.updatedAt,
-                            hasSpoilers = entity.hasSpoilers
-                        )
-                    }
-                    _aggregatedReviews.value = (newLocal + currentAgg).sortedByDescending { it.createdAt }
+                globalFlow.collect { globalReviews ->
+                    // Re-merge global (Firestore) into aggregated
+                    _aggregatedReviews.value = (globalReviews + externalAgg).sortedByDescending { it.createdAt }
                     _isReviewsLoading.value = false
                 }
             } catch (e: Exception) {
@@ -186,9 +169,9 @@ class MediaDetailViewModel @Inject constructor(
         }
     }
 
-    fun submitReview(mediaId: String, rating: Float, text: String, hasSpoilers: Boolean) {
+    fun submitReview(mediaId: String, rating: Float, text: String, hasSpoilers: Boolean, emojiReaction: String) {
         viewModelScope.launch {
-            reviewRepository.submitReview(mediaId, rating, text, hasSpoilers, context)
+            reviewRepository.submitReview(mediaId, rating, text, hasSpoilers, emojiReaction, context)
         }
     }
 

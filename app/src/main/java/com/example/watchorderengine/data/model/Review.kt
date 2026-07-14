@@ -63,6 +63,10 @@ data class ReviewDocument(
     @get:PropertyName("author_avatar_url")
     @set:PropertyName("author_avatar_url")
     var authorAvatarUrl: String? = null,
+
+    @get:PropertyName("emoji_reaction")
+    @set:PropertyName("emoji_reaction")
+    var emojiReaction: String = "🤩",
 )
 
 fun ReviewEntity.toFirestoreDocument(authorName: String, authorAvatarUrl: String?): ReviewDocument {
@@ -112,7 +116,8 @@ data class ReviewItem(
     val source: ReviewSource,
     val createdAt: Long,
     val hasSpoilers: Boolean = false,
-    val externalUrl: String? = null
+    val externalUrl: String? = null,
+    val emojiReaction: String = "🤩"
 )
 
 enum class ReviewSource {
