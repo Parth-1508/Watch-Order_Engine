@@ -256,7 +256,7 @@ fun HeroPostCard(
             shape = RoundedCornerShape(theme.appRadius.coerceAtLeast(16.dp)),
             color = theme.surface,
             onClick = onClick,
-            border = if (theme.isComic) BorderStroke(2.dp, Color.Black) else BorderStroke(1.dp, theme.border.copy(0.1f)),
+            border = if (theme.isComic) BorderStroke(2.dp, Color.Black) else BorderStroke(1.dp, theme.border.copy(alpha = 0.1f)),
             tonalElevation = 8.dp
         ) {
             Box {
@@ -657,14 +657,33 @@ fun CommunityPostCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = if (theme.isComic) BorderStroke(1.5.dp, Color.Black) else null
     ) {
-        Box(modifier = Modifier.height(160.dp)) {
-            AsyncImage(
-                model = posterUrl,
-                contentDescription = "Cover for ${post.universeTitle}",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                alpha = 0.6f
-            )
+        Box(modifier = Modifier.height(160.dp).background(theme.surfaceHover)) {
+            if (posterUrl != null) {
+                AsyncImage(
+                    model = posterUrl,
+                    contentDescription = "Cover for ${post.universeTitle}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.6f
+                )
+            } else {
+                // Background fallback for blank posters
+                Box(
+                    modifier = Modifier.fillMaxSize().background(
+                        Brush.linearGradient(
+                            colors = listOf(theme.accent.copy(0.1f), theme.surface)
+                        )
+                    ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MovieFilter, 
+                        contentDescription = null, 
+                        tint = theme.accent.copy(0.2f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1021,6 +1040,11 @@ fun computePreviewRows(payload: SharedTimelinePayload, tmdbCache: TmdbMetadataCa
                 outgoing = connections[level] ?: emptyList()
             )
         }
+}
+
+private fun extractPosterUrls(nodesJson: String): List<String> {
+    val payload = SharedTimelineCodec.decode(nodesJson) ?: return emptyList()
+    return payload.nodes.mapNotNull { it.posterUrl }.filter { it.isNotBlank() }.take(10)
 }
 
 private fun relativeTimeLabel(timestampMillis: Long): String {

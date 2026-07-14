@@ -147,7 +147,7 @@ object PredefinedTimelines {
                 buildNode(45845,  "Fate/Zero",                                              "ANIME", 2011),
                 buildNode(61415,  "Fate/stay night [Unlimited Blade Works]",                 "ANIME", 2014),
                 buildNode(283984, "Fate/stay night [Heaven's Feel] I. presage flower",      "MOVIE", 2017),
-                buildNode(454316, "Fate/stay night [Heaven's Feel] II. lost butterfly",     "MOVIE", 2019),
+                buildNode(466300, "Fate/stay night [Heaven's Feel] II. lost butterfly",     "MOVIE", 2019),
                 buildNode(530467, "Fate/stay night [Heaven's Feel] III. spring song",      "MOVIE", 2020),
                 buildNode(85750,  "Lord El-Melloi II's Case Files {Rail Zeppelin} Grace note", "ANIME", 2019),
                 buildNode(71835,  "Fate/Apocrypha",                                          "ANIME", 2017),
@@ -156,13 +156,13 @@ object PredefinedTimelines {
                 buildNode(622335, "Fate/Grand Order - Camelot - Wandering; Agateram",       "MOVIE", 2020),
                 buildNode(726880, "Fate/Grand Order - Camelot - Paladin; Agateram",         "MOVIE", 2021),
                 buildNode(83302,  "Fate/Grand Order - Absolute Demonic Front: Babylonia",    "ANIME", 2019),
-                buildNode(802371, "Fate/Grand Order - Grand Temple of Time: Solomon",       "MOVIE", 2021),
+                buildNode(802371, "Fate/Grand Order - Final Singularity - Solomon",         "MOVIE", 2021),
             ),
             edges = listOf(
                 Edge("tmdb_t_45845",  "tmdb_t_61415"),
                 Edge("tmdb_t_61415",  "tmdb_m_283984"),
-                Edge("tmdb_m_283984", "tmdb_m_454316"),
-                Edge("tmdb_m_454316", "tmdb_m_530467"),
+                Edge("tmdb_m_283984", "tmdb_m_466300"),
+                Edge("tmdb_m_466300", "tmdb_m_530467"),
                 Edge("tmdb_t_61415",  "tmdb_t_85750"),
                 Edge("tmdb_m_431053", "tmdb_m_622335"),
                 Edge("tmdb_m_622335", "tmdb_m_726880"),
@@ -232,9 +232,6 @@ object PredefinedTimelines {
         tags: List<String>,
     ): CommunityPost {
         val currentOffset = postCount++
-        // Use a stable random based on the postId hash for consistent-looking "live" counts
-        val pseudoRandomLikes = (postId.hashCode().let { if (it < 0) -it else it } % 7000) + 8000
-        
         return CommunityPost(
             postId = postId,
             userId = "woe_admin",
@@ -242,7 +239,7 @@ object PredefinedTimelines {
             authorAvatarUrl = "https://ui-avatars.com/api/?name=WO&background=141B2D&color=fff&bold=true",
             universeTitle = title,
             universeDescription = description,
-            likesCount = pseudoRandomLikes,
+            likesCount = 0, // Source of truth is Firestore
             timestamp = masterTimestamp - (currentOffset * 1000),
             nodesJson = json.encodeToString(SharedTimelinePayload(nodes, edges)),
             tags = tags,
@@ -257,7 +254,7 @@ object PredefinedTimelines {
         year: Int,
         episodeCount: Int = 0,
     ): MediaNode {
-        val type = com.example.watchorderengine.data.model.MediaCategory.entries.find { it.name == category } ?: com.example.watchorderengine.data.model.MediaCategory.MOVIE
+        val type = MediaCategory.entries.find { it.name == category } ?: MediaCategory.MOVIE
         val isMovie = category == "MOVIE"
         val prefix = if (isMovie) "tmdb_m_" else "tmdb_t_"
         return MediaNode(

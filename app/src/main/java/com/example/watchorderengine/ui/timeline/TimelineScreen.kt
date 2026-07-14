@@ -215,7 +215,7 @@ private fun ShareToCommunityDialog(
                 if (shareState is ShareTimelineState.Sharing) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
                 } else {
-                    Text("Share")
+                    Text("Share", color = Color.White)
                 }
             }
         },

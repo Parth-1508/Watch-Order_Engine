@@ -61,14 +61,13 @@ fun BranchingTimelineView(
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(ZOOM_MIN, ZOOM_MAX)
         
-        // Direct panning for stability.
-        offset += panChange
-        
-        // Keep the graph within a reasonable viewport.
-        val limit = 3000f
+        // Direct panning for stability and immediate response.
+        // Clamp the offset to keep the graph within a playable area.
+        val targetOffset = offset + panChange
+        val limit = 3000f // Shared limit for all zooms to prevent "lost in space"
         offset = Offset(
-            x = offset.x.coerceIn(-limit, limit),
-            y = offset.y.coerceIn(-limit, limit)
+            x = targetOffset.x.coerceIn(-limit, limit),
+            y = targetOffset.y.coerceIn(-limit, limit)
         )
     }
 
