@@ -28,8 +28,8 @@ import com.example.watchorderengine.viewmodel.TimelineRow
 
 private val COLUMN_WIDTH: Dp = 100.dp
 private val COLUMN_GAP: Dp = 24.dp
-private val CONNECTOR_STRIP_HEIGHT: Dp = 80.dp
-private val ROW_VERTICAL_PADDING: Dp = 16.dp
+private val CONNECTOR_STRIP_HEIGHT: Dp = 100.dp
+private val ROW_VERTICAL_PADDING: Dp = 24.dp
 
 private const val CONNECTOR_STROKE_IDLE = 1.5f
 private const val CONNECTOR_STROKE_DONE = 2.5f
@@ -230,7 +230,7 @@ private fun TimelineRowView(
             modifier = Modifier
                 .padding(vertical = ROW_VERTICAL_PADDING),
             horizontalArrangement = Arrangement.spacedBy(COLUMN_GAP),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
             for (columnIndex in usedColumns) {
                 val displayNode = nodeByColumn[columnIndex]

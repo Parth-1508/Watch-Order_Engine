@@ -31,6 +31,15 @@ class NavViewModel @Inject constructor(
 
     fun syncDataOnLogin() {
         viewModelScope.launch(Dispatchers.IO) {
+            val user = auth.currentUser
+            if (user != null) {
+                // Sync user profile info to DataStore
+                val currentUsername = userPrefs.username.first()
+                if (currentUsername == "Player One" || currentUsername == "Guest") {
+                    user.displayName?.let { userPrefs.updateUsername(it) }
+                }
+                user.photoUrl?.toString()?.let { userPrefs.updateAvatarUrl(it) }
+            }
             mediaRepository.syncAllFromCloud()
             reviewRepository.syncReviewsFromFirestore()
         }

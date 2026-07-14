@@ -319,7 +319,9 @@ fun AppNavigation() {
                 }
 
                 composable(Screen.Community.route) {
-                    CommunityScreen()
+                    CommunityScreen(
+                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
+                    )
                 }
 
                 composable(Screen.Profile.route) {
@@ -545,12 +547,5 @@ fun BottomNavItem(label: String, icon: ImageVector, isSelected: Boolean, onClick
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             maxLines   = 1
         )
-    }
-}
-
-@Composable
-fun CommunityScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Community Screen - Coming Soon", color = Color.Gray)
     }
 }

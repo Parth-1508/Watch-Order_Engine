@@ -10,6 +10,7 @@ import com.example.watchorderengine.data.cache.TmdbMetadataCache
 import com.example.watchorderengine.data.graph.GraphEngine
 import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.TmdbRepository
+import com.example.watchorderengine.network.model.TmdbMediaType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -54,6 +55,8 @@ sealed interface TimelineUiState {
 
     data class Success(
         val universe: Universe,
+        val nodes: List<MediaNode>,
+        val edges: List<Edge>,
         val rows: List<TimelineRow>,
         val availableTags: List<ContextTag>,
         val activeRouteTag: String,
@@ -209,14 +212,40 @@ class TimelineViewModel @Inject constructor(
         } else emptySet()
 
         val displayNodes = sortedNodes.map { mediaNode ->
+            val metadata = tmdbCache.getOrLoading(mediaNode.tmdb_id)
+            
+            // Refined Fallback: handle blank or "null" strings
+            val rawTitle = mediaNode.title.trim()
+            val titleWithFallback = if ((rawTitle.isBlank() || rawTitle.lowercase() == "null") && metadata is TmdbFetchState.Success) {
+                metadata.detail.title
+            } else {
+                rawTitle
+            }
+
+            val updatedNode = if (mediaNode.posterUrl.isNullOrBlank() && metadata is TmdbFetchState.Success) {
+                mediaNode.copy(
+                    posterUrl = metadata.detail.posterUrl,
+                    title = titleWithFallback
+                )
+            } else {
+                mediaNode.copy(title = titleWithFallback)
+            }
+
+            // Ensure tmdb_media_type is also fixed if missing
+            val fixedNode = if (updatedNode.tmdb_media_type.isBlank() && metadata is TmdbFetchState.Success) {
+                updatedNode.copy(tmdb_media_type = if (metadata.detail.mediaType == TmdbMediaType.MOVIE) "movie" else "tv")
+            } else updatedNode
+
             DisplayNode(
-                node = mediaNode,
+                node = fixedNode,
                 column = layout.columnMap[mediaNode.id] ?: 0,
                 isCompleted = mediaNode.id in effectiveCompleted,
                 isSpoilerBlurred = mediaNode.id in blurredIds,
-                metadata = tmdbCache.getOrLoading(mediaNode.tmdb_id)
+                metadata = metadata
             )
         }
+
+        val enrichedNodes = displayNodes.map { it.node }
 
         val displayNodeMeta = displayNodes.associate { it.node.id to (it.column to it.isCompleted) }
         val connections = GraphEngine.computeConnections(
@@ -240,6 +269,8 @@ class TimelineViewModel @Inject constructor(
 
         return TimelineUiState.Success(
             universe = universe,
+            nodes = enrichedNodes,
+            edges = edges,
             rows = rows,
             availableTags = tags,
             activeRouteTag = progress.active_route ?: "ALL",

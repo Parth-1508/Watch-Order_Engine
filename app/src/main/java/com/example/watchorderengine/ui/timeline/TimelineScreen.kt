@@ -29,8 +29,11 @@ import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.example.watchorderengine.data.model.SharedTimelineCodec
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.components.BranchingTimelineView
+import com.example.watchorderengine.ui.viewmodel.CommunityViewModel
+import com.example.watchorderengine.ui.viewmodel.ShareTimelineState
 import com.example.watchorderengine.viewmodel.*
 
 private data class Star(val x: Float, val y: Float, val alpha: Float, val radius: Float)
@@ -41,12 +44,24 @@ fun TimelineScreen(
     onBack: () -> Unit,
     onNodeDetail: (nodeId: String) -> Unit,
     viewModel: TimelineViewModel = hiltViewModel(),
+    communityViewModel: CommunityViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val shareState by communityViewModel.shareState.collectAsStateWithLifecycle()
+
+    var showShareDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(universeId) { viewModel.initialize(universeId) }
+
+    LaunchedEffect(shareState) {
+        if (shareState is ShareTimelineState.Shared) {
+            // Show success and reset
+            communityViewModel.resetShareState()
+            showShareDialog = false
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -101,7 +116,8 @@ fun TimelineScreen(
             TimelineHeader(
                 uiState = uiState,
                 onBack = onBack,
-                onSpoilerToggle = { viewModel.toggleSpoilerShield() }
+                onSpoilerToggle = { viewModel.toggleSpoilerShield() },
+                onShareCommunityClick = { showShareDialog = true }
             )
 
             CompletionBanner(visible = isUniverseComplete)
@@ -118,7 +134,97 @@ fun TimelineScreen(
         if (isSyncing) {
             SyncingOverlay()
         }
+
+        if (showShareDialog) {
+            val success = uiState as? TimelineUiState.Success
+            if (success != null) {
+                ShareToCommunityDialog(
+                    universeName = success.universe.name,
+                    onDismiss = { 
+                        showShareDialog = false
+                        communityViewModel.resetShareState()
+                    },
+                    onShare = { description ->
+                        val nodesJson = SharedTimelineCodec.encode(success.nodes, success.edges)
+                        communityViewModel.shareTimeline(
+                            title = success.universe.name,
+                            description = description,
+                            nodesJson = nodesJson
+                        )
+                    },
+                    shareState = shareState
+                )
+            }
+        }
     }
+}
+
+@Composable
+private fun ShareToCommunityDialog(
+    universeName: String,
+    onDismiss: () -> Unit,
+    onShare: (String) -> Unit,
+    shareState: ShareTimelineState
+) {
+    val theme = LocalAppTheme.current
+    var description by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = theme.surface,
+        title = {
+            Text("Share to Community", color = theme.textPrimary, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column {
+                Text(
+                    "Share your custom watch order for '$universeName' with the global community.",
+                    color = theme.textSecondary,
+                    fontSize = 14.sp
+                )
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    placeholder = { Text("Add a short description...", color = theme.textSecondary.copy(alpha = 0.5f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = theme.textPrimary,
+                        unfocusedTextColor = theme.textPrimary,
+                        focusedBorderColor = theme.accent,
+                        unfocusedBorderColor = theme.textSecondary.copy(alpha = 0.3f)
+                    ),
+                    maxLines = 3
+                )
+                if (shareState is ShareTimelineState.Failed) {
+                    Text(
+                        shareState.message,
+                        color = Color.Red,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onShare(description) },
+                enabled = shareState !is ShareTimelineState.Sharing,
+                colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
+            ) {
+                if (shareState is ShareTimelineState.Sharing) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Text("Share")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = theme.textSecondary)
+            }
+        }
+    )
 }
 
 @Composable
@@ -272,7 +378,8 @@ private fun CompletionBanner(visible: Boolean) {
 private fun TimelineHeader(
     uiState: TimelineUiState,
     onBack: () -> Unit,
-    onSpoilerToggle: () -> Unit
+    onSpoilerToggle: () -> Unit,
+    onShareCommunityClick: () -> Unit
 ) {
     val theme = LocalAppTheme.current
     val context = LocalContext.current
@@ -280,6 +387,8 @@ private fun TimelineHeader(
     val spoilerEnabled = (uiState as? TimelineUiState.Success)?.spoilerShieldEnabled ?: true
     val completedCount = (uiState as? TimelineUiState.Success)?.completedCount ?: 0
     val totalCount = (uiState as? TimelineUiState.Success)?.totalNodeCount ?: 0
+
+    var showShareMenu by remember { mutableStateOf(false) }
     
     Row(
         modifier = Modifier
@@ -307,19 +416,42 @@ private fun TimelineHeader(
         }
         
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconButton(
-                onClick = {
-                    val shareText = "Check out my watch order for $universeName on Watch Order Engine! I've completed $completedCount/$totalCount entries."
-                    val sendIntent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, shareText)
-                        type = "text/plain"
-                    }
-                    context.startActivity(Intent.createChooser(sendIntent, null))
-                },
-                modifier = Modifier.size(36.dp).background(theme.surface, CircleShape)
-            ) {
-                Icon(Icons.Default.Share, "Share", tint = theme.accent, modifier = Modifier.size(18.dp))
+            Box {
+                IconButton(
+                    onClick = { showShareMenu = true },
+                    modifier = Modifier.size(36.dp).background(theme.surface, CircleShape)
+                ) {
+                    Icon(Icons.Default.Share, "Share", tint = theme.accent, modifier = Modifier.size(18.dp))
+                }
+
+                DropdownMenu(
+                    expanded = showShareMenu,
+                    onDismissRequest = { showShareMenu = false },
+                    modifier = Modifier.background(theme.surface)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Standard Share", color = theme.textPrimary) },
+                        leadingIcon = { Icon(Icons.Default.Share, null, tint = theme.accent) },
+                        onClick = {
+                            showShareMenu = false
+                            val shareText = "Check out my watch order for $universeName on Watch Order Engine! I've completed $completedCount/$totalCount entries."
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, null))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Post to Community", color = theme.textPrimary) },
+                        leadingIcon = { Icon(Icons.Default.Groups, null, tint = theme.accent) },
+                        onClick = {
+                            showShareMenu = false
+                            onShareCommunityClick()
+                        }
+                    )
+                }
             }
 
             IconButton(

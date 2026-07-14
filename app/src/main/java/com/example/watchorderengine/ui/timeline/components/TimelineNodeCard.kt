@@ -88,7 +88,7 @@ fun TimelineNodeCard(
         label = "completed_scale"
     )
 
-    Box(
+    Column(
         modifier = modifier
             .scale(scale)
             .padding(4.dp)
@@ -97,87 +97,104 @@ fun TimelineNodeCard(
                 onLongClick = onCheckToggle,
                 enabled = !displayNode.isSpoilerBlurred
             ),
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top
     ) {
-        // Hexagonal background for skill-tree feel
-        Canvas(modifier = Modifier.size(80.dp)) {
-            val path = Path().apply {
-                val radius = size.minDimension / 2
-                val angle = (Math.PI * 2) / 6
-                for (i in 0 until 6) {
-                    val x = size.width / 2 + radius * Math.cos(angle * i - Math.PI / 2).toFloat()
-                    val y = size.height / 2 + radius * Math.sin(angle * i - Math.PI / 2).toFloat()
-                    if (i == 0) moveTo(x, y) else lineTo(x, y)
-                }
-                close()
-            }
-            drawPath(path, color = WatchOrderColors.CardSurface)
-            drawPath(path, color = borderColor, style = Stroke(width = 2.dp.toPx()))
-            
-            if (displayNode.isCompleted) {
-                drawPath(path, color = WatchOrderColors.CompletedGreen.copy(alpha = 0.1f))
-            }
-        }
-
         Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(HexagonShape)
-                .background(WatchOrderColors.ElevatedSurface)
-                .then(spoilerModifier),
+            modifier = Modifier.size(80.dp),
             contentAlignment = Alignment.Center
         ) {
-            when (metadata) {
-                is TmdbFetchState.Success -> {
-                    AsyncImage(
-                        model = metadata.detail.posterUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
+            // Hexagonal background for skill-tree feel
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val path = Path().apply {
+                    val radius = size.minDimension / 2
+                    val angle = (Math.PI * 2) / 6
+                    for (i in 0 until 6) {
+                        val x = size.width / 2 + radius * Math.cos(angle * i - Math.PI / 2).toFloat()
+                        val y = size.height / 2 + radius * Math.sin(angle * i - Math.PI / 2).toFloat()
+                        if (i == 0) moveTo(x, y) else lineTo(x, y)
+                    }
+                    close()
                 }
-                is TmdbFetchState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = WatchOrderColors.AccentGold)
+                drawPath(path, color = WatchOrderColors.CardSurface)
+                drawPath(path, color = borderColor, style = Stroke(width = 2.dp.toPx()))
+
+                if (displayNode.isCompleted) {
+                    drawPath(path, color = WatchOrderColors.CompletedGreen.copy(alpha = 0.1f))
                 }
-                else -> {
-                    Icon(
-                        imageVector = node.type.icon(),
-                        contentDescription = null,
-                        tint = WatchOrderColors.AccentBlue.copy(alpha = 0.5f),
-                        modifier = Modifier.size(24.dp)
-                    )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(HexagonShape)
+                    .background(WatchOrderColors.ElevatedSurface)
+                    .then(spoilerModifier),
+                contentAlignment = Alignment.Center
+            ) {
+                when (metadata) {
+                    is TmdbFetchState.Success -> {
+                        AsyncImage(
+                            model = metadata.detail.posterUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    }
+                    is TmdbFetchState.Loading -> {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = WatchOrderColors.AccentGold)
+                    }
+                    else -> {
+                        Icon(
+                            imageVector = node.type.icon(),
+                            contentDescription = null,
+                            tint = WatchOrderColors.AccentBlue.copy(alpha = 0.5f),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
+            }
+
+            if (displayNode.isSpoilerBlurred) {
+                Icon(
+                    Icons.Default.Lock,
+                    null,
+                    tint = WatchOrderColors.SpoilerPurple,
+                    modifier = Modifier.size(20.dp)
+                )
+            } else if (displayNode.isCompleted) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    null,
+                    tint = WatchOrderColors.CompletedGreen,
+                    modifier = Modifier.align(Alignment.BottomEnd).size(20.dp).offset(x = 8.dp, y = 8.dp)
+                )
             }
         }
 
-        if (displayNode.isSpoilerBlurred) {
-            Icon(
-                Icons.Default.Lock,
-                null,
-                tint = WatchOrderColors.SpoilerPurple,
-                modifier = Modifier.size(20.dp)
-            )
-        } else if (displayNode.isCompleted) {
-            Icon(
-                Icons.Default.CheckCircle,
-                null,
-                tint = WatchOrderColors.CompletedGreen,
-                modifier = Modifier.align(Alignment.BottomEnd).size(20.dp).offset(x = 8.dp, y = 8.dp)
-            )
-        }
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Floating Title below
-        Text(
-            text = if (displayNode.isSpoilerBlurred) "???" else node.title,
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = if (displayNode.isCompleted) WatchOrderColors.TextPrimary else WatchOrderColors.TextSecondary,
-            modifier = Modifier.offset(y = 50.dp).width(90.dp),
-            textAlign = TextAlign.Center,
-            fontSize = 9.sp,
-            fontWeight = if (displayNode.isCompleted) FontWeight.Bold else FontWeight.Normal
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 40.dp),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Text(
+                text = if (displayNode.isSpoilerBlurred) "???" else node.title.ifBlank { " " },
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 4,
+                overflow = TextOverflow.Visible,
+                color = if (displayNode.isCompleted) WatchOrderColors.TextPrimary else WatchOrderColors.TextSecondary,
+                modifier = Modifier.padding(horizontal = 2.dp),
+                textAlign = TextAlign.Center,
+                fontSize = 9.sp,
+                fontWeight = if (displayNode.isCompleted) FontWeight.Bold else FontWeight.Medium,
+                lineHeight = 11.sp,
+                softWrap = true
+            )
+        }
     }
 }
 

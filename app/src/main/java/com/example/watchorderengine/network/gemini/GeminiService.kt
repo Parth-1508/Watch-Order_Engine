@@ -29,7 +29,8 @@ data class RawMediaItem(
     @Json(name = "release_date")  val releaseDate: String? = null,
     @Json(name = "tmdb_id")       val tmdbId: Int = 0,
     @Json(name = "anilist_id")    val anilistId: Int? = null,
-    @Json(name = "source")        val source: String            // "TMDB_SEASON" | "TMDB_MOVIE" | "ANILIST_RELATION"
+    @Json(name = "source")        val source: String,            // "TMDB_SEASON" | "TMDB_MOVIE" | "ANILIST_RELATION"
+    @Json(name = "poster_path")   val posterPath: String? = null
 )
 
 // ─── Gemini Response Models (SORTER output only) ──────────────────────────────

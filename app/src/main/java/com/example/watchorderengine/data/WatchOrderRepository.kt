@@ -4,6 +4,7 @@ import com.example.watchorderengine.data.model.*
 import com.example.watchorderengine.network.gemini.GeminiEdge
 import com.example.watchorderengine.network.gemini.GeminiNode
 import com.example.watchorderengine.network.gemini.RawMediaItem
+import com.example.watchorderengine.network.TmdbConfig
 import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.db.entity.PendingSyncTaskEntity
 import com.example.watchorderengine.data.db.entity.TaskType
@@ -18,18 +19,19 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
+import com.google.firebase.firestore.CollectionReference
+import com.google.firebase.firestore.DocumentReference
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Single source of truth for all data. Abstracts Firestore from the ViewModel.
- */
 @Singleton
 class WatchOrderRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
@@ -38,131 +40,138 @@ class WatchOrderRepository @Inject constructor(
     private val userPrefs: UserPreferencesRepository
 ) {
 
-    // ─── Firestore Reference Helpers ─────────────────────────────────────────
-
-    private fun universeRef(universeId: String) =
+    private fun universeRef(universeId: String): DocumentReference =
         firestore.collection("universes").document(universeId)
 
-    private fun nodesRef(universeId: String) =
+    private fun nodesRef(universeId: String): CollectionReference =
         universeRef(universeId).collection("nodes")
 
-    private fun edgesRef(universeId: String) =
+    private fun edgesRef(universeId: String): CollectionReference =
         universeRef(universeId).collection("edges")
 
-    private fun tagsRef(universeId: String) =
+    private fun tagsRef(universeId: String): CollectionReference =
         universeRef(universeId).collection("tags")
 
-    private fun progressRef(universeId: String): com.google.firebase.firestore.DocumentReference {
+    private fun progressRef(universeId: String): DocumentReference {
         val uid = requireAuth()
         return firestore.collection("users").document(uid)
             .collection("progress").document(universeId)
     }
 
-    private fun requireAuth() =
-        auth.currentUser?.uid ?: error("Action requires an authenticated user.")
+    private fun requireAuth(): String =
+        auth.currentUser?.uid ?: throw IllegalStateException("User not authenticated.")
 
     fun isNetworkAvailable(context: Context): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return false
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val capabilities = cm.getNetworkCapabilities(cm.activeNetwork)
+        return capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
     }
 
-    // ─── Real-time Read Flows ─────────────────────────────────────────────────
-
-    /** Emits a list of all available entertainment universes. */
+    /** Emits a list of all universes. Filtered by owner temporarily removed as requested. */
     fun getUniverses(): Flow<List<Universe>> = callbackFlow {
         val listener = firestore.collection("universes")
             .addSnapshotListener { snap, err ->
-                if (err != null) { close(err); return@addSnapshotListener }
-                val universes = snap?.documents?.mapNotNull { it.toObject<Universe>() } ?: emptyList()
+                if (err != null) { 
+                    Log.e("WatchOrderRepo", "Error fetching universes: ${err.message}")
+                    return@addSnapshotListener 
+                }
+                
+                Log.d("WatchOrderRepo", "Fetched ${snap?.documents?.size ?: 0} documents from 'universes'")
+                
+                val universes = snap?.documents?.mapNotNull { doc ->
+                    try {
+                        val u = doc.toObject<Universe>()
+                        if (u != null) {
+                            // Ensure the ID is always set from the document ID
+                            u.id = doc.id
+                            Log.d("WatchOrderRepo", "Parsed universe: ${u.name} (id=${u.id})")
+                        }
+                        u
+                    } catch (e: Exception) {
+                        Log.e("WatchOrderRepo", "Error parsing universe ${doc.id}: ${e.message}")
+                        null
+                    }
+                } ?: emptyList()
                 trySend(universes)
             }
         awaitClose { listener.remove() }
     }
 
-
-    /**
-     * Emits [Universe] metadata whenever the Firestore document changes.
-     */
     fun getUniverse(universeId: String): Flow<Universe> = callbackFlow {
-        val listener = universeRef(universeId).addSnapshotListener { snap, err ->
-            if (err != null) { close(err); return@addSnapshotListener }
-            snap?.toObject<Universe>()?.let { trySend(it) }
+        val listener = universeRef(universeId).addSnapshotListener { snap, _ ->
+            val u = snap?.toObject<Universe>()
+            if (u != null) {
+                u.id = snap.id
+                trySend(u)
+            }
         }
         awaitClose { listener.remove() }
     }
 
-
-    /**
-     * Emits the full node list whenever any node in the subcollection changes.
-     */
     fun getNodes(universeId: String): Flow<List<MediaNode>> = callbackFlow {
-        val listener = nodesRef(universeId).addSnapshotListener { snap, err ->
-            if (err != null) { close(err); return@addSnapshotListener }
-            val nodes = snap?.documents?.mapNotNull { doc ->
-                doc.toObject<MediaNode>()
-            } ?: emptyList()
+        val listener = nodesRef(universeId).addSnapshotListener { snap, _ ->
+            val nodes = snap?.documents?.mapNotNull { it.toObject<MediaNode>() } ?: emptyList()
             trySend(nodes)
         }
         awaitClose { listener.remove() }
     }
 
-
     fun getEdges(universeId: String): Flow<List<Edge>> = callbackFlow {
-        val listener = edgesRef(universeId).addSnapshotListener { snap, err ->
-            if (err != null) { close(err); return@addSnapshotListener }
-            val edges = snap?.documents?.mapNotNull { doc -> doc.toObject<Edge>() } ?: emptyList()
+        val listener = edgesRef(universeId).addSnapshotListener { snap, _ ->
+            val edges = snap?.documents?.mapNotNull { it.toObject<Edge>() } ?: emptyList()
             trySend(edges)
         }
         awaitClose { listener.remove() }
     }
 
-
     fun getContextTags(universeId: String): Flow<List<ContextTag>> = callbackFlow {
-        val listener = tagsRef(universeId)
-            .orderBy("order")
-            .addSnapshotListener { snap, err ->
-                if (err != null) { close(err); return@addSnapshotListener }
-                val tags = snap?.documents?.mapNotNull { doc -> doc.toObject<ContextTag>() } ?: emptyList()
-                trySend(tags)
-            }
+        val listener = tagsRef(universeId).orderBy("order").addSnapshotListener { snap, _ ->
+            val tags = snap?.documents?.mapNotNull { it.toObject<ContextTag>() } ?: emptyList()
+            trySend(tags)
+        }
         awaitClose { listener.remove() }
     }
 
-
     fun getUserProgress(universeId: String): Flow<UserProgress> = callbackFlow {
-        val uid = requireAuth()
-        val listener = progressRef(universeId).addSnapshotListener { snap, err ->
-            if (err != null) { close(err); return@addSnapshotListener }
-            val progress = snap?.toObject<UserProgress>() ?: UserProgress(userId = uid, universeId = universeId)
+        val listener = progressRef(universeId).addSnapshotListener { snap, _ ->
+            val progress = snap?.toObject<UserProgress>() ?: UserProgress()
             trySend(progress)
         }
         awaitClose { listener.remove() }
     }
 
-
-    /**
-     * Finds every universe this piece of media appears in.
-     */
     fun findUniversesForMedia(tmdbId: Int): Flow<List<Universe>> = callbackFlow {
-        val listener = firestore.collection("universes")
+        val listener = firestore.collectionGroup("nodes")
+            .whereEqualTo("tmdb_id", tmdbId)
             .addSnapshotListener { snap, err ->
-                if (err != null) { close(err); return@addSnapshotListener }
+                if (err != null) { 
+                    Log.w("WatchOrderRepo", "findUniversesForMedia: Permission denied or missing index. Skipping.")
+                    trySend(emptyList())
+                    return@addSnapshotListener 
+                }
+                
+                val universeRefs = snap?.documents?.mapNotNull { it.reference.parent.parent }?.distinct() ?: emptyList()
+                
+                if (universeRefs.isEmpty()) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
 
-                val universes = snap?.documents?.mapNotNull { it.toObject<Universe>() } ?: emptyList()
-
-                this@callbackFlow.launch {
-                    val matches = mutableListOf<Universe>()
-                    for (u in universes) {
-                        val nodesSnap = nodesRef(u.id).whereEqualTo("tmdb_id", tmdbId).get().await()
-                        if (!nodesSnap.isEmpty) {
-                            matches.add(u)
+                launch {
+                    try {
+                        val universes = universeRefs.mapNotNull { 
+                            try {
+                                it.get().await().toObject<Universe>()
+                            } catch (e: Exception) {
+                                Log.e("WatchOrderRepo", "Error parsing universe in findUniversesForMedia: ${e.message}")
+                                null
+                            }
                         }
+                        trySend(universes)
+                    } catch (e: Exception) {
+                        Log.e("WatchOrderRepo", "findUniversesForMedia fetch failed: ${e.message}")
+                        trySend(emptyList())
                     }
-                    trySend(matches)
                 }
             }
         awaitClose { listener.remove() }
@@ -173,66 +182,38 @@ class WatchOrderRepository @Inject constructor(
         nodeId: String,
         completed: Boolean,
         context: Context
-    ): Result<Unit> {
-        val syncEnabled = userPrefs.cloudSyncEnabled.first()
-        if (!syncEnabled) {
-            Log.d("WatchOrderRepo", "Cloud sync disabled — skipping Firestore write for $nodeId")
-            return Result.success(Unit)
-        }
-
-        if (isNetworkAvailable(context)) {
-            return runCatching {
-                val uid = requireAuth()
-                val fieldUpdate = if (completed) FieldValue.arrayUnion(nodeId)
-                else FieldValue.arrayRemove(nodeId)
-                progressRef(universeId).set(
-                    mapOf(
-                        "user_id" to uid,
-                        "universe_id" to universeId,
-                        "completed_node_ids" to fieldUpdate,
-                        "last_updated" to FieldValue.serverTimestamp()
-                    ),
-                    SetOptions.merge()
-                ).await()
-            }
-        }
-
-        return runCatching {
-            db.pendingSyncTaskDao().insert(
-                PendingSyncTaskEntity(
-                    taskType = TaskType.NODE_COMPLETION,
-                    universeId = universeId,
-                    nodeId = nodeId,
-                    completed = completed
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (isNetworkAvailable(context)) {
+                setNodeCompletionDirect(universeId, nodeId, completed).getOrThrow()
+            } else {
+                db.pendingSyncTaskDao().insert(
+                    PendingSyncTaskEntity(
+                        taskType = TaskType.NODE_COMPLETION,
+                        universeId = universeId,
+                        nodeId = nodeId,
+                        completed = completed
+                    )
                 )
-            )
-            Log.i("WatchOrderRepo", "Queued offline mutation: NODE_COMPLETION $nodeId in $universeId")
-            SyncWorker.enqueue(context)
+                SyncWorker.enqueue(context)
+                Unit
+            }
         }
     }
 
-    /** Called by SyncWorker — bypasses connectivity check, writes directly to Firestore. */
     internal suspend fun setNodeCompletionDirect(
         universeId: String,
         nodeId: String,
         completed: Boolean,
     ): Result<Unit> = runCatching {
-        val uid = requireAuth()
-        val fieldUpdate = if (completed) FieldValue.arrayUnion(nodeId) else FieldValue.arrayRemove(nodeId)
-        progressRef(universeId).set(
-            mapOf(
-                "user_id" to uid,
-                "universe_id" to universeId,
-                "completed_node_ids" to fieldUpdate,
-                "last_updated" to FieldValue.serverTimestamp()
-            ),
-            SetOptions.merge()
-        ).await()
+        val ref = progressRef(universeId)
+        if (completed) {
+            ref.set(mapOf("completed_node_ids" to FieldValue.arrayUnion(nodeId)), SetOptions.merge()).await()
+        } else {
+            ref.update("completed_node_ids", FieldValue.arrayRemove(nodeId)).await()
+        }
     }
 
-    /**
-     * Mirrors an episode watched/unwatched event to Firestore.
-     */
     internal suspend fun mirrorEpisodeWatchedToFirestore(
         episodeId: String,
         mediaId: String,
@@ -245,37 +226,23 @@ class WatchOrderRepository @Inject constructor(
                 mapOf(
                     "media_id" to mediaId,
                     "watched" to watched,
-                    "updated_at" to FieldValue.serverTimestamp()
+                    "timestamp" to FieldValue.serverTimestamp()
                 ),
                 SetOptions.merge()
             ).await()
     }
 
+    suspend fun setActiveRoute(universeId: String, routeTag: String): Result<Unit> = runCatching {
+        progressRef(universeId).set(mapOf("active_route" to routeTag), SetOptions.merge()).await()
+    }
 
-    suspend fun setActiveRoute(universeId: String, routeTag: String): Result<Unit> =
-        runCatching {
-            progressRef(universeId).set(
-                mapOf("active_route" to routeTag),
-                SetOptions.merge()
-            ).await()
-        }
+    suspend fun updateUniversePoster(universeId: String, posterUrl: String): Result<Unit> = runCatching {
+        universeRef(universeId).update("posterUrl", posterUrl).await()
+    }
 
-
-    suspend fun updateUniversePoster(universeId: String, posterUrl: String): Result<Unit> =
-        runCatching {
-            universeRef(universeId).set(
-                mapOf("posterUrl" to posterUrl),
-                SetOptions.merge()
-            ).await()
-        }
-
-    suspend fun setSpoilerShieldEnabled(universeId: String, enabled: Boolean): Result<Unit> =
-        runCatching {
-            progressRef(universeId).set(
-                mapOf("spoiler_shield_enabled" to enabled),
-                SetOptions.merge()
-            ).await()
-        }
+    suspend fun setSpoilerShieldEnabled(universeId: String, enabled: Boolean): Result<Unit> = runCatching {
+        progressRef(universeId).set(mapOf("spoiler_shield_enabled" to enabled), SetOptions.merge()).await()
+    }
 
     // ─── Gemini-Generated Universe Publishing ─────────────────────────────────
 
@@ -293,11 +260,15 @@ class WatchOrderRepository @Inject constructor(
         batch.set(
             universeRef(universeId),
             mapOf(
+                "id" to universeId,
+                "owner_id" to requireAuth(),
                 "name" to universeName,
                 "description" to "AI-generated watch order via Gemini.",
                 "posterUrl" to coverUrl,
                 "total_nodes" to nodes.size,
-                "available_routes" to listOf("ALL", "CANON", "ESSENTIAL")
+                "available_routes" to listOf("ALL", "CANON", "ESSENTIAL"),
+                "is_public" to false,
+                "timestamp" to System.currentTimeMillis()
             ),
             SetOptions.merge()
         )
@@ -375,7 +346,11 @@ class WatchOrderRepository @Inject constructor(
                 release_order   = node.releaseOrder,
                 phase           = node.phase,
                 tags            = if (node.filler) listOf("FILLER") else listOf("CANON"),
-                episodeCount    = raw.episodeCount ?: 0
+                episodeCount    = raw.episodeCount ?: 0,
+                posterUrl       = raw.posterPath?.let { 
+                    if (it.startsWith("http")) it 
+                    else TmdbConfig.buildImageUrl(it, TmdbConfig.PosterSize.LARGE) 
+                }
             )
         }
 
@@ -398,13 +373,16 @@ class WatchOrderRepository @Inject constructor(
 
     suspend fun deleteAllGeneratedUniverses(): Result<Unit> = runCatching {
         val uid = requireAuth()
-        val universeDocs = firestore.collection("universes").get().await()
+        val universeDocs = firestore.collection("universes")
+            .whereEqualTo("owner_id", uid)
+            .get().await()
 
         for (universeDoc in universeDocs.documents) {
             val universeId = universeDoc.id
             val nodeDocs = nodesRef(universeId).get().await()
             val edgeDocs = edgesRef(universeId).get().await()
             val tagDocs  = tagsRef(universeId).get().await()
+            val progressDoc = progressRef(universeId)
 
             (nodeDocs.documents + edgeDocs.documents + tagDocs.documents + universeDoc)
                 .chunked(450)
@@ -413,14 +391,9 @@ class WatchOrderRepository @Inject constructor(
                     chunk.forEach { batch.delete(it.reference) }
                     batch.commit().await()
                 }
-        }
-
-        val progressDocs = firestore.collection("users").document(uid)
-            .collection("progress").get().await()
-        progressDocs.documents.chunked(450).forEach { chunk ->
-            val batch = firestore.batch()
-            chunk.forEach { batch.delete(it.reference) }
-            batch.commit().await()
+            
+            // Delete user-specific progress for this universe
+            progressDoc.delete().await()
         }
     }
 }

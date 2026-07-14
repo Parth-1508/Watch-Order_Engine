@@ -665,7 +665,8 @@ class MediaRepository @Inject constructor(
                             contentType = "MOVIE",
                             releaseDate = part.releaseDate,
                             tmdbId      = part.id,
-                            source      = if (rootCollectionId != null) "TMDB_FRANCHISE" else "TMDB_COLLECTION"
+                            source      = if (rootCollectionId != null) "TMDB_FRANCHISE" else "TMDB_COLLECTION",
+                            posterPath  = part.posterPath
                         )
                     }
                 }
@@ -693,7 +694,8 @@ class MediaRepository @Inject constructor(
                             contentType = "MOVIE",
                             releaseDate = part.releaseDate,
                             tmdbId      = part.id,
-                            source      = "TMDB_SEARCH_COLLECTION"
+                            source      = "TMDB_SEARCH_COLLECTION",
+                            posterPath  = part.posterPath
                         )
                     }
                 }
@@ -709,7 +711,8 @@ class MediaRepository @Inject constructor(
                     contentType = "MOVIE",
                     releaseDate = entity.releaseDate,
                     tmdbId      = entity.tmdbId,
-                    source      = "TMDB_MOVIE"
+                    source      = "TMDB_MOVIE",
+                    posterPath  = entity.posterUrl
                 )
             )
         } catch (e: Exception) {
@@ -722,7 +725,8 @@ class MediaRepository @Inject constructor(
                     contentType = "MOVIE",
                     releaseDate = entity.releaseDate,
                     tmdbId      = entity.tmdbId,
-                    source      = "TMDB_MOVIE"
+                    source      = "TMDB_MOVIE",
+                    posterPath  = entity.posterUrl
                 )
             )
         }
@@ -792,7 +796,8 @@ class MediaRepository @Inject constructor(
                         episodeCount = season.episodeCount,
                         releaseDate  = season.airDate,
                         tmdbId       = tmdbId,
-                        source       = if (tmdbId == entity.tmdbId) "TMDB_SEASON" else "TMDB_RELATED_SEASON"
+                        source       = if (tmdbId == entity.tmdbId) "TMDB_SEASON" else "TMDB_RELATED_SEASON",
+                        posterPath   = season.posterUrl ?: dbEntity?.posterUrl
                     )
                 )
             }
@@ -810,7 +815,8 @@ class MediaRepository @Inject constructor(
                     episodeCount = season.episodeCount,
                     releaseDate  = season.airDate,
                     tmdbId       = entity.tmdbId,
-                    source       = "TMDB_SEASON"
+                    source       = "TMDB_SEASON",
+                    posterPath   = season.posterUrl ?: entity.posterUrl
                 )
             }
         }

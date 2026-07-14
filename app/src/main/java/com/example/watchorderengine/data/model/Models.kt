@@ -213,27 +213,22 @@ data class StoryArc(
 
 @Serializable
 data class UserProgress(
-    val mediaId: String = "",
-    val trackingState: TrackingState = TrackingState.PLANNED,
-    val currentSeasonNumber: Int = 1,
-    val currentEpisodeNumber: Int = 1,
-    val totalEpisodesWatched: Int = 0,
-    val userRating: Float? = null,
-    val startedDate: Long? = null,
-    val completedDate: Long? = null,
-    val updatedAt: Long = 0,
-    val userNotes: String = "",
-    val priorityTag: PriorityTag = PriorityTag.NONE,
-    @get:PropertyName("user_id") @set:PropertyName("user_id")
-    @kotlinx.serialization.Transient var userId: String? = null,
-    @get:PropertyName("universe_id") @set:PropertyName("universe_id")
-    @kotlinx.serialization.Transient var universeId: String? = null,
-    @get:PropertyName("completed_node_ids") @set:PropertyName("completed_node_ids")
-    @kotlinx.serialization.Transient var completed_node_ids: List<String> = emptyList(),
-    @get:PropertyName("active_route") @set:PropertyName("active_route")
-    @kotlinx.serialization.Transient var active_route: String? = null,
-    @get:PropertyName("spoiler_shield_enabled") @set:PropertyName("spoiler_shield_enabled")
-    @kotlinx.serialization.Transient var spoiler_shield_enabled: Boolean = false,
+    var mediaId: String = "",
+    var trackingState: TrackingState = TrackingState.PLANNED,
+    var currentSeasonNumber: Int = 1,
+    var currentEpisodeNumber: Int = 1,
+    var totalEpisodesWatched: Int = 0,
+    var userRating: Float? = null,
+    var startedDate: Long? = null,
+    var completedDate: Long? = null,
+    var updatedAt: Long = 0,
+    var userNotes: String = "",
+    var priorityTag: PriorityTag = PriorityTag.NONE,
+    var user_id: String? = null,
+    var universe_id: String? = null,
+    var completed_node_ids: List<String> = emptyList(),
+    var active_route: String? = null,
+    var spoiler_shield_enabled: Boolean = false,
     @get:PropertyName("last_updated") @set:PropertyName("last_updated")
     @kotlinx.serialization.Transient var lastUpdatedFirebase: com.google.firebase.Timestamp? = null
 )
@@ -242,17 +237,18 @@ data class UserProgress(
 
 @Serializable
 data class Universe(
-    @DocumentId val id: String = "",
-    val name: String = "",
-    val description: String = "",
-    val posterUrl: String? = null,
-    val bannerUrl: String? = null,
-    val tmdbId: Int? = null,
-    val mediaType: String? = null,
-    @get:PropertyName("available_routes") @set:PropertyName("available_routes")
-    @kotlinx.serialization.Transient var available_routes: List<String> = emptyList(),
-    @get:PropertyName("total_nodes") @set:PropertyName("total_nodes")
-    @kotlinx.serialization.Transient var total_nodes: Int = 0
+    var id: String = "",
+    var name: String = "",
+    var description: String = "",
+    var posterUrl: String? = null,
+    var bannerUrl: String? = null,
+    var tmdbId: Int? = null,
+    var mediaType: String? = null,
+    var owner_id: String = "",
+    var is_public: Boolean = true,
+    var available_routes: List<String> = emptyList(),
+    var total_nodes: Int = 0,
+    var timestamp: Long = 0L
 )
 
 @Serializable
@@ -269,7 +265,8 @@ data class MediaNode(
     val tags: List<String> = emptyList(),
     val releaseYear: Int = 0,
     val episodeCount: Int = 0,
-    val durationMin: Int = 0
+    val durationMin: Int = 0,
+    val posterUrl: String? = null
 )
 
 @Serializable
