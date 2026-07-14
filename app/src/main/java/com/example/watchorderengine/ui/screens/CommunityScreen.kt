@@ -118,7 +118,15 @@ fun CommunityScreen(
                     item { DiscussionHubSection() }
 
                     // 2. Quick Tags / Filters
-                    item { TrendingTagsSection() }
+                    item { 
+                        TrendingTagsSection(
+                            selectedTag = searchQuery,
+                            onTagClick = { tag -> 
+                                if (searchQuery == tag) viewModel.onSearchQueryChanged("")
+                                else viewModel.onSearchQueryChanged(tag)
+                            }
+                        ) 
+                    }
 
                     // 3. Feed Status/Content
                     item {
@@ -441,7 +449,10 @@ fun DiscussionHubSection() {
 }
 
 @Composable
-fun TrendingTagsSection() {
+fun TrendingTagsSection(
+    selectedTag: String,
+    onTagClick: (String) -> Unit
+) {
     val theme = LocalAppTheme.current
     val tags = listOf("Marvel", "Star Wars", "DC Universe", "Anime", "Horror", "Sci-Fi", "Game of Thrones")
     
@@ -450,16 +461,23 @@ fun TrendingTagsSection() {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(tags) { tag ->
-            SuggestionChip(
-                onClick = { /* In a real app, this would filter */ },
+            val isSelected = selectedTag.equals(tag, ignoreCase = true)
+            FilterChip(
+                selected = isSelected,
+                onClick = { onTagClick(tag) },
                 label = { Text(tag, fontSize = 12.sp) },
-                colors = SuggestionChipDefaults.suggestionChipColors(
-                    containerColor = theme.surface,
-                    labelColor = theme.textPrimary
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Color.Transparent,
+                    labelColor = theme.textSecondary,
+                    selectedContainerColor = theme.accent.copy(alpha = 0.2f),
+                    selectedLabelColor = theme.accent
                 ),
-                border = SuggestionChipDefaults.suggestionChipBorder(
-                    borderColor = theme.textSecondary.copy(0.2f),
-                    enabled = true
+                border = FilterChipDefaults.filterChipBorder(
+                    borderColor = theme.textSecondary.copy(alpha = 0.2f),
+                    selectedBorderColor = theme.accent,
+                    borderWidth = 1.dp,
+                    enabled = true,
+                    selected = isSelected
                 )
             )
         }
@@ -536,13 +554,34 @@ fun CommunityPostCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val isOfficial = post.userId == "woe_admin"
+                    
                     Text(
-                        "by ${post.authorName}",
+                        if (isOfficial) "Watch Order Engine" else "by ${post.authorName}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = theme.textSecondary,
+                        color = if (isOfficial) theme.accent else theme.textSecondary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = if (isOfficial) FontWeight.Bold else FontWeight.Normal
                     )
+                    
+                    if (isOfficial) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            color = theme.accent.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(4.dp),
+                            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                "Created by WOE",
+                                color = theme.accent,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
                     Spacer(Modifier.width(12.dp))
                     Icon(
                         imageVector = Icons.Default.Favorite,

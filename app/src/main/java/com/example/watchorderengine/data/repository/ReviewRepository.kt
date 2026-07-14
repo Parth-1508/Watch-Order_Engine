@@ -210,6 +210,7 @@ class ReviewRepository @Inject constructor(
                 .trim()
 
             Log.d("ReviewRepo", "Searching for anime IDs: '$cleanTitle'")
+            Log.d("JikanStatus", "Review ID Resolution started for: $cleanTitle")
             
             if (anilistId == null) {
                 try {
@@ -218,34 +219,47 @@ class ReviewRepository @Inject constructor(
                         variables = mapOf("search" to cleanTitle)
                     )
                     val resp = anilistApi.query(searchBody)
+                    Log.d("JikanStatus", "AniList ID Resolve Response: Code=${resp.code()}")
                     if (resp.isSuccessful) {
                         val aniMedia = resp.body()?.data?.media
                         if (aniMedia != null) {
                             anilistId = aniMedia.id
                             malIdToUse = aniMedia.idMal
+                            Log.d("JikanStatus", "Resolved via AniList: malId=$malIdToUse")
                             db.mediaDao().upsert(media.copy(anilistId = anilistId))
                         }
                     }
-                } catch (e: Exception) { /* ignore */ }
+                } catch (e: Exception) { 
+                    Log.e("JikanStatus", "AniList ID Resolve Failed", e)
+                }
             } else if (malIdToUse == null) {
                 // We have anilistId, check if we can get idMal if it's missing
                 try {
                     val query = "query(${'$'}id: Int) { Media(id: ${'$'}id) { id idMal } }"
                     val resp = anilistApi.query(AnilistRequest(query, mapOf("id" to anilistId)))
+                    Log.d("JikanStatus", "AniList MAL ID Resolve Response: Code=${resp.code()}")
                     if (resp.isSuccessful) {
                         malIdToUse = resp.body()?.data?.media?.idMal
+                        Log.d("JikanStatus", "Resolved MAL ID via AniList: $malIdToUse")
                     }
-                } catch (e: Exception) {}
+                } catch (e: Exception) {
+                    Log.e("JikanStatus", "AniList MAL ID Resolve Failed", e)
+                }
             }
             
             // Tertiary Fallback: Jikan Search
             if (malIdToUse == null) {
                 try {
+                    Log.d("JikanStatus", "Falling back to Jikan Search for reviews: $cleanTitle")
                     val jikanSearch = jikanApi.searchAnime(cleanTitle)
+                    Log.d("JikanStatus", "Jikan Search Review Response: Code=${jikanSearch.code()}")
                     if (jikanSearch.isSuccessful) {
                         malIdToUse = jikanSearch.body()?.data?.firstOrNull()?.malId
+                        Log.d("JikanStatus", "Resolved via Jikan Search: malId=$malIdToUse")
                     }
-                } catch (e: Exception) { /* ignore */ }
+                } catch (e: Exception) { 
+                    Log.e("JikanStatus", "Jikan Search for Review ID Failed", e)
+                }
             }
         }
 
@@ -320,13 +334,18 @@ class ReviewRepository @Inject constructor(
 
         val malDeferred = async(Dispatchers.IO) {
             val mid = malIdToUse ?: return@async emptyList<ReviewItem>()
+            Log.d("JikanStatus", "Fetching MAL reviews for malId=$mid")
             try {
                 // Add a small delay to avoid hitting Jikan's 3 req/sec rate limit 
                 // if searchAnime was called just before.
                 delay(1200L)
                 val jikanResponse = jikanApi.getAnimeReviews(mid)
+                Log.d("JikanStatus", "MAL Review Response: Code=${jikanResponse.code()}")
+                
                 if (jikanResponse.isSuccessful) {
-                    jikanResponse.body()?.data?.map {
+                    val reviews = jikanResponse.body()?.data ?: emptyList()
+                    Log.d("JikanStatus", "Successfully fetched ${reviews.size} MAL reviews")
+                    reviews.map {
                         val rating = it.score.toFloat()
                         ReviewItem(
                             id = "mal_${it.malId}",
@@ -340,13 +359,15 @@ class ReviewRepository @Inject constructor(
                             externalUrl = it.url,
                             emojiReaction = getEmojiForRating(rating)
                         )
-                    } ?: emptyList()
+                    }
                 } else {
                     Log.w("ReviewRepo", "MAL Reviews failed: ${jikanResponse.code()} for $mid")
+                    Log.e("JikanStatus", "MAL Review Fetch Failed: ${jikanResponse.errorBody()?.string()}")
                     emptyList()
                 }
             } catch (e: Exception) {
                 Log.e("ReviewRepo", "MAL Reviews error for $mid", e)
+                Log.e("JikanStatus", "MAL Review Exception", e)
                 emptyList()
             }
         }

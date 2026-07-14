@@ -1545,15 +1545,21 @@ class MediaRepository @Inject constructor(
      * this directly from a ViewModel.
      */
     private suspend fun enrichEpisodesWithJikanFiller(mediaId: String, showTitle: String) {
+        Log.d("JikanStatus", "Enrichment started for: $showTitle (mediaId: $mediaId)")
         try {
             // Step 1: Resolve MAL ID (type="tv" filter is applied by JikanApiService)
             val searchResponse = jikanApiService.searchAnime(showTitle)
+            Log.d("JikanStatus", "Search Response for '$showTitle': Code=${searchResponse.code()}, IsSuccessful=${searchResponse.isSuccessful}")
+            
             if (!searchResponse.isSuccessful) {
                 Log.w(TAG, "Jikan search failed for '$showTitle': HTTP ${searchResponse.code()}")
+                Log.e("JikanStatus", "Search Failed: ${searchResponse.errorBody()?.string()}")
                 return
             }
 
             val malId = searchResponse.body()?.data?.firstOrNull()?.malId
+            Log.d("JikanStatus", "Resolved MAL ID for '$showTitle': $malId")
+            
             if (malId == null) {
                 Log.w(TAG, "Jikan: no MAL entry found for '$showTitle'")
                 return
@@ -1566,23 +1572,28 @@ class MediaRepository @Inject constructor(
             var hasNextPage = true
 
             while (hasNextPage) {
+                Log.d("JikanStatus", "Fetching episodes for malId=$malId, Page=$page")
                 // First attempt
                 var epResponse = jikanApiService.getEpisodes(malId, page)
+                Log.d("JikanStatus", "Episode Response (Page $page): Code=${epResponse.code()}")
 
                 // Exponential back-off on 429 (Jikan 3 req/sec limit)
                 if (epResponse.code() == 429) {
                     Log.w(TAG, "Jikan 429 on page $page — waiting 4 s")
                     kotlinx.coroutines.delay(4000L)
                     epResponse = jikanApiService.getEpisodes(malId, page)
+                    Log.d("JikanStatus", "Episode Response (Page $page Retry 1): Code=${epResponse.code()}")
                 }
                 if (epResponse.code() == 429) {
                     Log.w(TAG, "Jikan 429 again on page $page — waiting 10 s")
                     kotlinx.coroutines.delay(10000L)
                     epResponse = jikanApiService.getEpisodes(malId, page)
+                    Log.d("JikanStatus", "Episode Response (Page $page Retry 2): Code=${epResponse.code()}")
                 }
 
                 if (!epResponse.isSuccessful) {
                     Log.w(TAG, "Jikan episodes failed page $page: HTTP ${epResponse.code()}")
+                    Log.e("JikanStatus", "Episode Fetch Failed (Page $page): ${epResponse.errorBody()?.string()}")
                     break
                 }
                 val body = epResponse.body() ?: break
@@ -1601,6 +1612,7 @@ class MediaRepository @Inject constructor(
                 if (hasNextPage) kotlinx.coroutines.delay(1100L)
             }
 
+            Log.d("JikanStatus", "Filler Enrichment Results for $showTitle: Found ${fillerEpisodeNumbers.size} filler episodes")
             Log.d(TAG, "Jikan: found ${fillerEpisodeNumbers.size} filler episodes for '$showTitle'")
 
             if (fillerEpisodeNumbers.isEmpty()) {

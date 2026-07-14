@@ -2,6 +2,7 @@ package com.example.watchorderengine.data.repository
 
 import android.util.Log
 import com.example.watchorderengine.data.model.CommunityPost
+import com.example.watchorderengine.data.model.PredefinedTimelines
 import com.example.watchorderengine.data.model.SharedTimelineCodec
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.viewmodel.TimelineViewModel
@@ -42,8 +43,11 @@ class CommunityRepository @Inject constructor(
     /**
      * Live feed of the 50 most recent community posts, ordered newest-first.
      */
-    fun fetchGlobalFeed(): Flow<Result<List<CommunityPost>>> = callbackFlow {
+    fun fetchGlobalFeed(): Flow<Result<List<CommunityPost>>> = callbackFlow<Result<List<CommunityPost>>> {
+        val predefined = PredefinedTimelines.masterTimelines
+        
         val query = firestore.collection(COLLECTION_GLOBAL_FEED)
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(FEED_LIMIT)
 
         val registration = query.addSnapshotListener { snapshot, error ->
@@ -53,7 +57,7 @@ class CommunityRepository @Inject constructor(
                 return@addSnapshotListener
             }
 
-            val posts = snapshot?.documents?.mapNotNull { doc ->
+            val userPosts = snapshot?.documents?.mapNotNull { doc ->
                 try {
                     doc.toObject<CommunityPost>()
                 } catch (e: Exception) {
@@ -62,7 +66,9 @@ class CommunityRepository @Inject constructor(
                 }
             } ?: emptyList()
 
-            trySend(Result.success(posts))
+            // Merge predefined at top, then user posts. Distinct by postId to avoid duplicates.
+            val combined = (predefined + userPosts).distinctBy { it.postId }
+            trySend(Result.success(combined))
         }
 
         awaitClose {
