@@ -151,26 +151,65 @@ class MediaDetailViewModel @Inject constructor(
         reviewsJob = viewModelScope.launch {
             _isReviewsLoading.value = true
             try {
-                // 1. Initial comprehensive fetch (includes Local DB + External APIs like TMDB/MAL)
+                // 1. Initial fetch for External Reviews (TMDB, AniList, MAL)
+                // 1. Initial fetch for External Reviews (TMDB, AniList, MAL)
                 val initialAggregated = reviewRepository.getAggregatedReviews(mediaId)
-                _aggregatedReviews.value = initialAggregated
+                
+                val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                
+                // Track state for merging
+                var currentLocal: List<com.example.watchorderengine.data.model.ReviewItem> = emptyList()
+                var currentGlobal: List<com.example.watchorderengine.data.model.ReviewItem> = emptyList()
+                var currentExternal: List<com.example.watchorderengine.data.model.ReviewItem> = 
+                    initialAggregated.filter { it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL }
+
+                fun updateUI() {
+                    _aggregatedReviews.value = (currentLocal + currentGlobal + currentExternal)
+                        .distinctBy { it.id }
+                        .sortedByDescending { it.createdAt }
+                }
+
+                // Initial UI update with what we have from step 1
+                updateUI()
                 _isReviewsLoading.value = false
 
-                // 2. Real-time GLOBAL Firestore observation for Engine-specific reviews
-                // We keep the external reviews from step 1 and just refresh the Engine reviews from Firestore
-                reviewRepository.observeReviewsForMedia(mediaId).collect { globalReviews ->
-                    // Always re-fetch external reviews if our current set is too small or missing them
-                    // but usually keeping them from the initial fetch is enough and more performant.
-                    val currentExternal = _aggregatedReviews.value.filter { 
-                        it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL 
-                    }.ifEmpty { 
-                        initialAggregated.filter { it.source != com.example.watchorderengine.data.model.ReviewSource.LOCAL }
+                // 2. Start Local Flow (Instant Feedback from Room)
+                launch {
+                    reviewRepository.observeReviewsByUser(uid).collect { local ->
+                        currentLocal = local.filter { it.mediaId == mediaId }.map { entity ->
+                            com.example.watchorderengine.data.model.ReviewItem(
+                                id = entity.id,
+                                userId = entity.userId,
+                                authorName = "You",
+                                authorAvatarUrl = userPrefs.avatarUrl.value,
+                                rating = entity.rating,
+                                reviewText = entity.reviewText,
+                                source = com.example.watchorderengine.data.model.ReviewSource.LOCAL,
+                                createdAt = entity.updatedAt,
+                                hasSpoilers = entity.hasSpoilers,
+                                emojiReaction = entity.emojiReaction
+                            )
+                        }
+                        updateUI()
+                        android.util.Log.d("MediaDetailVM", "Local reviews updated: ${currentLocal.size}")
                     }
-                    
-                    _aggregatedReviews.value = (globalReviews + currentExternal).sortedByDescending { it.createdAt }
                 }
+
+                // 3. Start Global Firestore Flow (Community)
+                launch {
+                    reviewRepository.observeReviewsForMedia(mediaId)
+                        .catch { e -> 
+                            android.util.Log.e("MediaDetailVM", "Global reviews failed", e)
+                        }
+                        .collect { global ->
+                            currentGlobal = global.filter { it.userId != uid }
+                            updateUI()
+                            android.util.Log.d("MediaDetailVM", "Global reviews updated: ${currentGlobal.size}")
+                        }
+                }
+
             } catch (e: Exception) {
-                android.util.Log.e("MediaDetailVM", "Error observing reviews", e)
+                android.util.Log.e("MediaDetailVM", "Error in observeReviews", e)
                 _isReviewsLoading.value = false
             }
         }

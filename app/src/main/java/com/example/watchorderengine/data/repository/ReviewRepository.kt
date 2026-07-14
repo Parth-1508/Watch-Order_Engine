@@ -18,6 +18,9 @@ import com.google.firebase.firestore.toObject
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -177,8 +180,8 @@ class ReviewRepository @Inject constructor(
 
     // ─── External Reviews ───────────────────────────────────────────────────────
 
-    suspend fun getAggregatedReviews(mediaId: String): List<ReviewItem> = withContext(Dispatchers.IO) {
-        val media = mediaDao.getById(mediaId) ?: return@withContext emptyList()
+    suspend fun getAggregatedReviews(mediaId: String): List<ReviewItem> = coroutineScope {
+        val media = mediaDao.getById(mediaId) ?: return@coroutineScope emptyList()
         val category = media.mediaCategory.uppercase()
         val isMovie = category == "MOVIE" || category == "SHORT"
         val tmdbId = media.tmdbId
@@ -195,45 +198,18 @@ class ReviewRepository @Inject constructor(
         val userAvatar = userPrefs.avatarUrl.first()
         val userName = userPrefs.username.first()
         val localReviews = reviewDao.getReviewsForMedia(mediaId).map { it.toReviewItem(userName, userAvatar) }
-        val externalReviews = mutableListOf<ReviewItem>()
+        Log.d("ReviewRepo", "Local: Found ${localReviews.size} reviews in Room")
 
-        // 1. TMDB Reviews
-        try {
-            val tmdbResponse = if (isMovie) tmdbApi.getMovieReviews(tmdbId) else tmdbApi.getTvReviews(tmdbId)
-            if (tmdbResponse.isSuccessful) {
-                tmdbResponse.body()?.results?.map {
-                    val avatarPath = it.authorDetails?.avatarPath
-                    val avatarUrl = when {
-                        avatarPath.isNullOrEmpty() -> "https://ui-avatars.com/api/?name=${it.author}"
-                        avatarPath.startsWith("/") -> "https://image.tmdb.org/t/p/w200$avatarPath"
-                        else -> avatarPath
-                    }
-                    ReviewItem(
-                        id = "tmdb_${it.id}",
-                        authorName = it.author,
-                        authorAvatarUrl = avatarUrl,
-                        rating = it.authorDetails?.rating?.toFloat(), // TMDB is 1-10
-                        reviewText = it.content,
-                        source = ReviewSource.TMDB,
-                        createdAt = try { 
-                            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
-                                timeZone = TimeZone.getTimeZone("UTC")
-                            }.parse(it.createdAt)?.time ?: 0L
-                        } catch (e: Exception) { 0L },
-                        externalUrl = it.url
-                    )
-                }?.let { externalReviews.addAll(it) }
-            }
-        } catch (e: Exception) {
-            Log.e("ReviewRepo", "TMDB Reviews error for $tmdbId", e)
-        }
-
-        // 2. Resolve AniList/MAL IDs if it's potentially an anime
-        if (isAnime) {
+        // 1. Resolve External IDs (needed for AniList/MAL reviews)
+        if (isAnime && (anilistId == null || malIdToUse == null)) {
             val cleanTitle = media.title.replace(Regex("\\(\\d{4}\\)"), "")
                 .replace(Regex("\\[.*?\\]"), "")
+                .replace(Regex("(?i)\\b(the movie|movie|special|ova|ona|tv|series|season \\d+)\\b"), "")
+                .replace(Regex("\\s+"), " ")
                 .trim()
 
+            Log.d("ReviewRepo", "Searching for anime IDs: '$cleanTitle'")
+            
             if (anilistId == null) {
                 try {
                     val searchBody = AnilistRequest(
@@ -250,12 +226,14 @@ class ReviewRepository @Inject constructor(
                         }
                     }
                 } catch (e: Exception) { /* ignore */ }
-            } else {
+            } else if (malIdToUse == null) {
                 // We have anilistId, check if we can get idMal if it's missing
                 try {
-                    val query = "query(${'$'}id: Int) { Media(id: ${'$'}id) { idMal } }"
+                    val query = "query(${'$'}id: Int) { Media(id: ${'$'}id) { id idMal } }"
                     val resp = anilistApi.query(AnilistRequest(query, mapOf("id" to anilistId)))
-                    if (resp.isSuccessful) malIdToUse = resp.body()?.data?.media?.idMal
+                    if (resp.isSuccessful) {
+                        malIdToUse = resp.body()?.data?.media?.idMal
+                    }
                 } catch (e: Exception) {}
             }
             
@@ -270,84 +248,138 @@ class ReviewRepository @Inject constructor(
             }
         }
 
-        // 3. AniList Reviews
-        if (anilistId != null) {
+        // 2. Fetch External Reviews in Parallel
+        val tmdbDeferred = async(Dispatchers.IO) {
+            try {
+                val tmdbResponse = if (isMovie) tmdbApi.getMovieReviews(tmdbId) else tmdbApi.getTvReviews(tmdbId)
+                if (tmdbResponse.isSuccessful) {
+                    tmdbResponse.body()?.results?.map {
+                        val avatarPath = it.authorDetails?.avatarPath
+                        val avatarUrl = when {
+                            avatarPath.isNullOrEmpty() -> "https://ui-avatars.com/api/?name=${it.author}"
+                            avatarPath.startsWith("/") -> "https://image.tmdb.org/t/p/w200$avatarPath"
+                            else -> avatarPath
+                        }
+                        val rating = it.authorDetails?.rating?.toFloat()
+                        ReviewItem(
+                            id = "tmdb_${it.id}",
+                            authorName = it.author,
+                            authorAvatarUrl = avatarUrl,
+                            rating = rating,
+                            reviewText = it.content,
+                            source = ReviewSource.TMDB,
+                            createdAt = parseTmdbDate(it.createdAt),
+                            externalUrl = it.url,
+                            emojiReaction = getEmojiForRating(rating)
+                        )
+                    } ?: emptyList()
+                } else emptyList()
+            } catch (e: Exception) {
+                Log.e("ReviewRepo", "TMDB error", e); emptyList()
+            }
+        }
+
+        val anilistDeferred = async(Dispatchers.IO) {
+            val aid = anilistId ?: return@async emptyList<ReviewItem>()
             try {
                 val query = """
                     query(${'$'}id: Int) {
                       Media(id: ${'$'}id) {
+                        id
                         reviews(perPage: 10, sort: [ID_DESC]) {
                           nodes {
-                            id
-                            summary
-                            body
-                            score
-                            createdAt
+                            id summary body score createdAt
                             user { name avatar { large } }
                           }
                         }
                       }
                     }
                 """.trimIndent()
-                val response = anilistApi.query(AnilistRequest(query, mapOf("id" to anilistId)))
+                val response = anilistApi.query(AnilistRequest(query, mapOf("id" to aid)))
                 if (response.isSuccessful) {
-                    val mediaData = response.body()?.data?.media
-                    mediaData?.reviews?.nodes?.map {
+                    response.body()?.data?.media?.reviews?.nodes?.map {
+                        val rating = it.score?.toFloat()?.div(10f)
                         ReviewItem(
                             id = "anilist_${it.id}",
                             authorName = it.user?.name ?: "AniList User",
                             authorAvatarUrl = it.user?.avatar?.large,
-                            rating = it.score?.toFloat()?.div(10f), // AniList score is 0-100
-                            reviewText = it.body ?: it.summary ?: "",
+                            rating = rating,
+                            reviewText = (it.body ?: it.summary ?: "").cleanExternalMarkdown(),
                             source = ReviewSource.ANILIST,
                             createdAt = it.createdAt?.toLong()?.times(1000L) ?: 0L,
-                            externalUrl = "https://anilist.co/review/${it.id}"
+                            externalUrl = "https://anilist.co/review/${it.id}",
+                            emojiReaction = getEmojiForRating(rating)
                         )
-                    }?.let { externalReviews.addAll(it) }
-                }
+                    } ?: emptyList()
+                } else emptyList()
             } catch (e: Exception) {
-                Log.e("ReviewRepo", "AniList Reviews error for $anilistId", e)
+                Log.e("ReviewRepo", "AniList error", e); emptyList()
             }
         }
 
-        // 4. MAL (Jikan) Reviews
-        if (malIdToUse != null) {
+        val malDeferred = async(Dispatchers.IO) {
+            val mid = malIdToUse ?: return@async emptyList<ReviewItem>()
             try {
-                val jikanResponse = jikanApi.getAnimeReviews(malIdToUse)
+                val jikanResponse = jikanApi.getAnimeReviews(mid)
                 if (jikanResponse.isSuccessful) {
                     jikanResponse.body()?.data?.map {
+                        val rating = it.score.toFloat()
                         ReviewItem(
                             id = "mal_${it.malId}",
                             authorName = it.user.username,
                             authorAvatarUrl = it.user.images?.jpg?.imageUrl,
-                            rating = it.score.toFloat(), 
-                            reviewText = it.review,
+                            rating = rating, 
+                            reviewText = it.review.cleanExternalMarkdown(),
                             source = ReviewSource.MAL,
-                            createdAt = try { 
-                                // MAL dates can be ISO 8601 or simple strings. Try ISO first.
-                                val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
-                                sdf.parse(it.date)?.time ?: 0L
-                            } catch (e: Exception) {
-                                // Fallback: just use current time or try a simpler format if needed
-                                System.currentTimeMillis() 
-                            },
+                            createdAt = parseMalDate(it.date),
                             hasSpoilers = it.isSpoiler,
-                            externalUrl = it.url
+                            externalUrl = it.url,
+                            emojiReaction = getEmojiForRating(rating)
                         )
-                    }?.let { externalReviews.addAll(it) }
-                } else {
-                    Log.w("ReviewRepo", "MAL Reviews failed: ${jikanResponse.code()} for $malIdToUse")
-                }
+                    } ?: emptyList()
+                } else emptyList()
             } catch (e: Exception) {
-                Log.e("ReviewRepo", "MAL Reviews error for $malIdToUse", e)
+                Log.e("ReviewRepo", "MAL error", e); emptyList()
             }
         }
 
+        val externalReviews = awaitAll(tmdbDeferred, anilistDeferred, malDeferred).flatten()
         (localReviews + externalReviews).sortedByDescending { it.createdAt }
+    }
+
+    private fun getEmojiForRating(rating: Float?): String {
+        if (rating == null) return "🤩"
+        val emojis = listOf("🤬", "😡", "☹️", "😐", "🤨", "🙂", "😊", "🤩", "😍", "🤯")
+        val index = (rating.toInt() - 1).coerceIn(0, 9)
+        return emojis[index]
+    }
+
+    private fun parseTmdbDate(dateStr: String): Long = try {
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.parse(dateStr)?.time ?: 0L
+    } catch (e: Exception) { 0L }
+
+    private fun parseMalDate(dateStr: String): Long = try {
+        when {
+            dateStr.contains("+") -> SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).parse(dateStr)?.time
+            dateStr.endsWith("Z") -> SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.parse(dateStr)?.time
+            else -> SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(dateStr)?.time
+        } ?: 0L
+    } catch (e: Exception) { System.currentTimeMillis() }
+
+    private fun String.cleanExternalMarkdown(): String {
+        return this.replace(Regex("<[^>]*>"), "") // Strip HTML
+            .replace(Regex("__+|\\*+"), "")       // Strip bold/italic markers
+            .replace(Regex("\\[(.*?)\\]\\(.*?\\)"), "$1") // Clean Markdown links: [text](url) -> text
+            .replace(Regex("~+"), "")             // Strip strikethrough
+            .replace(Regex("(?m)^>.*$"), "")       // Strip blockquotes
+            .trim()
     }
 
     private fun ReviewEntity.toReviewItem(authorName: String, avatarUrl: String?) = ReviewItem(
         id = id,
+        userId = userId,
         authorName = authorName,
         authorAvatarUrl = avatarUrl,
         rating = rating,
@@ -355,11 +387,12 @@ class ReviewRepository @Inject constructor(
         source = ReviewSource.LOCAL,
         createdAt = updatedAt,
         hasSpoilers = hasSpoilers,
-        emojiReaction = "🤩" // Default for old reviews
+        emojiReaction = emojiReaction
     )
 
     fun ReviewDocument.toReviewItem() = ReviewItem(
         id = id,
+        userId = userId,
         authorName = authorName,
         authorAvatarUrl = authorAvatarUrl,
         rating = rating.toFloat(),

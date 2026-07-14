@@ -144,7 +144,7 @@ interface JikanApiService {
     @GET("anime")
     suspend fun searchAnime(
         @Query("q")     title: String,
-        @Query("type")  type:  String  = "tv",
+        @Query("type")  type:  String? = null,
         @Query("limit") limit: Int     = 1,
         @Query("sfw")   sfw:   Boolean = true
     ): Response<JikanSearchResponse>

@@ -111,6 +111,7 @@ fun ReviewDocument.toRoomEntity(): ReviewEntity {
 @Serializable
 data class ReviewItem(
     val id: String,
+    val userId: String? = null,
     val authorName: String,
     val authorAvatarUrl: String?,
     val rating: Float?,        // null if source doesn't provide 1-5 or 1-10
