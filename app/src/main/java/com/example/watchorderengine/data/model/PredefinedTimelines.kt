@@ -16,6 +16,8 @@ object PredefinedTimelines {
 
     private val masterTimestamp = System.currentTimeMillis()
 
+    private var postCount = 0
+
     val masterTimelines = listOf(
         buildPost(
             postId = "woe_master_mcu",
@@ -210,8 +212,6 @@ object PredefinedTimelines {
             )
         )
     )
-
-    private var postCount = 0
 
     private fun buildPost(
         postId: String,

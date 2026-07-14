@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -167,16 +168,16 @@ fun CommunityScreen(
                                     }
                                 }
                             } else {
-                        // Hero Post (Most Liked or First)
-                        item {
-                            val heroPost = state.posts.maxByOrNull { it.likesCount } ?: state.posts.first()
-                            HeroPostCard(
-                                post = heroPost,
-                                currentUserId = currentUserId,
-                                onLikeClick = { viewModel.likePost(heroPost.postId) },
-                                onClick = { viewModel.selectPost(heroPost) }
-                            )
-                        }
+                                // Hero Post (Most Liked or First)
+                                item {
+                                    val heroPost = state.posts.maxByOrNull { it.likesCount } ?: state.posts.first()
+                                    HeroPostCard(
+                                        post = heroPost,
+                                        currentUserId = currentUserId,
+                                        onLikeClick = { viewModel.likePost(heroPost.postId) },
+                                        onClick = { viewModel.selectPost(heroPost) }
+                                    )
+                                }
 
                                 items(state.posts, key = { it.postId }) { post ->
                                     Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -204,7 +205,7 @@ fun CommunityScreen(
             onImport = { viewModel.importTimeline(selectedPost!!) },
             importState = importState,
             onMediaClick = onMediaClick,
-            tmdbCache = viewModel.getCache() // I need to add this to ViewModel
+            tmdbCache = viewModel.getCache()
         )
     }
 }
@@ -294,12 +295,11 @@ fun HeroPostCard(
                     Spacer(Modifier.height(12.dp))
                     Text(
                         post.universeTitle,
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Black,
                         color = theme.textPrimary,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 32.sp
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         "by ${post.authorName}",
@@ -801,19 +801,20 @@ fun CommunityPostDetailSheet(
                         .weight(1f)
                         .clipToBounds()
                 ) {
-                if (rows.isNotEmpty()) {
-                    BranchingTimelineView(
-                        rows = rows,
-                        onNodeToggle = { /* No toggle in preview */ },
-                        onNodeClick = { onMediaClick(TimelineViewModel.resolveMediaId(it.node)) },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.BrokenImage, null, tint = theme.textSecondary.copy(0.3f), modifier = Modifier.size(48.dp))
-                            Spacer(Modifier.height(12.dp))
-                            Text("No timeline data found", color = theme.textSecondary)
+                    if (rows.isNotEmpty()) {
+                        BranchingTimelineView(
+                            rows = rows,
+                            onNodeToggle = { /* No toggle in preview */ },
+                            onNodeClick = { onMediaClick(TimelineViewModel.resolveMediaId(it.node)) },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.BrokenImage, null, tint = theme.textSecondary.copy(0.3f), modifier = Modifier.size(48.dp))
+                                Spacer(Modifier.height(12.dp))
+                                Text("No timeline data found", color = theme.textSecondary)
+                            }
                         }
                     }
                 }

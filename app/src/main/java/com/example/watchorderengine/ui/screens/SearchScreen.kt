@@ -8,10 +8,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -46,32 +47,39 @@ fun SearchScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    TextField(
+                    OutlinedTextField(
                         value = query,
                         onValueChange = {
                             query = it
                             viewModel.search(it)
                         },
-                        placeholder = { Text("Search Movies, TV, Anime...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
+                        placeholder = { Text("Search Movies, TV, Anime...", fontSize = 14.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 16.dp)
+                            .graphicsLayer {
+                                if (theme.isComic) rotationZ = 0.5f
+                            },
+                        leadingIcon = { Icon(Icons.Default.Search, null, tint = theme.accent) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = ""; viewModel.search("") }) {
+                                    Icon(Icons.Default.Close, null, tint = theme.textSecondary)
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = theme.surface,
+                            unfocusedContainerColor = theme.surface,
+                            focusedBorderColor = theme.accent,
+                            unfocusedBorderColor = theme.textSecondary.copy(alpha = 0.2f),
                             cursorColor = theme.accent,
                             focusedTextColor = theme.textPrimary,
                             unfocusedTextColor = theme.textPrimary
                         ),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        trailingIcon = {
-                            if (query.isNotEmpty()) {
-                                IconButton(onClick = { query = ""; viewModel.search("") }) {
-                                    Icon(Icons.Default.Close, "Clear search", tint = theme.textSecondary)
-                                }
-                            }
-                        }
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
                     )
                 },
                 navigationIcon = {
@@ -156,12 +164,12 @@ private fun SearchFilterChip(
         onClick = onClick,
         shape = CircleShape,
         color = if (isSelected) theme.accent else theme.surface,
-        border = BorderStroke(1.dp, if (isSelected) theme.accent else theme.border.copy(alpha = 0.3f))
+        border = BorderStroke(1.dp, if (isSelected) theme.accent else theme.textSecondary.copy(alpha = 0.2f))
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            color = if (isSelected) Color.Black else theme.textSecondary,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            color = if (isSelected) Color.White else theme.textPrimary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Black
         )

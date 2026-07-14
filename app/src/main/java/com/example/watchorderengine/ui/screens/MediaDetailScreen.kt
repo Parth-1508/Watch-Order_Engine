@@ -125,8 +125,11 @@ fun MediaDetailScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Failed to load details", color = theme.textPrimary)
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { viewModel.loadMediaDetail(mediaId) }) {
-                        Text("Retry")
+                    Button(
+                        onClick = { viewModel.loadMediaDetail(mediaId) },
+                        colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
+                    ) {
+                        Text("Retry", color = Color.White)
                     }
                 }
             }
@@ -140,7 +143,7 @@ fun SyncingOverlay() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.7f))
+            .background(theme.background.copy(alpha = 0.8f))
             .clickable(enabled = false) { },
         contentAlignment = Alignment.Center
     ) {
@@ -153,13 +156,13 @@ fun SyncingOverlay() {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 "Syncing progress to cloud...",
-                color = Color.White,
+                color = theme.textPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             )
             Text(
                 "This might take a moment",
-                color = Color.Gray,
+                color = theme.textSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 4.dp)
             )
@@ -235,7 +238,7 @@ private fun DetailContent(
                         },
                         dismissButton = {
                             TextButton(onClick = { viewModel.dismissBulkMark() }) {
-                                Text("Cancel", color = Color.Gray)
+                                Text("Cancel", color = theme.textSecondary)
                             }
                         }
                     )
@@ -274,9 +277,9 @@ private fun DetailContent(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
+                                .background(theme.background.copy(alpha = 0.6f))
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Go back", tint = Color.White)
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Go back", tint = theme.textPrimary)
                         }
                         val context = androidx.compose.ui.platform.LocalContext.current
                         IconButton(
@@ -292,9 +295,9 @@ private fun DetailContent(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
+                                .background(theme.background.copy(alpha = 0.6f))
                         ) {
-                            Icon(Icons.Default.Share, "Share show", tint = Color.White)
+                            Icon(Icons.Default.Share, "Share show", tint = theme.textPrimary)
                         }
                     }
 
@@ -307,7 +310,7 @@ private fun DetailContent(
                                 .size(56.dp)
                         ) {
                             Canvas(modifier = Modifier.fillMaxSize()) {
-                                drawCircle(color = Color.White.copy(alpha = 0.15f), style = Stroke(width = 4.dp.toPx()))
+                                drawCircle(color = theme.textSecondary.copy(alpha = 0.15f), style = Stroke(width = 4.dp.toPx()))
                                 drawArc(
                                     color = theme.accent,
                                     startAngle = -90f,
@@ -319,7 +322,7 @@ private fun DetailContent(
                             Text(
                                 text = "${(progress * 100).toInt()}%",
                                 modifier = Modifier.align(Alignment.Center),
-                                color = Color.White,
+                                color = theme.textPrimary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Black
                             )
@@ -342,15 +345,15 @@ private fun DetailContent(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.padding(vertical = 8.dp)
                     ) {
-                        Text(detail.releaseYear, color = Color.LightGray, fontSize = 14.sp)
+                        Text(detail.releaseYear, color = theme.textSecondary, fontSize = 14.sp)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             Icon(Icons.Default.Star, "Rating", tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp))
                             Text(String.format("%.1f", detail.voteAverage), color = Color(0xFFFFD700), fontSize = 14.sp)
                         }
-                        Box(modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                            Text(detail.ageRating, color = Color.White, fontSize = 10.sp)
+                        Box(modifier = Modifier.border(1.dp, theme.textSecondary.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                            Text(detail.ageRating, color = theme.textPrimary, fontSize = 10.sp)
                         }
-                        Text("${watchedCount}/${totalEps} eps", color = Color.Gray, fontSize = 10.sp)
+                        Text("${watchedCount}/${totalEps} eps", color = theme.textSecondary, fontSize = 10.sp)
                     }
                     
                     // Overview Section
@@ -364,7 +367,7 @@ private fun DetailContent(
                                 .padding(vertical = 8.dp)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
-                                    indication = null // Remove ripple for cleaner feel on text
+                                    indication = null 
                                 ) { isExpanded = !isExpanded }
                                 .animateContentSize(),
                             lineHeight = 20.sp,
@@ -415,7 +418,6 @@ private fun DetailContent(
                             onDismissRequest = { expanded = false },
                             modifier = Modifier.fillMaxWidth(0.9f).background(theme.surface)
                         ) {
-                            // "None" option to remove from watchlist
                             DropdownMenuItem(
                                 text = { Text("None (Remove)", color = theme.textPrimary) },
                                 onClick = {
@@ -445,7 +447,7 @@ private fun DetailContent(
                         .background(theme.background)
                         .drawBehind {
                             drawLine(
-                                color = Color.White.copy(alpha = 0.1f),
+                                color = theme.textSecondary.copy(alpha = 0.1f),
                                 start = androidx.compose.ui.geometry.Offset(0f, size.height),
                                 end = androidx.compose.ui.geometry.Offset(size.width, size.height),
                                 strokeWidth = 1.dp.toPx()
@@ -460,8 +462,6 @@ private fun DetailContent(
                                 .padding(end = 24.dp)
                                 .clickable { 
                                     activeTab = tab
-                                    // Smoothly scroll back to the top of the tab content 
-                                    // if we've scrolled past the header.
                                     scope.launch {
                                         if (listState.firstVisibleItemIndex >= 3) {
                                             listState.animateScrollToItem(3)
@@ -471,7 +471,7 @@ private fun DetailContent(
                         ) {
                             Text(
                                 text = tab.uppercase(),
-                                color = if (isSelected) Color.White else Color.Gray,
+                                color = if (isSelected) theme.textPrimary else theme.textSecondary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(vertical = 12.dp)
@@ -517,7 +517,7 @@ private fun DetailContent(
                                         lineHeight = 16.sp
                                     )
                                     IconButton(onClick = { viewModel.dismissWelcomeTip() }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Close, null, tint = Color.Gray)
+                                        Icon(Icons.Default.Close, null, tint = theme.textSecondary)
                                     }
                                 }
                             }
@@ -543,13 +543,13 @@ private fun DetailContent(
                                             onSeasonChange(season.seasonNumber) 
                                         },
                                         shape = CircleShape,
-                                        color = if (isSelected) Color.White else theme.surface,
-                                        border = if (isSelected) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                        color = if (isSelected) theme.textPrimary else theme.surface,
+                                        border = if (isSelected) null else BorderStroke(1.dp, theme.textSecondary.copy(alpha = 0.1f))
                                     ) {
                                         Text(
                                             "S${season.seasonNumber}",
                                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                                            color = if (isSelected) Color.Black else Color.Gray,
+                                            color = if (isSelected) theme.background else theme.textSecondary,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -562,7 +562,7 @@ private fun DetailContent(
                                     Icon(Icons.Default.Checklist, "Mark Season", tint = theme.accent, modifier = Modifier.size(20.dp))
                                 }
                                 IconButton(onClick = { viewModel.unmarkSeasonAsWatched(detail.id, selectedSeason) }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Default.RemoveDone, "Unmark Season", tint = Color.Gray, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Default.RemoveDone, "Unmark Season", tint = theme.textSecondary, modifier = Modifier.size(20.dp))
                                 }
                             }
                         }
@@ -575,7 +575,7 @@ private fun DetailContent(
                         item {
                             Text(
                                 "No episodes found for this season.",
-                                color = Color.Gray,
+                                color = theme.textSecondary,
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(16.dp)
                             )
@@ -646,9 +646,9 @@ private fun ReviewsTab(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
         ) {
-            Icon(Icons.Default.RateReview, null, tint = Color.Black)
+            Icon(Icons.Default.RateReview, null, tint = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("WRITE A REVIEW", color = Color.Black, fontWeight = FontWeight.Black)
+            Text("WRITE A REVIEW", color = Color.White, fontWeight = FontWeight.Black)
         }
 
         Spacer(Modifier.height(24.dp))
@@ -661,7 +661,7 @@ private fun ReviewsTab(
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     "No reviews yet. Be the first to share your thoughts!",
-                    color = Color.Gray,
+                    color = theme.textSecondary,
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(vertical = 16.dp)
@@ -710,7 +710,7 @@ private fun ReviewItem(
         modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth(),
         color = theme.surface.copy(alpha = 0.3f),
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        border = BorderStroke(1.dp, theme.textSecondary.copy(alpha = 0.05f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -723,7 +723,7 @@ private fun ReviewItem(
                     AsyncImage(
                         model = review.authorAvatarUrl.takeIf { !it.isNullOrBlank() } ?: fallbackAvatar,
                         contentDescription = null,
-                        modifier = Modifier.size(36.dp).clip(CircleShape).background(Color.Gray),
+                        modifier = Modifier.size(36.dp).clip(CircleShape).background(theme.textSecondary.copy(alpha = 0.3f)),
                         contentScale = ContentScale.Crop
                     )
                     Spacer(Modifier.width(12.dp))
@@ -759,12 +759,12 @@ private fun ReviewItem(
                 Row {
                     if (review.externalUrl != null) {
                         IconButton(onClick = { uriHandler.openUri(review.externalUrl) }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.OpenInNew, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.OpenInNew, null, tint = theme.textSecondary, modifier = Modifier.size(16.dp))
                         }
                     }
                     if (review.source == com.example.watchorderengine.data.model.ReviewSource.LOCAL) {
                         IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Delete, null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Delete, null, tint = theme.textSecondary.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -776,7 +776,7 @@ private fun ReviewItem(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .background(theme.background.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                             .clickable { isExpanded = true }
                             .padding(12.dp),
                         contentAlignment = Alignment.Center
@@ -791,13 +791,12 @@ private fun ReviewItem(
                     val cleanText = if (review.source == com.example.watchorderengine.data.model.ReviewSource.LOCAL) {
                         review.reviewText 
                     } else {
-                        // Very basic HTML strip for external reviews
                         review.reviewText.replace(Regex("<[^>]*>"), "")
                     }
                     
                     Text(
                         text = cleanText,
-                        color = Color.LightGray,
+                        color = theme.textSecondary,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         maxLines = if (isExpanded) Int.MAX_VALUE else 8,
@@ -812,7 +811,7 @@ private fun ReviewItem(
                 val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
                 Text(
                     text = "Posted on ${sdf.format(java.util.Date(review.createdAt))}",
-                    color = Color.Gray,
+                    color = theme.textSecondary,
                     fontSize = 10.sp
                 )
             }
@@ -854,23 +853,8 @@ private fun ReviewSubmissionDialog(
     var text by remember { mutableStateOf("") }
     var hasSpoilers by remember { mutableStateOf(false) }
     
-    val ratingEmojis = listOf(
-        "🤬", // 1
-        "😡", // 2
-        "☹️", // 3
-        "😐", // 4
-        "🤨", // 5
-        "🙂", // 6
-        "😊", // 7
-        "🤩", // 8
-        "😍", // 9
-        "🤯"  // 10
-    )
-    
-    val emojiLabels = listOf(
-        "Horrible", "Bad", "Poor", "Meh", "Hmm", 
-        "Okay", "Good", "Great", "Amazing", "Masterpiece"
-    )
+    val ratingEmojis = listOf("🤬", "😡", "☹️", "😐", "🤨", "🙂", "😊", "🤩", "😍", "🤯")
+    val emojiLabels = listOf("Horrible", "Bad", "Poor", "Meh", "Hmm", "Okay", "Good", "Great", "Amazing", "Masterpiece")
 
     val currentEmojiIndex = (rating.toInt() - 1).coerceIn(0, 9)
     val currentEmoji = ratingEmojis[currentEmojiIndex]
@@ -879,14 +863,13 @@ private fun ReviewSubmissionDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = theme.surface,
-        title = { Text("Write a Review", fontWeight = FontWeight.Black) },
+        title = { Text("Write a Review", fontWeight = FontWeight.Black, color = theme.textPrimary) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Drag to rate your experience", fontSize = 12.sp, color = Color.Gray)
+                Text("Drag to rate your experience", fontSize = 12.sp, color = theme.textSecondary)
                 
                 Spacer(Modifier.height(24.dp))
                 
-                // Emoji and Label Display
                 Text(currentEmoji, fontSize = 48.sp)
                 Text(
                     text = currentLabel,
@@ -912,7 +895,7 @@ private fun ReviewSubmissionDialog(
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
-                                .background(Color.White, CircleShape)
+                                .background(theme.background, CircleShape)
                                 .border(2.dp, theme.accent, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
@@ -937,12 +920,12 @@ private fun ReviewSubmissionDialog(
                     modifier = Modifier.fillMaxWidth().height(120.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = theme.accent,
-                        unfocusedBorderColor = Color.Gray,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
+                        unfocusedBorderColor = theme.textSecondary.copy(alpha = 0.2f),
+                        focusedTextColor = theme.textPrimary,
+                        unfocusedTextColor = theme.textPrimary
                     )
                 )
-                Text("${text.length}/2000", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.align(Alignment.End))
+                Text("${text.length}/2000", color = theme.textSecondary, fontSize = 10.sp, modifier = Modifier.align(Alignment.End))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -964,7 +947,7 @@ private fun ReviewSubmissionDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.Gray)
+                Text("Cancel", color = theme.textSecondary)
             }
         }
     )
@@ -997,7 +980,7 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(
             width = 1.dp,
-            color = if (episode.isSpoilerBlurred) Color.White.copy(alpha = 0.02f) else Color.White.copy(alpha = 0.05f)
+            color = theme.textSecondary.copy(alpha = 0.05f)
         )
     ) {
         Box {
@@ -1010,7 +993,7 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
                         modifier = Modifier
                             .size(100.dp, 60.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Black)
+                            .background(theme.background)
                     ) {
                         AsyncImage(
                             model = episode.stillUrl,
@@ -1032,19 +1015,19 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Ep ${episode.episodeNumber}", color = Color.Gray, fontSize = 10.sp)
+                            Text("Ep ${episode.episodeNumber}", color = theme.textSecondary, fontSize = 10.sp)
                             Spacer(modifier = Modifier.width(8.dp))
                             val isFiller =
                                 episode.episodeType == com.example.watchorderengine.data.model.EpisodeType.FILLER
                             Surface(
-                                color = if (isFiller) Color(0xFFFF8A65).copy(alpha = 0.2f) else Color(0xFF4FC3F7).copy(
+                                color = if (isFiller) theme.statusFiller.copy(alpha = 0.2f) else theme.statusCanon.copy(
                                     alpha = 0.2f
                                 ),
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
                                     text = if (isFiller) "FILLER" else "CANON",
-                                    color = if (isFiller) Color(0xFFFF8A65) else Color(0xFF4FC3F7),
+                                    color = if (isFiller) theme.statusFiller else theme.statusCanon,
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
@@ -1053,7 +1036,7 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
                         }
                         Text(
                             text = episode.title,
-                            color = if (episode.isWatched) Color.Gray else Color.White,
+                            color = if (episode.isWatched) theme.textSecondary else theme.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             maxLines = 1,
@@ -1065,7 +1048,7 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
                         Icon(
                             if (episode.isWatched) Icons.Default.CheckCircle else Icons.Default.AddCircle,
                             null,
-                            tint = if (episode.isWatched) Color(0xFF4ADE80) else Color.Gray,
+                            tint = if (episode.isWatched) theme.statusCanon else theme.textSecondary,
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -1073,7 +1056,7 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
                 if (expanded) {
                     Text(
                         text = episode.overview.ifBlank { "No synopsis available." },
-                        color = Color.LightGray,
+                        color = theme.textSecondary,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                         lineHeight = 16.sp
@@ -1092,13 +1075,13 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
                         Icon(
                             Icons.Default.Lock,
                             null,
-                            tint = Color.White.copy(alpha = 0.5f),
+                            tint = theme.textPrimary.copy(alpha = 0.5f),
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "SPOILER PROTECTED",
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = theme.textPrimary.copy(alpha = 0.5f),
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Black
                         )
@@ -1118,7 +1101,7 @@ private fun EpisodeRowPlaceholder() {
             .padding(horizontal = 16.dp, vertical = 4.dp),
         color = theme.surface.copy(alpha = 0.3f),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        border = BorderStroke(1.dp, theme.textSecondary.copy(alpha = 0.05f))
     ) {
         Row(
             modifier = Modifier.padding(8.dp),
@@ -1128,13 +1111,13 @@ private fun EpisodeRowPlaceholder() {
                 modifier = Modifier
                     .size(100.dp, 60.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.DarkGray)
+                    .background(theme.surface)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Box(modifier = Modifier.width(40.dp).height(8.dp).background(Color.DarkGray))
+                Box(modifier = Modifier.width(40.dp).height(8.dp).background(theme.surface))
                 Spacer(modifier = Modifier.height(4.dp))
-                Box(modifier = Modifier.fillMaxWidth(0.6f).height(12.dp).background(Color.DarkGray))
+                Box(modifier = Modifier.fillMaxWidth(0.6f).height(12.dp).background(theme.surface))
             }
         }
     }
@@ -1241,7 +1224,7 @@ private fun TrailerCard(trailerKey: String) {
             .padding(vertical = 12.dp)
             .clickable { uriHandler.openUri("vnd.youtube:$trailerKey") }
             .then(ThemeBorderModifier()),
-        color = Color.Black,
+        color = theme.surface,
         shape = RoundedCornerShape(16.dp)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -1300,6 +1283,7 @@ private fun CharactersTab(
 ) {
     val isAnime = detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME
     val characterArt by viewModel.characterArt.collectAsStateWithLifecycle()
+    val theme = LocalAppTheme.current
 
     Column(modifier = Modifier.padding(16.dp)) {
         detail.cast.take(10).forEach { cast ->
@@ -1313,7 +1297,7 @@ private fun CharactersTab(
         if (isAnime && characterArt.isEmpty()) {
             Text(
                 "Looking up character art on AniList…",
-                color = Color.Gray,
+                color = theme.textSecondary,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(top = 4.dp)
             )
@@ -1343,7 +1327,7 @@ private fun CharacterRow(
         modifier = Modifier.padding(bottom = 16.dp).fillMaxWidth(),
         color = theme.surface.copy(alpha = 0.3f),
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        border = BorderStroke(1.dp, theme.textSecondary.copy(alpha = 0.05f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1351,7 +1335,7 @@ private fun CharacterRow(
                     AsyncImage(
                         model = primaryImage,
                         contentDescription = cast.character,
-                        modifier = Modifier.size(56.dp).clip(CircleShape).background(Color.DarkGray).border(2.dp, theme.accent, CircleShape),
+                        modifier = Modifier.size(56.dp).clip(CircleShape).background(theme.surface).border(2.dp, theme.accent, CircleShape),
                         contentScale = ContentScale.Crop,
                         error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
                     )
@@ -1364,7 +1348,7 @@ private fun CharacterRow(
                                 .align(Alignment.BottomEnd)
                                 .offset(x = 2.dp, y = 2.dp)
                                 .clip(CircleShape)
-                                .background(Color.DarkGray)
+                                .background(theme.background)
                                 .border(1.5.dp, theme.background, CircleShape),
                             contentScale = ContentScale.Crop,
                             error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
@@ -1373,13 +1357,13 @@ private fun CharacterRow(
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
-                    Text(cast.character, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(cast.character, color = theme.textPrimary, fontWeight = FontWeight.Bold)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (showVoiceBadge) {
                             Icon(Icons.Filled.Mic, contentDescription = null, tint = theme.accent, modifier = Modifier.size(11.dp))
                             Spacer(modifier = Modifier.width(3.dp))
                         }
-                        Text(cast.name, color = Color.Gray, fontSize = 12.sp)
+                        Text(cast.name, color = theme.textSecondary, fontSize = 12.sp)
                     }
                 }
             }
@@ -1388,7 +1372,7 @@ private fun CharacterRow(
             
             Text(
                 text = biography ?: "Fetching character data...",
-                color = Color.LightGray,
+                color = theme.textSecondary,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,
                 maxLines = 5,
@@ -1396,11 +1380,11 @@ private fun CharacterRow(
             )
 
             Spacer(modifier = Modifier.height(12.dp))
-            Box(modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(8.dp)).padding(8.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().background(theme.background.copy(alpha = 0.3f), RoundedCornerShape(8.dp)).padding(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("FAN VIBE:", color = theme.accent, fontSize = 8.sp, fontWeight = FontWeight.Black)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Most loved character in this arc", color = Color.Gray, fontSize = 9.sp)
+                    Text("Most loved character in this arc", color = theme.textSecondary, fontSize = 9.sp)
                 }
             }
         }
@@ -1489,7 +1473,7 @@ private fun ChronologyTab(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.AccountTree, null, tint = theme.accent, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Watch Order Guide", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Watch Order Guide", color = theme.textPrimary, fontWeight = FontWeight.Bold)
             }
             
             if (detail.arcs.isEmpty() && !isAnalyzing) {
@@ -1499,7 +1483,7 @@ private fun ChronologyTab(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                     modifier = Modifier.height(32.dp)
                 ) {
-                    Text("GENERATE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = theme.primary)
+                    Text("GENERATE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White)
                 }
             }
         }
@@ -1508,13 +1492,13 @@ private fun ChronologyTab(
             Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = theme.accent)
-                    Text("AI is analyzing episodes...", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp))
+                    Text("AI is analyzing episodes...", color = theme.textSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp))
                 }
             }
         } else if (detail.arcs.isEmpty()) {
             Text(
                 "No watch order guide available for this show yet. Click generate to use Gemini AI.",
-                color = Color.Gray,
+                color = theme.textSecondary,
                 fontSize = 12.sp,
                 lineHeight = 18.sp
             )
@@ -1524,16 +1508,16 @@ private fun ChronologyTab(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(theme.accent).border(2.dp, theme.background, CircleShape))
                         if (i < detail.arcs.size - 1) {
-                            Box(modifier = Modifier.width(2.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.1f)))
+                            Box(modifier = Modifier.width(2.dp).fillMaxHeight().background(theme.textSecondary.copy(alpha = 0.1f)))
                         }
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.padding(bottom = 24.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(arc.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(arc.name, color = theme.textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
-                        Text("S${arc.startSeason} E${arc.startEpisode} - S${arc.endSeason} E${arc.endEpisode}", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(vertical = 4.dp))
-                        Text(arc.synopsis, color = Color.LightGray, fontSize = 12.sp, lineHeight = 16.sp)
+                        Text("S${arc.startSeason} E${arc.startEpisode} - S${arc.endSeason} E${arc.endEpisode}", color = theme.textSecondary, fontSize = 11.sp, modifier = Modifier.padding(vertical = 4.dp))
+                        Text(arc.synopsis, color = theme.textSecondary, fontSize = 12.sp, lineHeight = 16.sp)
                     }
                 }
             }

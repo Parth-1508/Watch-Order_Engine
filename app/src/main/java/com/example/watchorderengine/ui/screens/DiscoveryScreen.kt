@@ -51,13 +51,13 @@ fun DiscoveryScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(theme.background)
     ) {
         if (deck.isNotEmpty()) {
             AsyncImage(
                 model = deck.last().backdropUrl ?: deck.last().posterUrl,
                 contentDescription = "Background artwork for ${deck.last().title}",
-                modifier = Modifier.fillMaxSize().alpha(0.3f),
+                modifier = Modifier.fillMaxSize().alpha(0.15f),
                 contentScale = ContentScale.Crop
             )
         }
@@ -99,7 +99,7 @@ fun DiscoveryScreen(
                 item {
                     Text(
                         "PLATFORMS:",
-                        color = Color.Gray,
+                        color = theme.textSecondary,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 1.sp
@@ -124,7 +124,7 @@ fun DiscoveryScreen(
                 if (isLoading) {
                     CircularProgressIndicator(color = theme.accent)
                 } else if (deck.isEmpty()) {
-                    EmptyDiscoveryView { viewModel.resetDeck() }
+                    EmptyDiscoveryView(theme) { viewModel.resetDeck() }
                 } else {
                     deck.forEachIndexed { index, media ->
                         DiscoveryCard(
@@ -142,8 +142,11 @@ fun DiscoveryScreen(
         // Retry UI if loading fails and deck is empty
         if (!isLoading && deck.isEmpty() && activeCategory != null) {
              Box(Modifier.align(Alignment.Center)) {
-                 Button(onClick = { viewModel.resetDeck() }) {
-                     Text("Retry Connection")
+                 Button(
+                     onClick = { viewModel.resetDeck() },
+                     colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
+                 ) {
+                     Text("Retry Connection", color = Color.White)
                  }
              }
         }
@@ -152,16 +155,17 @@ fun DiscoveryScreen(
 
 @Composable
 private fun CategoryChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
+    val theme = LocalAppTheme.current
     Surface(
         modifier = Modifier.clickable(onClick = onClick),
         shape = CircleShape,
-        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.1f),
-        border = BorderStroke(1.dp, if (isSelected) Color.White else Color.White.copy(alpha = 0.2f))
+        color = if (isSelected) theme.accent else theme.surface.copy(alpha = 0.5f),
+        border = BorderStroke(1.dp, if (isSelected) theme.accent else theme.textSecondary.copy(alpha = 0.2f))
     ) {
         Text(
             label.uppercase(),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            color = if (isSelected) Color.Black else Color.White,
+            color = if (isSelected) Color.White else theme.textPrimary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Black
         )
@@ -174,13 +178,14 @@ private fun PlatformChip(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
+    val theme = LocalAppTheme.current
     Surface(
         modifier = Modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
-        color = if (isSelected) Color.White.copy(alpha = 0.2f) else Color.Transparent,
+        color = if (isSelected) theme.accent.copy(alpha = 0.2f) else Color.Transparent,
         border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.2f)
+            color = if (isSelected) theme.accent else theme.textSecondary.copy(alpha = 0.2f)
         )
     ) {
         Row(
@@ -198,7 +203,7 @@ private fun PlatformChip(
             )
             Text(
                 text = platform.displayName.uppercase(),
-                color = Color.White,
+                color = theme.textPrimary,
                 fontSize = 9.sp,
                 fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold
             )
@@ -239,10 +244,6 @@ fun DiscoveryCard(
                             },
                             onDragEnd = {
                                 if (abs(offsetX) > 300) {
-                                    // Swipe left = SKIP (temporary — resurfaces
-                                    // after a manual reset), NOT a permanent
-                                    // Dropped decision. Permanent dismissal has
-                                    // its own explicit "Not Interested" button.
                                     onSwipe(if (offsetX > 0) SwipeAction.WATCH else SwipeAction.SKIP)
                                 } else if (offsetY < -300) {
                                     onSwipe(SwipeAction.PLAN)
@@ -257,9 +258,10 @@ fun DiscoveryCard(
                     }
                 } else Modifier
             )
-            .clip(RoundedCornerShape(24.dp))
-            .background(Color.DarkGray)
+            .clip(RoundedCornerShape(theme.appRadius.coerceAtLeast(16.dp)))
+            .background(theme.surface)
             .clickable(enabled = isTop, onClick = onClick)
+            .then(if (theme.isComic) Modifier.border(2.dp, Color.Black, RoundedCornerShape(theme.appRadius.coerceAtLeast(16.dp))) else Modifier)
     ) {
         AsyncImage(
             model = media.posterUrl,
@@ -276,9 +278,9 @@ fun DiscoveryCard(
                     .padding(16.dp)
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(theme.background.copy(alpha = 0.5f))
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Not interested", tint = Color.White)
+                Icon(Icons.Default.Close, contentDescription = "Not interested", tint = theme.textPrimary)
             }
         }
 
@@ -287,7 +289,7 @@ fun DiscoveryCard(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)),
+                        colors = listOf(Color.Transparent, theme.background.copy(alpha = 0.95f)),
                         startY = 600f
                     )
                 )
@@ -296,7 +298,7 @@ fun DiscoveryCard(
             Column(modifier = Modifier.align(Alignment.BottomStart)) {
                 Text(
                     media.title,
-                    color = Color.White,
+                    color = theme.textPrimary,
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Black,
                     fontStyle = FontStyle.Italic,
@@ -330,7 +332,7 @@ fun DiscoveryCard(
                 offsetX < -100 -> Color.Red
                 offsetY < -100 -> theme.accent
                 offsetY > 100 -> Color.Yellow
-                else -> Color.White
+                else -> theme.textPrimary
             }
 
             Box(
@@ -352,15 +354,9 @@ fun DiscoveryCard(
     }
 }
 
-/**
- * Replaces the old LoreStatsRadar hexagon — a fake radar chart drawn from
- * seeded-random numbers labeled POP/SCORE/CAST/LORE/HYP/VIBE, none of which
- * corresponded to real data. This shows the genre tags and rating TMDB
- * actually provides, so the card communicates something real instead of
- * decorative noise.
- */
 @Composable
 fun MediaInfoPanel(media: MediaSummary, modifier: Modifier = Modifier) {
+    val theme = LocalAppTheme.current
     Column(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(16.dp))
@@ -375,11 +371,11 @@ fun MediaInfoPanel(media: MediaSummary, modifier: Modifier = Modifier) {
                 Spacer(modifier = Modifier.width(12.dp))
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = Color.White.copy(alpha = 0.15f)
+                    color = theme.accent.copy(alpha = 0.15f)
                 ) {
                     Text(
                         media.ageRating,
-                        color = Color.White,
+                        color = theme.accent,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -394,12 +390,12 @@ fun MediaInfoPanel(media: MediaSummary, modifier: Modifier = Modifier) {
                 items(media.genres.take(4)) { genre ->
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = Color.White.copy(alpha = 0.12f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                        color = theme.surface.copy(alpha = 0.3f),
+                        border = BorderStroke(1.dp, theme.textSecondary.copy(alpha = 0.2f))
                     ) {
                         Text(
                             genre,
-                            color = Color.White,
+                            color = theme.textPrimary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
@@ -412,7 +408,7 @@ fun MediaInfoPanel(media: MediaSummary, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun EmptyDiscoveryView(onReset: () -> Unit) {
+fun EmptyDiscoveryView(theme: com.example.watchorderengine.ui.theme.AppThemeConfig, onReset: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -421,27 +417,30 @@ fun EmptyDiscoveryView(onReset: () -> Unit) {
         Icon(
             Icons.Default.CheckCircle,
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.5f),
+            tint = theme.accent.copy(alpha = 0.5f),
             modifier = Modifier.size(64.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             "You're all caught up!",
-            color = Color.White,
+            color = theme.textPrimary,
             fontSize = 20.sp,
             fontWeight = FontWeight.Black,
             fontStyle = FontStyle.Italic
         )
         Text(
             "Check back later, or reset to see skipped titles again.",
-            color = Color.White.copy(alpha = 0.6f),
+            color = theme.textSecondary,
             fontSize = 13.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp, start = 24.dp, end = 24.dp)
         )
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = onReset) {
-            Text("Reset Deck", fontWeight = FontWeight.Bold)
+        Button(
+            onClick = onReset,
+            colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
+        ) {
+            Text("Reset Deck", fontWeight = FontWeight.Bold, color = Color.White)
         }
     }
 }

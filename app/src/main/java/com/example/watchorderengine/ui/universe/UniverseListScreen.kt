@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,7 +38,15 @@ fun UniverseListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Select Universe") },
+                title = { 
+                    Text(
+                        "SELECT UNIVERSE", 
+                        fontWeight = FontWeight.Black, 
+                        modifier = Modifier.graphicsLayer {
+                            if (theme.isComic) rotationZ = -1f
+                        }
+                    ) 
+                },
                 modifier = Modifier.statusBarsPadding(),
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = theme.background,
@@ -92,13 +101,17 @@ fun UniverseItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
+            .graphicsLayer {
+                if (theme.isComic) rotationZ = if (universe.id.hashCode() % 2 == 0) 0.5f else -0.5f
+            }
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { showMenu = true }
             ),
         shape = RoundedCornerShape(theme.appRadius),
         colors = CardDefaults.cardColors(containerColor = theme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = if (theme.isComic) BorderStroke(1.5.dp, Color.Black) else null
     ) {
         Box(modifier = Modifier.height(160.dp)) {
             AsyncImage(
@@ -145,7 +158,7 @@ fun UniverseItem(
                 modifier = Modifier.background(theme.surface)
             ) {
                 DropdownMenuItem(
-                    text = { Text("Regenerate Node", color = theme.textPrimary) },
+                    text = { Text("Regenerate Graph", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onRegenerate()
@@ -153,7 +166,7 @@ fun UniverseItem(
                     leadingIcon = { Icon(Icons.Default.Refresh, null, tint = theme.accent) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete Node", color = theme.textPrimary) },
+                    text = { Text("Delete Graph", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onDelete()
@@ -161,7 +174,7 @@ fun UniverseItem(
                     leadingIcon = { Icon(Icons.Default.Delete, null, tint = theme.statusFiller) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Mark Watched", color = theme.textPrimary) },
+                    text = { Text("Mark All Watched", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onToggleCompletion(true)
@@ -169,7 +182,7 @@ fun UniverseItem(
                     leadingIcon = { Icon(Icons.Default.Check, null, tint = theme.statusCanon) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Mark Unwatched", color = theme.textPrimary) },
+                    text = { Text("Mark All Unwatched", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onToggleCompletion(false)
