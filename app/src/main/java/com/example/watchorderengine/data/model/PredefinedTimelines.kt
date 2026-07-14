@@ -178,18 +178,35 @@ object PredefinedTimelines {
             )
         ),
         buildPost(
-            postId = "woe_master_fate",
-            title = "Fate Series (Ultimate Anime Order)",
-            description = "The definitive watch order for the core Fate anime timeline, optimizing for character reveals and lore progression. Major Anime Franchise.",
+            postId = "woe_master_fate_expanded",
+            title = "Fate Series (Expanded Universe & Grand Order)",
+            description = "The comprehensive watch order covering the core Holy Grail Wars, Lord El-Melloi II, alternate Apocrypha timeline, and the Grand Order singularities.",
             color = "4169E1",
             nodes = listOf(
                 buildNode(46061, "Fate/Zero", "ANIME", 2011),
                 buildNode(61404, "Fate/stay night [Unlimited Blade Works]", "ANIME", 2014),
-                buildNode(330456, "Fate/stay night [Heaven's Feel] I. presage flower", "MOVIE", 2017)
+                buildNode(330456, "Fate/stay night [Heaven's Feel] I. presage flower", "MOVIE", 2017),
+                buildNode(466300, "Fate/stay night [Heaven's Feel] II. lost butterfly", "MOVIE", 2019),
+                buildNode(530467, "Fate/stay night [Heaven's Feel] III. spring song", "MOVIE", 2020),
+                buildNode(85750, "Lord El-Melloi II's Case Files {Rail Zeppelin} Grace note", "ANIME", 2019),
+                buildNode(71835, "Fate/Apocrypha", "ANIME", 2017),
+                buildNode(76092, "Fate/Extra Last Encore", "ANIME", 2018),
+                buildNode(431053, "Fate/Grand Order: First Order", "MOVIE", 2016),
+                buildNode(622335, "Fate/Grand Order - Camelot - Wandering; Agateram", "MOVIE", 2020),
+                buildNode(726880, "Fate/Grand Order - Camelot - Paladin; Agateram", "MOVIE", 2021),
+                buildNode(83302, "Fate/Grand Order - Absolute Demonic Front: Babylonia", "ANIME", 2019),
+                buildNode(802371, "Fate/Grand Order - Grand Temple of Time: Solomon", "MOVIE", 2021)
             ),
             edges = listOf(
                 Edge("tmdb_t_46061", "tmdb_t_61404"),
-                Edge("tmdb_t_61404", "tmdb_m_330456")
+                Edge("tmdb_t_61404", "tmdb_m_330456"),
+                Edge("tmdb_m_330456", "tmdb_m_466300"),
+                Edge("tmdb_m_466300", "tmdb_m_530467"),
+                Edge("tmdb_t_61404", "tmdb_t_85750"),
+                Edge("tmdb_m_431053", "tmdb_m_622335"),
+                Edge("tmdb_m_622335", "tmdb_m_726880"),
+                Edge("tmdb_m_726880", "tmdb_t_83302"),
+                Edge("tmdb_t_83302", "tmdb_m_802371")
             )
         )
     )
