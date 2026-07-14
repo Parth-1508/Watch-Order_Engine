@@ -55,7 +55,6 @@ import com.example.watchorderengine.viewmodel.DisplayNode
 import com.example.watchorderengine.viewmodel.TimelineRow
 import com.example.watchorderengine.viewmodel.TimelineViewModel
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -234,20 +233,25 @@ fun HeroPostCard(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp),
-            shape = RoundedCornerShape(24.dp),
+                .height(240.dp)
+                .graphicsLayer {
+                    if (theme.isComic) rotationZ = 1f
+                },
+            shape = RoundedCornerShape(theme.appRadius.coerceAtLeast(16.dp)),
             color = theme.surface,
-            onClick = onClick
+            onClick = onClick,
+            border = if (theme.isComic) BorderStroke(2.dp, Color.Black) else BorderStroke(1.dp, theme.border.copy(0.1f)),
+            tonalElevation = 8.dp
         ) {
             Box {
-                // Background Image (First poster blurred or dimmed)
+                // Background Image
                 if (posterUrls.isNotEmpty()) {
                     AsyncImage(
                         model = posterUrls.first(),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
-                        alpha = 0.3f
+                        alpha = 0.4f
                     )
                 }
                 
@@ -257,8 +261,8 @@ fun HeroPostCard(
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, theme.surface.copy(0.9f)),
-                                startY = 0f
+                                colors = listOf(Color.Transparent, theme.surface.copy(0.95f)),
+                                startY = 100f
                             )
                         )
                 )
@@ -266,7 +270,7 @@ fun HeroPostCard(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(20.dp),
+                        .padding(24.dp),
                     verticalArrangement = Arrangement.Bottom
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -275,29 +279,33 @@ fun HeroPostCard(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                "POPULAR",
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                "FEATURED",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Black,
                                 color = Color.White
                             )
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Text("${post.likesCount} enthusiasts liked this", color = theme.textSecondary, fontSize = 11.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Icon(Icons.Default.Favorite, null, tint = theme.accent, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("${post.likesCount} Enthusiasts", color = theme.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(12.dp))
                     Text(
                         post.universeTitle,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Black,
                         color = theme.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 32.sp
                     )
                     Text(
-                        "Created by ${post.authorName}",
-                        color = theme.textSecondary,
-                        fontSize = 13.sp
+                        "by ${post.authorName}",
+                        color = theme.accent.copy(alpha = 0.8f),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
@@ -307,18 +315,18 @@ fun HeroPostCard(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(16.dp)
-                        .size(48.dp),
+                        .size(52.dp),
                     shape = CircleShape,
-                    color = if (isLiked) Color(0xFFFF4B6E) else theme.surface.copy(alpha = 0.6f),
-                    border = if (!isLiked) BorderStroke(1.dp, Color(0xFFFF4B6E).copy(alpha = 0.5f)) else null,
-                    tonalElevation = 6.dp
+                    color = if (isLiked) Color(0xFFFF4B6E) else theme.surface.copy(alpha = 0.8f),
+                    border = BorderStroke(2.dp, if (isLiked) Color.White.copy(0.3f) else Color(0xFFFF4B6E).copy(alpha = 0.5f)),
+                    tonalElevation = 12.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                             contentDescription = "Like",
                             tint = if (isLiked) Color.White else Color(0xFFFF4B6E),
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(28.dp)
                         )
                     }
                 }
@@ -340,46 +348,64 @@ fun CommunityHeader(
             .background(theme.background)
             .padding(16.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Groups, null, tint = theme.accent, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(12.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.graphicsLayer {
+                if (theme.isComic) rotationZ = -1f
+            }
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(theme.accent, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Groups, null, tint = Color.White, modifier = Modifier.size(24.dp))
+            }
+            Spacer(Modifier.width(16.dp))
             Text(
                 "COMMUNITY",
-                fontSize   = 24.sp,
+                fontSize   = 28.sp,
                 fontWeight = FontWeight.Black,
                 color      = theme.textPrimary,
                 letterSpacing = 2.sp
             )
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { /* Could open user profile or notifications */ }) {
-                Icon(Icons.Outlined.Notifications, null, tint = theme.textSecondary)
+            IconButton(
+                onClick = { /* Could open user profile or notifications */ },
+                modifier = Modifier.background(theme.surface, CircleShape).size(40.dp)
+            ) {
+                Icon(Icons.Outlined.Notifications, null, tint = theme.textSecondary, modifier = Modifier.size(20.dp))
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
 
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search timelines, universes, or authors...", fontSize = 14.sp) },
+            modifier = Modifier.fillMaxWidth().graphicsLayer {
+                if (theme.isComic) rotationZ = 0.5f
+            },
+            placeholder = { Text("Search timelines, universes, or authors...", fontSize = 14.sp, color = theme.textSecondary.copy(0.6f)) },
             leadingIcon = { Icon(Icons.Default.Search, null, tint = theme.accent) },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchChange("") }) {
-                        Icon(Icons.Default.Close, null)
+                        Icon(Icons.Default.Close, null, tint = theme.textSecondary)
                     }
                 }
             },
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = theme.surface,
                 unfocusedContainerColor = theme.surface,
                 disabledContainerColor = theme.surface,
                 focusedIndicatorColor = theme.accent,
-                unfocusedIndicatorColor = theme.textSecondary.copy(0.2f),
+                unfocusedIndicatorColor = theme.border.copy(0.5f),
                 focusedTextColor = theme.textPrimary,
-                unfocusedTextColor = theme.textPrimary
+                unfocusedTextColor = theme.textPrimary,
+                cursorColor = theme.accent
             ),
             singleLine = true
         )
@@ -488,11 +514,36 @@ data class ForumLink(val title: String, val subtitle: String, val url: String, v
 
 @Composable
 fun EmptyFeedView(theme: com.example.watchorderengine.ui.theme.AppThemeConfig) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.CloudQueue, null, modifier = Modifier.size(64.dp), tint = theme.textSecondary.copy(0.4f))
-        Spacer(Modifier.height(16.dp))
-        Text("No shared timelines found.", color = theme.textSecondary, fontWeight = FontWeight.Bold)
-        Text("Try a different search or share your own!", color = theme.textSecondary.copy(0.6f), fontSize = 12.sp)
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+        Box(
+            modifier = Modifier
+                .size(100.dp)
+                .background(theme.accent.copy(0.1f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.CloudQueue,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = theme.accent.copy(0.5f)
+            )
+        }
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "NO TIMELINES YET",
+            color = theme.textPrimary,
+            fontWeight = FontWeight.Black,
+            fontSize = 18.sp,
+            letterSpacing = 1.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Try a different search or be the first to share your watch order!",
+            color = theme.textSecondary,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 20.sp
+        )
     }
 }
 
@@ -514,13 +565,17 @@ fun CommunityPostCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
+            .graphicsLayer {
+                if (theme.isComic) rotationZ = if (post.postId.hashCode() % 2 == 0) 0.5f else -0.5f
+            }
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { /* Could show a menu if needed */ }
             ),
         shape = RoundedCornerShape(theme.appRadius),
         colors = CardDefaults.cardColors(containerColor = theme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = if (theme.isComic) BorderStroke(1.5.dp, Color.Black) else null
     ) {
         Box(modifier = Modifier.height(160.dp)) {
             AsyncImage(
@@ -649,62 +704,103 @@ fun CommunityPostDetailSheet(
         sheetState = sheetState,
         containerColor = theme.background,
         dragHandle = { BottomSheetDefaults.DragHandle(color = theme.textSecondary.copy(0.3f)) },
-        modifier = Modifier.fillMaxHeight(0.9f)
+        modifier = Modifier.fillMaxHeight(0.95f)
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            // Header Section
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(
-                        model = post.authorAvatarUrl ?: "https://ui-avatars.com/api/?name=${post.authorName}",
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp).clip(CircleShape).background(theme.surface),
-                        contentScale = ContentScale.Crop
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Starry Background (Simplified version of TimelineScreen effect)
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val random = java.util.Random(post.postId.hashCode().toLong())
+                repeat(40) {
+                    drawCircle(
+                        color = theme.accent.copy(alpha = 0.1f + random.nextFloat() * 0.2f),
+                        radius = (1f + random.nextFloat() * 2f).dp.toPx(),
+                        center = Offset(random.nextFloat() * size.width, random.nextFloat() * size.height)
                     )
-                    Spacer(Modifier.width(16.dp))
-                    Column {
-                        Text(post.universeTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = theme.textPrimary)
-                        Text("Shared by ${post.authorName}", color = theme.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
-                
-                Spacer(Modifier.height(12.dp))
-                
-                Text(post.universeDescription, color = theme.textSecondary, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                
-                Spacer(Modifier.height(16.dp))
-                
-                Button(
-                    onClick = onImport,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = theme.accent),
-                    shape = RoundedCornerShape(12.dp),
-                    enabled = importState !is ImportState.Importing
-                ) {
-                    if (importState is ImportState.Importing) {
-                        CircularProgressIndicator(color = theme.primary, modifier = Modifier.size(24.dp))
-                    } else {
-                        Icon(Icons.Default.FileDownload, null)
-                        Spacer(Modifier.width(12.dp))
-                        Text("IMPORT TO MY GRAPHS", fontWeight = FontWeight.Black)
-                    }
                 }
             }
 
-            HorizontalDivider(color = theme.textSecondary.copy(0.1f))
-
-            // Graph Section
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clipToBounds()
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
+                // Header Section
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 20.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            modifier = Modifier.size(56.dp),
+                            shape = CircleShape,
+                            color = theme.surface,
+                            border = BorderStroke(2.dp, theme.accent.copy(0.3f))
+                        ) {
+                            AsyncImage(
+                                model = post.authorAvatarUrl ?: "https://ui-avatars.com/api/?name=${post.authorName}",
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                        Spacer(Modifier.width(20.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                post.universeTitle,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Black,
+                                color = theme.textPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "shared by ${post.authorName}",
+                                color = theme.accent,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                    
+                    if (post.universeDescription.isNotBlank()) {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            post.universeDescription,
+                            color = theme.textSecondary,
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp
+                        )
+                    }
+                    
+                    Spacer(Modifier.height(24.dp))
+                    
+                    Button(
+                        onClick = onImport,
+                        modifier = Modifier.fillMaxWidth().height(56.dp).graphicsLayer {
+                            if (theme.isComic) rotationZ = -1f
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = theme.accent),
+                        shape = RoundedCornerShape(theme.appRadius.coerceAtLeast(12.dp)),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
+                        enabled = importState !is ImportState.Importing
+                    ) {
+                        if (importState is ImportState.Importing) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        } else {
+                            Icon(Icons.Default.CloudDownload, null, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("IMPORT TO MY GRAPHS", fontWeight = FontWeight.Black, fontSize = 16.sp)
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = theme.textSecondary.copy(0.1f), thickness = 1.dp)
+
+                // Graph Section
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clipToBounds()
+                ) {
                 if (rows.isNotEmpty()) {
                     BranchingTimelineView(
                         rows = rows,
@@ -796,22 +892,9 @@ fun computePreviewRows(payload: SharedTimelinePayload, tmdbCache: TmdbMetadataCa
         }
 }
 
-private fun extractPosterUrls(nodesJson: String): List<String> = try {
-    val nodes = JSONObject(nodesJson).optJSONArray("nodes") ?: return emptyList()
-    val urls = mutableListOf<String>()
-    for (i in 0 until minOf(nodes.length(), 10)) {
-        val node = nodes.getJSONObject(i)
-        val posterUrl = node.optString("posterUrl")
-        if (posterUrl.isNotBlank()) {
-            urls.add(posterUrl)
-        } else {
-            // Fallback for old posts: try to guess based on tmdb_id if possible
-            // Note: This is still likely broken for many old nodes because TMDB needs a hash.
-        }
-    }
-    urls
-} catch (e: Exception) {
-    emptyList()
+private fun extractPosterUrls(nodesJson: String): List<String> {
+    val payload = SharedTimelineCodec.decode(nodesJson) ?: return emptyList()
+    return payload.nodes.mapNotNull { it.posterUrl }.filter { it.isNotBlank() }.take(10)
 }
 
 private fun relativeTimeLabel(timestampMillis: Long): String {

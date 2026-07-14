@@ -211,6 +211,8 @@ object PredefinedTimelines {
         )
     )
 
+    private var postCount = 0
+
     private fun buildPost(
         postId: String,
         title: String,
@@ -219,6 +221,7 @@ object PredefinedTimelines {
         edges: List<Edge>,
         color: String
     ): CommunityPost {
+        val currentOffset = postCount++
         return CommunityPost(
             postId = postId,
             userId = "woe_admin",
@@ -227,7 +230,7 @@ object PredefinedTimelines {
             universeTitle = title,
             universeDescription = description,
             likesCount = (8000..15000).random(),
-            timestamp = masterTimestamp - (masterTimelines.size * 1000),
+            timestamp = masterTimestamp - (currentOffset * 1000),
             nodesJson = json.encodeToString(SharedTimelinePayload(nodes, edges))
         )
     }
