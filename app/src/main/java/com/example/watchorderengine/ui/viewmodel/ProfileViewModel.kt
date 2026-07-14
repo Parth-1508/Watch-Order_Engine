@@ -21,7 +21,8 @@ class ProfileViewModel @Inject constructor(
     private val repository: MediaRepository,
     private val reviewRepository: ReviewRepository,
     private val userPrefs: UserPreferencesRepository,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
     private val _stats = MutableStateFlow<UserStats?>(null)
@@ -172,6 +173,16 @@ class ProfileViewModel @Inject constructor(
     fun updateUsername(newName: String) {
         viewModelScope.launch {
             userPrefs.updateUsername(newName)
+            
+            // Sync to Firestore metadata
+            val uid = auth.currentUser?.uid ?: return@launch
+            try {
+                firestore.collection("users").document(uid)
+                    .collection("profile").document("metadata")
+                    .set(mapOf("username" to newName), com.google.firebase.firestore.SetOptions.merge())
+            } catch (e: Exception) {
+                // ignore
+            }
         }
     }
 

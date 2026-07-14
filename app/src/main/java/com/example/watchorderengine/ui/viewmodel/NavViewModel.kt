@@ -7,6 +7,7 @@ import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.ReviewRepository
 import com.example.watchorderengine.util.ConnectivityObserver
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 @HiltViewModel
@@ -22,6 +24,7 @@ class NavViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val reviewRepository: ReviewRepository,
     private val auth: FirebaseAuth,
+    private val firestore: FirebaseFirestore,
     private val connectivityObserver: ConnectivityObserver,
     private val db: com.example.watchorderengine.data.db.WatchOrderDatabase
 ) : ViewModel() {
@@ -33,11 +36,27 @@ class NavViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val user = auth.currentUser
             if (user != null) {
-                // Sync user profile info to DataStore
+                // 1. Check local username
                 val currentUsername = userPrefs.username.first()
-                if (currentUsername == "Player One" || currentUsername == "Guest") {
-                    user.displayName?.let { userPrefs.updateUsername(it) }
+                
+                // 2. Try to sync from Firestore first (Our primary source of truth)
+                try {
+                    val doc = firestore.collection("users").document(user.uid)
+                        .collection("profile").document("metadata").get().await()
+                    val cloudName = doc.getString("username")
+                    if (!cloudName.isNullOrBlank()) {
+                        userPrefs.updateUsername(cloudName!!)
+                    } else if (!user.displayName.isNullOrBlank() && (currentUsername == "Player One" || currentUsername == "Guest")) {
+                        // Fallback to Firebase displayName only if Firestore is empty
+                        userPrefs.updateUsername(user.displayName!!)
+                    }
+                } catch (e: Exception) {
+                    // Firestore fetch failed, fallback to displayName if local is default
+                    if (!user.displayName.isNullOrBlank() && (currentUsername == "Player One" || currentUsername == "Guest")) {
+                        userPrefs.updateUsername(user.displayName!!)
+                    }
                 }
+
                 user.photoUrl?.toString()?.let { userPrefs.updateAvatarUrl(it) }
             }
             mediaRepository.syncAllFromCloud()

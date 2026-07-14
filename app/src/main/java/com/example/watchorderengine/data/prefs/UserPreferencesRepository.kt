@@ -63,11 +63,11 @@ class UserPreferencesRepository(private val context: Context) {
 
     val username: StateFlow<String> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.USERNAME] ?: "Player One"
-    }.stateIn(scope, SharingStarted.WhileSubscribed(5000), "Player One")
+    }.stateIn(scope, SharingStarted.Eagerly, "Player One")
 
     val avatarUrl: StateFlow<String?> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.AVATAR_URL]
-    }.stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
+    }.stateIn(scope, SharingStarted.Eagerly, null)
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { preferences ->
         val raw = preferences[PreferencesKeys.THEME_MODE] ?: ThemeMode.DEFAULT.name

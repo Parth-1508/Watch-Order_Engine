@@ -160,14 +160,16 @@ fun CommunityScreen(
                                     }
                                 }
                             } else {
-                                // Hero Post (Most Liked or First)
-                                item {
-                                    val heroPost = state.posts.maxByOrNull { it.likesCount } ?: state.posts.first()
-                                    HeroPostCard(
-                                        post = heroPost,
-                                        onClick = { viewModel.selectPost(heroPost) }
-                                    )
-                                }
+                        // Hero Post (Most Liked or First)
+                        item {
+                            val heroPost = state.posts.maxByOrNull { it.likesCount } ?: state.posts.first()
+                            HeroPostCard(
+                                post = heroPost,
+                                currentUserId = currentUserId,
+                                onLikeClick = { viewModel.likePost(heroPost.postId) },
+                                onClick = { viewModel.selectPost(heroPost) }
+                            )
+                        }
 
                                 items(state.posts, key = { it.postId }) { post ->
                                     Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -201,9 +203,15 @@ fun CommunityScreen(
 }
 
 @Composable
-fun HeroPostCard(post: CommunityPost, onClick: () -> Unit) {
+fun HeroPostCard(
+    post: CommunityPost,
+    currentUserId: String?,
+    onLikeClick: () -> Unit,
+    onClick: () -> Unit
+) {
     val theme = LocalAppTheme.current
     val posterUrls = remember(post.nodesJson) { extractPosterUrls(post.nodesJson) }
+    val isLiked = currentUserId != null && (currentUserId in post.likedByUsers)
     
     Column(modifier = Modifier.padding(16.dp)) {
         Text(
@@ -216,12 +224,12 @@ fun HeroPostCard(post: CommunityPost, onClick: () -> Unit) {
         )
         
         Surface(
-            onClick = onClick,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp),
+                .height(220.dp),
             shape = RoundedCornerShape(24.dp),
-            color = theme.surface
+            color = theme.surface,
+            onClick = onClick
         ) {
             Box {
                 // Background Image (First poster blurred or dimmed)
@@ -267,7 +275,7 @@ fun HeroPostCard(post: CommunityPost, onClick: () -> Unit) {
                             )
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text("${post.likesCount} enthusiasts saved this", color = theme.textSecondary, fontSize = 11.sp)
+                        Text("${post.likesCount} enthusiasts liked this", color = theme.textSecondary, fontSize = 11.sp)
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -283,6 +291,28 @@ fun HeroPostCard(post: CommunityPost, onClick: () -> Unit) {
                         color = theme.textSecondary,
                         fontSize = 13.sp
                     )
+                }
+
+                // Big Like Button for Hero
+                Surface(
+                    onClick = onLikeClick,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                        .size(48.dp),
+                    shape = CircleShape,
+                    color = if (isLiked) Color(0xFFFF4B6E) else theme.surface.copy(alpha = 0.6f),
+                    border = if (!isLiked) BorderStroke(1.dp, Color(0xFFFF4B6E).copy(alpha = 0.5f)) else null,
+                    tonalElevation = 6.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Like",
+                            tint = if (isLiked) Color.White else Color(0xFFFF4B6E),
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
                 }
             }
         }
@@ -515,13 +545,35 @@ fun CommunityPostCard(
                     )
                     Spacer(Modifier.width(12.dp))
                     Icon(
-                        imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        imageVector = Icons.Default.Favorite,
                         contentDescription = null,
-                        tint = if (isLiked) Color(0xFFFF4B6E) else theme.textSecondary,
-                        modifier = Modifier.size(14.dp).clickable { onLikeClick() }
+                        tint = if (isLiked) Color(0xFFFF4B6E) else theme.textSecondary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(12.dp)
                     )
                     Spacer(Modifier.width(4.dp))
                     Text("${post.likesCount}", color = theme.textSecondary, fontSize = 12.sp)
+                }
+            }
+
+            // Big Like Button
+            Surface(
+                onClick = onLikeClick,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+                    .size(44.dp),
+                shape = CircleShape,
+                color = if (isLiked) Color(0xFFFF4B6E) else theme.surface.copy(alpha = 0.8f),
+                border = if (!isLiked) BorderStroke(1.dp, Color(0xFFFF4B6E).copy(alpha = 0.5f)) else null,
+                tonalElevation = 4.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = "Like",
+                        tint = if (isLiked) Color.White else Color(0xFFFF4B6E),
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
 
