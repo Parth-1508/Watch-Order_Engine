@@ -94,38 +94,46 @@ class CommunityRepository @Inject constructor(
         val tags = mutableSetOf<String>()
         val content = (title + " " + description).lowercase()
         
-        // 1. Check title/description
-        if (content.contains("spiderman") || content.contains("spider-man") || content.contains("avengers") || content.contains("marvel") || content.contains("iron man") || content.contains("mcu")) {
+        // 1. Check title/description for keywords
+        if (content.contains("spider") || content.contains("avengers") || content.contains("marvel") || content.contains("iron man") || content.contains("captain america") || content.contains("thor") || content.contains("black panther") || content.contains("mcu") || content.contains("eternals") || content.contains("black widow") || content.contains("guardians of the galaxy") || content.contains("ant-man")) {
             tags.add("Marvel")
         }
-        if (content.contains("star wars") || content.contains("jedi") || content.contains("mandalorian") || content.contains("kenobi") || content.contains("andor")) {
+        if (content.contains("star wars") || content.contains("jedi") || content.contains("mandalorian") || content.contains("kenobi") || content.contains("andor") || content.contains("skywalker") || content.contains("solo:")) {
             tags.add("Star Wars")
         }
-        if (content.contains("batman") || content.contains("superman") || content.contains("wonder woman") || content.contains("justice league") || content.contains("shazam") || content.contains("aquaman") || content.contains("dceu") || content.contains("dc universe")) {
+        if (content.contains("batman") || content.contains("superman") || content.contains("wonder woman") || content.contains("justice league") || content.contains("shazam") || content.contains("aquaman") || content.contains("dceu") || content.contains("dc universe") || content.contains("suicide squad") || content.contains("peacemaker")) {
             tags.add("DC Universe")
         }
-        if (content.contains("naruto") || content.contains("shippuden") || content.contains("boruto") || content.contains("fate/") || content.contains("one piece") || content.contains("dragon ball") || content.contains("anime") || content.contains("bleach") || content.contains("jujutsu")) {
+        if (content.contains("naruto") || content.contains("shippuden") || content.contains("boruto") || content.contains("fate/") || content.contains("one piece") || content.contains("dragon ball") || content.contains("anime") || content.contains("bleach") || content.contains("jujutsu") || content.contains("demon slayer") || content.contains("attack on titan") || content.contains("fullmetal")) {
             tags.add("Anime")
         }
-        if (content.contains("conjuring") || content.contains("annabelle") || content.contains("nun") || content.contains("horror") || content.contains("insidious") || content.contains("scream")) {
+        if (content.contains("conjuring") || content.contains("annabelle") || content.contains("nun") || content.contains("horror") || content.contains("insidious") || content.contains("scream") || content.contains("scary") || content.contains("halloween") || content.contains(" it ") || content.contains("saw ")) {
             tags.add("Horror")
         }
-        if (content.contains("game of thrones") || content.contains("house of the dragon") || content.contains("westeros") || content.contains("targaryen")) {
+        if (content.contains("game of thrones") || content.contains("house of the dragon") || content.contains("westeros") || content.contains("targaryen") || content.contains("stark") || content.contains("winterfell") || content.contains("ice and fire")) {
             tags.add("Game of Thrones")
         }
-        if (content.contains("star trek") || content.contains("sci-fi") || content.contains("science fiction") || content.contains("interstellar") || content.contains("dune") || content.contains("alien")) {
+        if (content.contains("star trek") || content.contains("sci-fi") || content.contains("science fiction") || content.contains("interstellar") || content.contains("dune") || content.contains("alien") || content.contains("blade runner") || content.contains("matrix")) {
             tags.add("Sci-Fi")
         }
         
         // 2. Check individual node titles as fallback
-        if (tags.isEmpty()) {
+        if (tags.size < 2) {
             val payload = SharedTimelineCodec.decode(nodesJson)
             val nodeTitles = payload?.nodes?.map { it.title.lowercase() } ?: emptyList()
             
-            if (nodeTitles.any { it.contains("spiderman") || it.contains("spider-man") || it.contains("avengers") || it.contains("iron man") || it.contains("captain america") || it.contains("thor") || it.contains("black panther") || it.contains("black widow") || it.contains("mcu") }) {
+            if (nodeTitles.any { it.contains("spider") || it.contains("avengers") || it.contains("iron man") || it.contains("marvel") || it.contains("mcu") }) {
                 tags.add("Marvel")
             }
-            // ... (could add more here, but usually title/description is enough)
+            if (nodeTitles.any { it.contains("batman") || it.contains("superman") || it.contains("justice league") || it.contains("wonder woman") }) {
+                tags.add("DC Universe")
+            }
+            if (nodeTitles.any { it.contains("star wars") || it.contains("jedi") || it.contains("clone wars") }) {
+                tags.add("Star Wars")
+            }
+            if (nodeTitles.any { it.contains("naruto") || it.contains("shippuden") || it.contains("fate/") || it.contains("anime") }) {
+                tags.add("Anime")
+            }
         }
         
         return tags.toList()

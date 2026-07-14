@@ -147,7 +147,7 @@ object PredefinedTimelines {
                 buildNode(45845,  "Fate/Zero",                                              "ANIME", 2011),
                 buildNode(61415,  "Fate/stay night [Unlimited Blade Works]",                 "ANIME", 2014),
                 buildNode(283984, "Fate/stay night [Heaven's Feel] I. presage flower",      "MOVIE", 2017),
-                buildNode(454316, "Fate/stay night [Heaven's Feel] II. lost butterfly",     "MOVIE", 2019),
+                buildNode(466300, "Fate/stay night [Heaven's Feel] II. lost butterfly",     "MOVIE", 2019),
                 buildNode(530467, "Fate/stay night [Heaven's Feel] III. spring song",      "MOVIE", 2020),
                 buildNode(85750,  "Lord El-Melloi II's Case Files {Rail Zeppelin} Grace note", "ANIME", 2019),
                 buildNode(71835,  "Fate/Apocrypha",                                          "ANIME", 2017),
@@ -232,10 +232,6 @@ object PredefinedTimelines {
         tags: List<String>,
     ): CommunityPost {
         val currentOffset = postCount++
-        // Use a stable random based on the postId hash for consistent-looking starting counts.
-        // These will be overridden/added to by real Firestore likes if we implement the merge logic.
-        val baseLikes = (postId.hashCode().let { if (it < 0) -it else it } % 500) + 1200
-        
         return CommunityPost(
             postId = postId,
             userId = "woe_admin",
@@ -243,7 +239,7 @@ object PredefinedTimelines {
             authorAvatarUrl = "https://ui-avatars.com/api/?name=WO&background=141B2D&color=fff&bold=true",
             universeTitle = title,
             universeDescription = description,
-            likesCount = baseLikes,
+            likesCount = 0, // Source of truth is Firestore
             timestamp = masterTimestamp - (currentOffset * 1000),
             nodesJson = json.encodeToString(SharedTimelinePayload(nodes, edges)),
             tags = tags,
