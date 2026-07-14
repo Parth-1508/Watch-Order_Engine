@@ -67,16 +67,18 @@ class CommunityRepository @Inject constructor(
             } ?: emptyList()
 
             // Merge logic: Predefined always at top. 
-            // Add Firestore likes/uids to the base predefined post data.
+            // Use the size of likedByUsers as the source of truth for likesCount 
+            // to ensure it starts at 0 and increments correctly.
             val combined = predefined.map { p -> 
                 val fsMatch = userPosts.find { it.postId == p.postId }
                 if (fsMatch != null) {
                     p.copy(
-                        // Sum of base likes + additional Firestore likes
-                        likesCount = p.likesCount + fsMatch.likesCount,
+                        likesCount = fsMatch.likedByUsers.size,
                         likedByUsers = fsMatch.likedByUsers
                     )
-                } else p
+                } else {
+                    p.copy(likesCount = 0, likedByUsers = emptyList())
+                }
             } + userPosts.filter { up -> 
                 predefined.none { it.postId == up.postId } 
             }
