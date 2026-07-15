@@ -132,15 +132,18 @@ class ProfileViewModel @Inject constructor(
                 val recentlyWatched = (watching + completed).take(6)
 
                 // ── Profile score ────────────────────────────────────────────────
+                val totalMovies = completed.count { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE }
                 val score = computeProfileScore(
-                    totalEpisodesWatched = totalWatched,
-                    universesCompleted   = completed.size
+                    episodes = totalWatched,
+                    movies   = totalMovies,
+                    reviews  = _userReviews.value.size,
+                    streak   = streak
                 )
 
                 _stats.value = UserStats(
                     totalMinutesWatched  = totalMinutes.toLong(),
                     totalEpisodesWatched = totalWatched,
-                    totalMoviesWatched   = completed.count { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE },
+                    totalMoviesWatched   = totalMovies,
                     showsCompleted       = completed.size,
                     showsDropped         = dropped.size,
                     showsWatching        = watching.size,
@@ -151,7 +154,8 @@ class ProfileViewModel @Inject constructor(
                     recentlyWatched      = recentlyWatched,
                     favoriteGenre        = topGenres.firstOrNull(),
                     streakDays           = streak,
-                    profileScore         = score
+                    profileScore         = score,
+                    profileRank          = getRankForScore(score)
                 )
             } finally {
                 _isLoading.value = false
@@ -160,14 +164,24 @@ class ProfileViewModel @Inject constructor(
     }
 
     private fun computeProfileScore(
-        totalEpisodesWatched : Int,
-        universesCompleted   : Int
-    ): Int = (totalEpisodesWatched * POINTS_PER_EPISODE) +
-            (universesCompleted   * POINTS_PER_UNIVERSE)
+        episodes: Int,
+        movies: Int,
+        reviews: Int,
+        streak: Int
+    ): Int = (episodes * 1) + (movies * 10) + (reviews * 25) + (streak * 5)
+
+    private fun getRankForScore(score: Int): String = when {
+        score >= 10000 -> "Legend"
+        score >= 5000  -> "Grandmaster"
+        score >= 2000  -> "Master"
+        score >= 1000  -> "Expert"
+        score >= 500   -> "Cinephile"
+        score >= 100   -> "Explorer"
+        else           -> "Novice"
+    }
 
     companion object {
-        private const val POINTS_PER_EPISODE  = 10
-        private const val POINTS_PER_UNIVERSE = 100
+        // Multipliers removed as they are now inline in computeProfileScore for clarity
     }
 
     fun updateUsername(newName: String) {

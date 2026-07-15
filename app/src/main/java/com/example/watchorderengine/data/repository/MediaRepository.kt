@@ -57,6 +57,9 @@ class MediaRepository @Inject constructor(
     // ─── Repository-owned scope for long-running background tasks ─────────────────
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** Track media IDs currently being fetched to avoid redundant requests during list scroll. */
+    private val pendingFetches = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     // ─── ID helpers ───────────────────────────────────────────────────────────
 
     /**
@@ -1058,48 +1061,78 @@ class MediaRepository @Inject constructor(
             // 1. Sync Watchlist
             val watchlistSnap = firestore.collection("users").document(uid)
                 .collection("watchlist").get().await()
-            val watchlist = watchlistSnap.documents.mapNotNull { it.toObject(UserProgressEntity::class.java) }
+            val watchlist = watchlistSnap.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(UserProgressEntity::class.java)?.apply {
+                        // Resilience: if camelCase fails, try snake_case fallback
+                        if (mediaId.isBlank()) mediaId = doc.getString("media_id") ?: ""
+                        if (userRating == null) userRating = doc.getDouble("user_rating")?.toFloat()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to parse watchlist item ${doc.id}: ${e.message}")
+                    null
+                }
+            }
             Log.d(TAG, "Sync: found ${watchlist.size} watchlist items in cloud")
             watchlist.forEach { db.userProgressDao().upsert(it) }
 
-            // 1.2 Sync Graph/Universe Progress
+            // 1.2 Sync Graph/Universe Progress (Merges with watchlist data)
             val progressSnap = firestore.collection("users").document(uid)
                 .collection("progress").get().await()
-            val universeProgress = progressSnap.documents.mapNotNull { it.toObject(UserProgress::class.java) }
+            val universeProgress = progressSnap.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(UserProgress::class.java)?.apply {
+                        // Resilience: bridge field name differences
+                        if (mediaId.isBlank()) mediaId = doc.getString("media_id") ?: ""
+                        if (userRating == null) userRating = doc.getDouble("user_rating")?.toFloat()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to parse universe progress ${doc.id}: ${e.message}")
+                    null
+                }
+            }
             Log.d(TAG, "Sync: found ${universeProgress.size} universe progress records")
             universeProgress.forEach { up ->
-                // Map the domain UserProgress back to UserProgressEntity for Room caching
+                if (up.mediaId.isBlank()) return@forEach // Skip invalid/empty records
+
+                val existing = db.userProgressDao().getByMediaId(up.mediaId)
                 val entity = UserProgressEntity(
                     mediaId = up.mediaId,
                     trackingState = up.trackingState.name,
-                    currentSeasonNumber = up.currentSeasonNumber,
-                    currentEpisodeNumber = up.currentEpisodeNumber,
-                    userRating = up.userRating,
-                    startedDate = up.startedDate,
-                    completedDate = up.completedDate,
-                    updatedAt = up.updatedAt,
-                    userNotes = up.userNotes,
+                    currentSeasonNumber = if (up.currentSeasonNumber > 0) up.currentSeasonNumber else (existing?.currentSeasonNumber ?: 0),
+                    currentEpisodeNumber = if (up.currentEpisodeNumber > 0) up.currentEpisodeNumber else (existing?.currentEpisodeNumber ?: 0),
+                    userRating = up.userRating ?: existing?.userRating, // PRESERVE RATING
+                    startedDate = up.startedDate ?: existing?.startedDate,
+                    completedDate = up.completedDate ?: existing?.completedDate,
+                    updatedAt = if (up.updatedAt > 0) up.updatedAt else (existing?.updatedAt ?: System.currentTimeMillis()),
+                    userNotes = up.userNotes.ifBlank { existing?.userNotes ?: "" },
                     priorityTag = up.priorityTag.name,
-                    completedNodeIds = up.completed_node_ids,
-                    activeRoute = up.active_route,
+                    completedNodeIds = up.completed_node_ids.ifEmpty { existing?.completedNodeIds ?: emptyList() },
+                    activeRoute = up.active_route ?: existing?.activeRoute,
                     spoilerShieldEnabled = up.spoiler_shield_enabled
                 )
                 db.userProgressDao().upsert(entity)
             }
 
             // 1.5 Backfill missing media metadata from TMDB in parallel (OPTIMIZED: fetch Media only)
+            val allTrackedMediaIds = (watchlist.map { it.mediaId } + universeProgress.map { it.mediaId }).distinct()
+            
+            Log.d(TAG, "Sync: Backfilling metadata for ${allTrackedMediaIds.size} unique media items")
             supervisorScope {
-                watchlist.filter { db.mediaDao().getById(it.mediaId) == null }
-                    .map { progress ->
-                        async {
-                            val tmdbId = extractTmdbId(progress.mediaId)
-                            if (tmdbId != null) {
-                                // Just fetch the main MediaEntity to show in the list.
-                                // Don't fetch all seasons/episodes during bulk sync.
-                                fetchAndCacheMediaOnly(tmdbId, progress.mediaId)
+                allTrackedMediaIds.filter { db.mediaDao().getById(it) == null }
+                    .chunked(10) // Process in smaller batches to avoid overwhelming TMDB/Network
+                    .forEach { batch ->
+                        batch.map { mediaId ->
+                            async {
+                                val tmdbId = extractTmdbId(mediaId)
+                                if (tmdbId != null) {
+                                    fetchAndCacheMediaOnly(tmdbId, mediaId)
+                                }
                             }
-                        }
-                    }.forEach { it.await() }
+                        }.forEach { it.await() }
+                        // Small delay between batches if it's a very large sync
+                        if (allTrackedMediaIds.size > 20) kotlinx.coroutines.delay(100)
+                    }
             }
 
             // 2. Sync Episode Progress
@@ -1138,19 +1171,22 @@ class MediaRepository @Inject constructor(
     }
 
     /** Optimized fetcher that only gets the basic Media metadata without heavy season/episode detail. */
-    private suspend fun fetchAndCacheMediaOnly(tmdbId: Int, mediaId: String): Boolean {
+    suspend fun fetchAndCacheMediaOnly(tmdbId: Int, mediaId: String): Boolean {
         return try {
             if (isMovieId(mediaId)) {
                 fetchAndCacheMovie(tmdbId, mediaId)
             } else {
-                val response = apiService.getTvShow(tmdbId)
+                val response = com.example.watchorderengine.util.retry { apiService.getTvShow(tmdbId) }
                 if (!response.isSuccessful || response.body() == null) return false
                 val body = response.body()!!
                 val entity = body.toMediaEntity(mediaId)
                 db.mediaDao().upsert(entity)
                 true
             }
-        } catch (e: Exception) { false }
+        } catch (e: Exception) { 
+            Log.w(TAG, "fetchAndCacheMediaOnly failed for $mediaId: ${e.message}")
+            false 
+        }
     }
 
     fun observeListByStatePaged(
@@ -1164,6 +1200,18 @@ class MediaRepository @Inject constructor(
                 val progress = joined.progress
                 val entity = joined.media
                 val tmdbId = extractTmdbId(progress.mediaId) ?: entity?.tmdbId ?: 0
+
+                if (entity == null && tmdbId > 0 && !pendingFetches.contains(progress.mediaId)) {
+                    // Auto-repair missing metadata in the background
+                    repositoryScope.launch {
+                        pendingFetches.add(progress.mediaId)
+                        try {
+                            fetchAndCacheMediaOnly(tmdbId, progress.mediaId)
+                        } finally {
+                            pendingFetches.remove(progress.mediaId)
+                        }
+                    }
+                }
                 
                 entity?.toSummary(
                     trackingState, 

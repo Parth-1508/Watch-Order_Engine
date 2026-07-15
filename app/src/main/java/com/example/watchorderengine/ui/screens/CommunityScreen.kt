@@ -632,15 +632,24 @@ fun CommunityPostCard(
     val isLiked = currentUserId != null && (currentUserId in post.likedByUsers)
     val isOwner = currentUserId != null && currentUserId == post.userId
 
-    // Resolve poster: Payload URL > Cache Fallback (Observable via TmdbMetadataCache)
-    val posterUrl by remember(post.nodesJson) {
+    // Resolve poster: Explicit Banner > Cache Fallback (Observable via TmdbMetadataCache)
+    // We avoid decoding the full nodesJson during scroll by relying on post.bannerPosterUrl.
+    val posterUrl by remember(post.postId, post.bannerPosterUrl) {
         derivedStateOf {
-            val payload = SharedTimelineCodec.decode(post.nodesJson)
-            val firstNode = payload?.nodes?.firstOrNull() ?: return@derivedStateOf null
-            
-            if (!firstNode.posterUrl.isNullOrBlank()) firstNode.posterUrl
-            else (tmdbCache.get(firstNode.tmdb_id) as? TmdbFetchState.Success)?.detail?.posterUrl
+            if (!post.bannerPosterUrl.isNullOrBlank()) {
+                post.bannerPosterUrl
+            } else {
+                // Fallback: If banner is missing, try to get the first node's ID from the payload
+                // and check the cache. We only do this if banner is null.
+                val payload = SharedTimelineCodec.decode(post.nodesJson)
+                val firstNode = payload?.nodes?.firstOrNull() ?: return@derivedStateOf null
+                (tmdbCache.get(firstNode.tmdb_id) as? TmdbFetchState.Success)?.detail?.posterUrl
+            }
         }
+    }
+
+    val accentColor = remember(post.accentColor) {
+        post.accentColor?.let { try { Color(android.graphics.Color.parseColor("#$it")) } catch(e: Exception) { null } }
     }
 
     Card(
@@ -712,7 +721,7 @@ fun CommunityPostCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (post.isOfficial) {
                         Surface(
-                            color = theme.accent, 
+                            color = accentColor ?: theme.accent,
                             shape = RoundedCornerShape(4.dp),
                             shadowElevation = 2.dp
                         ) {
@@ -829,8 +838,10 @@ fun CommunityPostDetailSheet(
     val theme = LocalAppTheme.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val payload = remember(post.nodesJson) { SharedTimelineCodec.decode(post.nodesJson) }
-    
     val rows = remember(payload) { payload?.let { computePreviewRows(it, tmdbCache) } ?: emptyList() }
+    val accentColor = remember(post.accentColor) {
+        post.accentColor?.let { try { Color(android.graphics.Color.parseColor("#$it")) } catch(e: Exception) { null } }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -887,7 +898,7 @@ fun CommunityPostDetailSheet(
                             )
                             if (post.isOfficial) {
                                 Surface(
-                                    color = theme.accent, 
+                                    color = accentColor ?: theme.accent, 
                                     shape = RoundedCornerShape(4.dp),
                                     modifier = Modifier.padding(top = 8.dp),
                                     shadowElevation = 2.dp
@@ -929,7 +940,7 @@ fun CommunityPostDetailSheet(
                         modifier = Modifier.fillMaxWidth().height(56.dp).graphicsLayer {
                             if (theme.isComic) rotationZ = -1f
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = theme.accent),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentColor ?: theme.accent),
                         shape = RoundedCornerShape(theme.appRadius.coerceAtLeast(12.dp)),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
                         enabled = importState !is ImportState.Importing

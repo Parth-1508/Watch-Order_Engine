@@ -77,11 +77,13 @@ fun ProfileScreen(
     val theme = LocalAppTheme.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val stats by viewModel.stats.collectAsStateWithLifecycle()
+    val statsState by viewModel.stats.collectAsStateWithLifecycle()
     val username by viewModel.username.collectAsStateWithLifecycle()
     val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val userReviews by viewModel.userReviews.collectAsStateWithLifecycle()
+
+    val stats = statsState // Capture in local variable for smart casting
 
     var isEditingName by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf(username) }
@@ -174,18 +176,37 @@ fun ProfileScreen(
                                 }
                             )
                         } else {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    username.uppercase(),
-                                    color = theme.textPrimary,
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Black
-                                )
-                                IconButton(onClick = { 
-                                    editedName = username
-                                    isEditingName = true 
-                                }) {
-                                    Icon(Icons.Default.Edit, "Edit name", tint = theme.textSecondary, modifier = Modifier.size(16.dp))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        username.uppercase(),
+                                        color = theme.textPrimary,
+                                        fontSize = 24.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                    IconButton(onClick = { 
+                                        editedName = username
+                                        isEditingName = true 
+                                    }) {
+                                        Icon(Icons.Default.Edit, "Edit name", tint = theme.textSecondary, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                
+                                if (stats?.profileRank != null) {
+                                    Surface(
+                                        color = theme.accent,
+                                        shape = RoundedCornerShape(4.dp),
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    ) {
+                                        Text(
+                                            stats.profileRank.uppercase(),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.Black,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -241,8 +262,8 @@ fun ProfileScreen(
                         modifier = Modifier.weight(1f)
                     )
                     StatCard(
-                        label = "Points",
-                        value = stats?.profileScore?.toString() ?: "0",
+                        label = stats?.profileRank?.uppercase() ?: "NOVICE",
+                        value = formatScore(stats?.profileScore ?: 0),
                         icon = Icons.Default.EmojiEvents,
                         modifier = Modifier.weight(1f)
                     )
@@ -258,7 +279,7 @@ fun ProfileScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.padding(vertical = 12.dp)
                     ) {
-                        items(stats!!.recentlyWatched) { media ->
+                        items(stats.recentlyWatched) { media ->
                             RecentlyWatchedItem(media, onClick = { onMediaClick(media.id) })
                         }
                     }
@@ -338,14 +359,14 @@ fun ProfileScreen(
                     ) {
                         Column {
                             Text(
-                                "Top Genre: ${stats?.favoriteGenre}",
+                                "Top Genre: ${stats.favoriteGenre}",
                                 color = theme.textPrimary,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 18.sp
                             )
                             Spacer(Modifier.height(12.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                stats!!.topGenres.forEach { genre ->
+                                stats.topGenres.forEach { genre ->
                                     Surface(
                                         color = theme.accent.copy(alpha = 0.1f),
                                         shape = CircleShape,
@@ -674,6 +695,14 @@ private fun MetricRow(label: String, value: Int, color: Color) {
             Text(label, color = theme.textSecondary, fontSize = 13.sp)
         }
         Text(value.toString(), color = theme.textPrimary, fontWeight = FontWeight.Black, fontSize = 14.sp)
+    }
+}
+
+private fun formatScore(score: Int): String {
+    return when {
+        score >= 1_000_000 -> String.format("%.1fM", score / 1_000_000f)
+        score >= 10_000    -> String.format("%.1fK", score / 1000f)
+        else -> score.toString()
     }
 }
 

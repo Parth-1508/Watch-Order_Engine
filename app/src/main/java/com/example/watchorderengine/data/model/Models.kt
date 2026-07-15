@@ -314,5 +314,6 @@ data class UserStats(
     val recentlyWatched: List<MediaSummary> = emptyList(),
     val favoriteGenre: String? = null,
     val streakDays: Int = 0,
-    val profileScore: Int = 0
+    val profileScore: Int = 0,
+    val profileRank: String = "Novice"
 )

@@ -41,6 +41,18 @@ data class CommunityPost(
     var universeDescription: String = "",
 
     /**
+     * Cache of the first node's poster URL to avoid decoding [nodesJson]
+     * during feed scroll. Populated during share/creation.
+     */
+    var bannerPosterUrl: String? = null,
+
+    /**
+     * Hex color (without #) used for branding this timeline in the feed
+     * (e.g. Marvel red, Star Wars gold).
+     */
+    var accentColor: String? = null,
+
+    /**
      * kotlinx.serialization-encoded JSON of the shared graph, shaped as
      * [SharedTimelinePayload]: `{ "nodes": [...], "edges": [...] }`.
      * Decode with [SharedTimelinePayload.decode] before rendering.

@@ -58,24 +58,25 @@ class CommunityRepository @Inject constructor(
                 return@addSnapshotListener
             }
 
-            val fetchedPosts = snapshot?.documents?.mapNotNull { doc ->
-                try {
-                    doc.toObject<CommunityPost>()
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse post ${doc.id}: ${e.message}")
-                    null
+            val combined = snapshot?.documents?.let { docs ->
+                val fetchedPosts = docs.mapNotNull { doc ->
+                    try {
+                        doc.toObject<CommunityPost>()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse post ${doc.id}: ${e.message}")
+                        null
+                    }
                 }
-            } ?: emptyList()
 
-            // Merge logic: Predefined always at top.
-            // If a predefined post is found in the Firestore results (fetchedPosts),
-            // use the Firestore version as the source of truth for likes/state.
-            // Otherwise, use the local definition (starts at 0 likes).
-            val combined = predefined.map { p ->
-                fetchedPosts.find { it.postId == p.postId } ?: p
-            } + fetchedPosts.filter { fp ->
-                predefined.none { it.postId == fp.postId }
-            }
+                // Merge logic: Predefined always at top.
+                // If a predefined post is found in the Firestore results (fetchedPosts),
+                // use the Firestore version as the source of truth for likes/state.
+                // Otherwise, use the local definition (starts at 0 likes).
+                val predefinedIds = predefined.map { it.postId }.toSet()
+                predefined.map { p ->
+                    fetchedPosts.find { it.postId == p.postId } ?: p
+                } + fetchedPosts.filter { it.postId !in predefinedIds }
+            } ?: predefined
 
             trySend(Result.success(combined))
         }
@@ -159,6 +160,9 @@ class CommunityRepository @Inject constructor(
             
             val avatarUrl = userPrefs.avatarUrl.first() ?: firebaseUser?.photoUrl?.toString()
             val autoTags = autoCategorize(title, description, nodesJson)
+            
+            val payload = SharedTimelineCodec.decode(nodesJson)
+            val bannerUrl = payload?.nodes?.firstOrNull { !it.posterUrl.isNullOrBlank() }?.posterUrl
 
             val post = CommunityPost(
                 userId              = uid,
@@ -166,6 +170,7 @@ class CommunityRepository @Inject constructor(
                 authorAvatarUrl     = avatarUrl,
                 universeTitle       = title,
                 universeDescription = description,
+                bannerPosterUrl     = bannerUrl,
                 nodesJson           = nodesJson,
                 likesCount          = 0L,
                 likedByUsers        = emptyList(),

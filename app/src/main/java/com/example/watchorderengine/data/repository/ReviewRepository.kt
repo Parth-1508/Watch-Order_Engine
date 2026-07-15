@@ -103,12 +103,21 @@ class ReviewRepository @Inject constructor(
         val syncEnabled = userPrefs.cloudSyncEnabled.first()
         if (!syncEnabled) return@withContext Result.success(Unit)
 
-        // 3. Online: sync immediately to GLOBAL collection
+        // 3. Online: sync to GLOBAL feed AND User backup
         if (watchOrderRepository.isNetworkAvailable(context)) {
             try {
-                firestore.collection("reviews").document(reviewId)
-                    .set(doc, SetOptions.merge())
-                    .await()
+                val batch = firestore.batch()
+                
+                // Public Global Feed
+                val globalRef = firestore.collection("reviews").document(reviewId)
+                batch.set(globalRef, doc, SetOptions.merge())
+                
+                // User's private backup for sync-on-login
+                val userRef = firestore.collection("users").document(uid)
+                    .collection("reviews").document(reviewId)
+                batch.set(userRef, doc, SetOptions.merge())
+                
+                batch.commit().await()
                 
                 reviewDao.markSynced(reviewId)
                 Result.success(Unit)
@@ -141,10 +150,20 @@ class ReviewRepository @Inject constructor(
         val avatarUrl = userPrefs.avatarUrl.first()
 
         val doc = entity.toFirestoreDocument(username, avatarUrl)
-        firestore.collection("reviews").document(reviewId)
-            .set(doc, SetOptions.merge())
-            .await()
         
+        val batch = firestore.batch()
+        
+        // Global Feed
+        batch.set(firestore.collection("reviews").document(reviewId), doc, SetOptions.merge())
+        
+        // User Backup
+        batch.set(
+            firestore.collection("users").document(uid).collection("reviews").document(reviewId),
+            doc,
+            SetOptions.merge()
+        )
+        
+        batch.commit().await()
         reviewDao.markSynced(reviewId)
     }
 
@@ -372,7 +391,24 @@ class ReviewRepository @Inject constructor(
             }
         }
 
-        val externalReviews = awaitAll(tmdbDeferred, anilistDeferred, malDeferred).flatten()
+        val woeFirestoreDeferred = async(Dispatchers.IO) {
+            try {
+                // Fetch public reviews for this media from the global WOE collection
+                val snapshot = firestore.collection("reviews")
+                    .whereEqualTo("mediaId", mediaId)
+                    .orderBy("updatedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                    .limit(20)
+                    .get().await()
+
+                snapshot.documents.mapNotNull { it.toObject<ReviewDocument>()?.toReviewItem() }
+                    .filter { it.userId != auth.currentUser?.uid } // Don't duplicate local review
+            } catch (e: Exception) {
+                Log.w("ReviewRepo", "WOE Firestore reviews failed: ${e.message}")
+                emptyList()
+            }
+        }
+
+        val externalReviews = awaitAll(tmdbDeferred, anilistDeferred, malDeferred, woeFirestoreDeferred).flatten()
         (localReviews + externalReviews).sortedByDescending { it.createdAt }
     }
 

@@ -112,21 +112,21 @@ data class EpisodeEntity(
 
 @Entity(tableName = "user_progress", indices = [Index("trackingState")])
 data class UserProgressEntity(
-    @PrimaryKey val mediaId: String = "",
-    val trackingState: String = "PLANNED",           // TrackingState.name
-    val currentSeasonNumber: Int = 0,
-    val currentEpisodeNumber: Int = 0,
-    val userRating: Float? = null,
-    val startedDate: Long? = null,
-    val completedDate: Long? = null,
-    val updatedAt: Long = System.currentTimeMillis(),
-    val userNotes: String = "",
-    val priorityTag: String = "NONE",    // PriorityTag.name
+    @PrimaryKey var mediaId: String = "",
+    var trackingState: String = "PLANNED",           // TrackingState.name
+    var currentSeasonNumber: Int = 0,
+    var currentEpisodeNumber: Int = 0,
+    var userRating: Float? = null,
+    var startedDate: Long? = null,
+    var completedDate: Long? = null,
+    var updatedAt: Long = System.currentTimeMillis(),
+    var userNotes: String = "",
+    var priorityTag: String = "NONE",    // PriorityTag.name
     
     // Graph/Universe progress fields
-    val completedNodeIds: List<String> = emptyList(),
-    val activeRoute: String? = null,
-    val spoilerShieldEnabled: Boolean = false
+    var completedNodeIds: List<String> = emptyList(),
+    var activeRoute: String? = null,
+    var spoilerShieldEnabled: Boolean = false
 )
 
 data class JoinedProgressMedia(

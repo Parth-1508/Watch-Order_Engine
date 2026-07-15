@@ -1,8 +1,7 @@
 package com.example.watchorderengine.data.model
 
 import com.example.watchorderengine.data.graph.GraphEngine
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import com.example.watchorderengine.data.model.SharedTimelineCodec
 
 /**
  * Static data source for major, predefined watch orders ("Created by WOE" posts).
@@ -10,11 +9,6 @@ import kotlinx.serialization.json.Json
  * chip in [com.example.watchorderengine.ui.screens.TrendingTagsSection].
  */
 object PredefinedTimelines {
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
 
     private val masterTimestamp = System.currentTimeMillis()
     private var postCount = 0
@@ -227,8 +221,10 @@ object PredefinedTimelines {
             authorAvatarUrl = "https://ui-avatars.com/api/?name=WO&background=141B2D&color=fff&bold=true",
             universeTitle = title,
             universeDescription = description,
+            bannerPosterUrl = nodes.firstOrNull { !it.posterUrl.isNullOrBlank() }?.posterUrl,
+            accentColor = color,
             timestamp = masterTimestamp - (currentOffset * 1000),
-            nodesJson = json.encodeToString(SharedTimelinePayload(nodes, edges)),
+            nodesJson = SharedTimelineCodec.encode(nodes, edges),
             tags = tags,
             isOfficial = true,
         )
@@ -246,8 +242,9 @@ object PredefinedTimelines {
         episodeCount: Int = 0,
         tags: List<String> = listOf(GraphEngine.ROUTE_ALL),
     ): MediaNode {
-        val type = MediaCategory.entries.find { it.name == category } ?: MediaCategory.MOVIE
-        val isMovie = category == "MOVIE"
+        val type = MediaCategory.entries.find { it.name.equals(category, ignoreCase = true) } 
+            ?: MediaCategory.MOVIE
+        val isMovie = category.uppercase() == "MOVIE"
         val prefix = if (isMovie) "tmdb_m_" else "tmdb_t_"
         return MediaNode(
             id = "$prefix$tmdbId",
