@@ -427,8 +427,12 @@ private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
             WikiLoreCard(lore = detail.wikiLore!!)
         }
 
-        if (!detail.wikiLore.isNullOrBlank() && detail.characterDescription == detail.wikiLore) {
-            WikiAttributionFooter()
+        if (detail.characterDescription.isNotBlank()) {
+            when (detail.loreSource) {
+                "wikipedia" -> LoreAttributionFooter("Source: Wikipedia (CC BY-SA 4.0)")
+                "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
+                "anilist" -> LoreAttributionFooter("Source: AniList")
+            }
         }
 
         if (detail.voiceActorName != null) {
@@ -749,7 +753,7 @@ private fun WikiLoreCard(lore: String) {
                     }
                 }
 
-                WikiAttributionFooter()
+                LoreAttributionFooter("Source: Wikipedia (CC BY-SA 4.0)")
             }
 
             if (!revealed) {
@@ -791,13 +795,13 @@ private fun WikiLoreCard(lore: String) {
 }
 
 @Composable
-private fun WikiAttributionFooter() {
+private fun LoreAttributionFooter(text: String) {
     val theme = LocalAppTheme.current
     Spacer(Modifier.height(8.dp))
     HorizontalDivider(color = theme.border, thickness = 0.5.dp)
     Spacer(Modifier.height(6.dp))
     Text(
-        "Source: Wikipedia (CC BY-SA 4.0)",
+        text,
         color      = theme.textSecondary.copy(alpha = 0.6f),
         fontSize   = 10.sp,
         fontStyle  = androidx.compose.ui.text.font.FontStyle.Italic

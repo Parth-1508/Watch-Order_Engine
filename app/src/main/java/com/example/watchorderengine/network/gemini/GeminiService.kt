@@ -95,7 +95,7 @@ internal data class GeminiRequestPart(@Json(name = "text") val text: String)
 @JsonClass(generateAdapter = true)
 internal data class GeminiGenerationConfig(
     @Json(name = "responseMimeType") val responseMimeType: String,
-    @Json(name = "responseSchema") val responseSchema: Any
+    @Json(name = "responseSchema") val responseSchema: Any? = null
 )
 
 sealed interface GeminiResult {
@@ -142,17 +142,7 @@ class GeminiService @Inject constructor() {
             return@withContext GeminiResult.Error("No raw TMDB/AniList items supplied to sort.")
         }
 
-        val allKeys = listOfNotNull(
-            BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() },
-            BuildConfig.GEMINI_BURNER_KEY_1.takeIf { it.isNotBlank() },
-            BuildConfig.GEMINI_BURNER_KEY_2.takeIf { it.isNotBlank() },
-            BuildConfig.GEMINI_BURNER_KEY_3.takeIf { it.isNotBlank() },
-            BuildConfig.GEMINI_BURNER_KEY_4.takeIf { it.isNotBlank() },
-            BuildConfig.GEMINI_BURNER_KEY_5.takeIf { it.isNotBlank() },
-            BuildConfig.GEMINI_BURNER_KEY_6.takeIf { it.isNotBlank() },
-            BuildConfig.GEMINI_BURNER_KEY_7.takeIf { it.isNotBlank() }
-        ).distinct()
-
+        val allKeys = getAllApiKeys()
         if (allKeys.isEmpty()) {
             return@withContext GeminiResult.Error(
                 "No Gemini API keys found. Add them to local.properties."
@@ -215,9 +205,8 @@ class GeminiService @Inject constructor() {
                 } else {
                     lastError = "Gemini error HTTP ${response.code}: $body"
                     android.util.Log.e("GeminiService", "Key failed (${response.code}). Trying next key if available...")
-                    // If 401 or 429, we definitely want to try the next key
                     if (response.code == 401 || response.code == 429) continue
-                    else break // For other errors, maybe stop? Actually let's try all keys anyway.
+                    else break
                 }
             } catch (e: Exception) {
                 lastError = "Network error: ${e.message}"
@@ -228,6 +217,68 @@ class GeminiService @Inject constructor() {
 
         GeminiResult.Error(lastError ?: "Failed to generate watch order after trying all API keys.")
     }
+
+    /**
+     * Fetches a character description from Gemini as a high-quality fallback
+     * when Wikipedia provides irrelevant or missing data.
+     */
+    suspend fun fetchCharacterLore(
+        characterName: String,
+        mediaTitle: String,
+        actorName: String?
+    ): String? = withContext(Dispatchers.IO) {
+        val allKeys = getAllApiKeys()
+        if (allKeys.isEmpty()) return@withContext null
+
+        val prompt = """
+            Provide a concise "about the character" summary for the fictional character "$characterName" 
+            from the movie/show "$mediaTitle"${if (actorName != null) " played by $actorName" else ""}.
+            Focus on their role, personality, and significance in the story.
+            If you don't have specific info about this character, respond with "UNKNOWN".
+            Output should be plain text, max 3 sentences. Do not use markdown.
+        """.trimIndent()
+
+        val requestBody = GeminiRequestBody(
+            contents = listOf(GeminiRequestContent(parts = listOf(GeminiRequestPart(prompt)))),
+            generationConfig = GeminiGenerationConfig(responseMimeType = "text/plain")
+        )
+        val requestJson = moshi.adapter(GeminiRequestBody::class.java).toJson(requestBody)
+
+        for (apiKey in allKeys) {
+            val request = Request.Builder()
+                .url("$ENDPOINT?key=$apiKey")
+                .post(requestJson.toRequestBody(mediaTypeJson))
+                .build()
+
+            try {
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: continue
+                if (response.isSuccessful) {
+                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
+                    val text = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+                    if (text == null || text.equals("UNKNOWN", ignoreCase = true)) return@withContext null
+                    return@withContext text
+                }
+            } catch (e: Exception) {
+                continue
+            }
+        }
+        null
+    }
+
+    private fun getAllApiKeys(): List<String> {
+        return listOfNotNull(
+            BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_1.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_2.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_3.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_4.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_5.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_6.takeIf { it.isNotBlank() },
+            BuildConfig.GEMINI_BURNER_KEY_7.takeIf { it.isNotBlank() }
+        ).distinct()
+    }
+
 
     private fun sanitizeAgainstRawItems(
         watchOrder: GeminiWatchOrder,

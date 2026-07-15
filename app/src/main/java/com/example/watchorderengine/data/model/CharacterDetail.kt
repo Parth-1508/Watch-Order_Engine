@@ -17,8 +17,9 @@ data class CharacterDetail(
     /** Additional fictional character images from AniList (if any). */
     val characterPhotos: List<String> = emptyList(),
 
-    // ── Wikipedia lore ────────────────────────────────────────────────────────
+    // ── Lore / Description Source ─────────────────────────────────────────────
     val wikiLore: String? = null,
+    val loreSource: String? = null,        // "wikipedia" | "gemini" | "anilist"
 
     // ── Actor / Voice Actor (real person) ─────────────────────────────────────
     val actorTmdbId: Int,

@@ -12,6 +12,7 @@ import com.example.watchorderengine.network.AnilistRequest
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbConfig
 import com.example.watchorderengine.network.WikipediaApiService
+import com.example.watchorderengine.network.gemini.GeminiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
@@ -23,7 +24,8 @@ import javax.inject.Singleton
 class CharacterRepository @Inject constructor(
     private val tmdbApi: TmdbApiService,
     private val anilistApi: AnilistApiService,
-    private val wikipediaApi: WikipediaApiService
+    private val wikipediaApi: WikipediaApiService,
+    private val geminiService: GeminiService
 ) {
     companion object { private const val TAG = "CharacterRepository" }
 
@@ -64,7 +66,7 @@ class CharacterRepository @Inject constructor(
             val wikiDeferred = async { getCharacterLore(cleanCharName, cleanShowTitle, person.name) }
 
             val media = aniListDeferred.await()
-            val (wikiLore, wikiImageUrl) = wikiDeferred.await()
+            val (wikiLore, wikiImageUrl, wikiSource) = wikiDeferred.await()
 
             val aniListEdges = media?.characters?.edges ?: emptyList()
             
@@ -158,6 +160,7 @@ class CharacterRepository @Inject constructor(
 
             val aniListDescription = cleanAniListText(aniChar?.description)
             val characterLore = aniListDescription ?: wikiLore ?: ""
+            val finalLoreSource = if (aniListDescription != null) "anilist" else wikiSource
 
             val primaryCharImg = aniImg
                 ?: validWikiImg
@@ -190,6 +193,7 @@ class CharacterRepository @Inject constructor(
                 voiceActorImageUrl  = voiceActor?.image?.large,
 
                 wikiLore = wikiLore,
+                loreSource = finalLoreSource,
 
                 knownForCredits = castCredits.distinctBy { it.id }.take(6).map(::toCreditItem),
                 allCastCredits  = castCredits.take(30).map(::toCreditItem),
@@ -259,60 +263,85 @@ class CharacterRepository @Inject constructor(
         return a.contains(b) || b.contains(a)
     }
 
-    suspend fun getCharacterLore(characterName: String, mediaTitle: String, actorName: String? = null): Pair<String?, String?> {
+    suspend fun getCharacterLore(characterName: String, mediaTitle: String, actorName: String? = null): Triple<String?, String?, String?> {
+        val cleanMedia = mediaTitle.replace(Regex("\\(\\d{4}\\)"), "").trim()
         val nameParts = characterName.split("/").map { it.trim() }.filter { it.isNotBlank() }
+        
         for (part in nameParts) {
-            // Context-aware search queries to prevent common name ambiguity (Bug F fix)
+            // 1. High-precision context queries - we trust these if they return a hit
             val contextQueries = mutableListOf(
-                "$part ($mediaTitle character)",
-                "$part $mediaTitle movie character",
-                "$part from $mediaTitle",
-                "$part ($mediaTitle)",
-                "$part $mediaTitle"
+                "$part ($cleanMedia character)",
+                "$part ($cleanMedia)",
+                "$part $cleanMedia character"
             )
             
             if (!actorName.isNullOrBlank()) {
                 contextQueries.add(0, "$part played by $actorName")
-                contextQueries.add(1, "$part $actorName")
+                contextQueries.add(1, "$part ($actorName)")
             }
 
             for (q in contextQueries) {
                 val result = fetchWikipediaSummary(q)
-                if (result != null) return result
+                if (result != null) return Triple(result.first, result.second, "wikipedia")
             }
 
-            // Wikipedia is very sensitive to the exact title. Fictional characters 
-            // almost always have a suffix in parentheses if they are popular.
-            val contexts = listOf(
-                "Marvel Cinematic Universe",
-                "Marvel Comics",
-                "DC Extended Universe",
-                "DC Comics",
-                "comics",
-                "film",
-                "character",
-                "video game"
-            )
-            
-            // Try specific contexts
+            // 2. Generic context suffixes - need relevance check to avoid random results (e.g. "Ally (film)" vs our Ally)
+            val contexts = listOf("film", "character", "television character", "comics", "video game")
             for (ctx in contexts) {
-                val qualifiedQuery = "$part ($ctx)"
-                val result = fetchWikipediaSummary(qualifiedQuery)
-                if (result != null) return result
-            }
-            
-            // Try "CharacterName Marvel" etc.
-            val simpleContexts = listOf("Marvel", "DC", "Disney")
-            for (ctx in simpleContexts) {
-                val result = fetchWikipediaSummary("$part $ctx")
-                if (result != null) return result
+                val result = fetchWikipediaSummary("$part ($ctx)")
+                if (result != null && isLoreRelevant(result.first ?: "", part, cleanMedia, actorName)) {
+                    return Triple(result.first, result.second, "wikipedia")
+                }
             }
 
-            // Finally try the bare name
+            // 3. Bare name - MUST be relevant
             val plainResult = fetchWikipediaSummary(part)
-            if (plainResult != null) return plainResult
+            if (plainResult != null && isLoreRelevant(plainResult.first ?: "", part, cleanMedia, actorName)) {
+                return Triple(plainResult.first, plainResult.second, "wikipedia")
+            }
         }
-        return null to null
+
+        // 4. Gemini Fallback if Wikipedia failed or was irrelevant
+        Log.d(TAG, "Wikipedia failed for '$characterName' in '$mediaTitle' — trying Gemini fallback...")
+        val geminiLore = geminiService.fetchCharacterLore(characterName, mediaTitle, actorName)
+        if (geminiLore != null) {
+            return Triple(geminiLore, null, "gemini")
+        }
+        
+        return Triple(null, null, null)
+    }
+
+    /**
+     * Checks if a Wikipedia extract actually pertains to our character/movie.
+     * Prevents the "random results" issue reported for common names like "Ally".
+     */
+    private fun isLoreRelevant(
+        extract: String,
+        characterName: String,
+        mediaTitle: String,
+        actorName: String?
+    ): Boolean {
+        val text = extract.lowercase()
+        val media = mediaTitle.lowercase()
+        val actor = actorName?.lowercase()
+
+        // Signal 1: Mentions the movie or the actor
+        if (text.contains(media)) return true
+        if (actor != null && text.contains(actor)) return true
+
+        // Signal 2: Mentions significant parts of the media title (e.g. "Cocktail" in "Cocktail 2")
+        val cleanMedia = media.replace(Regex("(?i)(movie|series|the |volume|part|season|special|ova|ona)"), "").trim()
+        val mediaParts = cleanMedia.split(" ", ":", "-").filter { it.length > 3 }
+        if (mediaParts.any { text.contains(it) }) return true
+
+        // Signal 3: If the character name is very common, be extra strict
+        val commonNames = setOf("ally", "john", "mary", "jack", "alex", "sarah")
+        if (characterName.lowercase() in commonNames) {
+            // Must mention media or actor for these
+            return text.contains(media) || (actor != null && text.contains(actor))
+        }
+
+        return false
     }
 
     private suspend fun fetchWikipediaSummary(query: String): Pair<String?, String?>? {
