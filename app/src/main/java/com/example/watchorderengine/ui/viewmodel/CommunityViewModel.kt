@@ -113,9 +113,13 @@ class CommunityViewModel @Inject constructor(
         filterPosts(query, _selectedTag.value)
     }
 
-    fun selectTag(tag: String?) {
-        _selectedTag.value = tag
-        filterPosts(_searchQuery.value, tag)
+    /**
+     * Tapping a Trending Tag chip filters the feed to that tag; tapping the
+     * same tag again clears it back to the plain feed.
+     */
+    fun onTagSelected(tag: String) {
+        _selectedTag.value = if (_selectedTag.value == tag) null else tag
+        filterPosts(_searchQuery.value, _selectedTag.value)
     }
 
     private fun filterPosts(query: String, tag: String?) {

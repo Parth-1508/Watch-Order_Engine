@@ -274,15 +274,24 @@ class CommunityRepository @Inject constructor(
 
             val batch = firestore.batch()
 
+            // Route tags actually present on the incoming nodes (e.g. a branching
+            // timeline like Fate might carry "UBW" / "HF" instead of the old
+            // hardcoded "CANON" / "ESSENTIAL"). "ALL" always leads so GraphEngine's
+            // ROUTE_ALL default shows every node. Falls back to a sane default set
+            // for older posts / plain linear timelines with no route tags at all.
+            val discoveredRouteTags = payload.nodes.flatMap { it.tags }.distinct()
+            val routeTags = (listOf("ALL") + discoveredRouteTags.filter { it != "ALL" })
+                .ifEmpty { listOf("ALL", "CANON", "ESSENTIAL") }
+
             // 1. Create Universe Metadata
             val universeRef = firestore.collection("universes").document(newUniverseId)
             batch.set(universeRef, mapOf(
                 "id" to newUniverseId,
                 "name" to post.universeTitle,
                 "description" to post.universeDescription + " (Imported from ${post.authorName})",
-                "posterUrl" to (payload.nodes.firstOrNull()?.posterUrl ?: ""),
+                "posterUrl" to (payload.nodes.firstOrNull { !it.posterUrl.isNullOrBlank() }?.posterUrl ?: ""),
                 "total_nodes" to payload.nodes.size,
-                "available_routes" to listOf("ALL", "CANON", "ESSENTIAL"),
+                "available_routes" to routeTags,
                 "is_public" to false,
                 "owner_id" to uid,
                 "timestamp" to System.currentTimeMillis()
@@ -311,15 +320,25 @@ class CommunityRepository @Inject constructor(
                 batch.set(universeRef.collection("edges").document(edgeDocId), normalizedEdge)
             }
 
-            // 4. Set Default Tags
+            // 4. Set Tags — one doc per route actually present, so a branching
+            // import (e.g. Fate's UBW / HF routes) gets real, matching filter
+            // chips instead of generic ones that don't correspond to anything.
             val tagsRef = universeRef.collection("tags")
-            val defaultTags = listOf(
-                "ALL" to mapOf("label" to "All Content", "order" to 0, "color" to "#888899"),
-                "CANON" to mapOf("label" to "Canon Only", "order" to 1, "color" to "#4ADE80"),
-                "ESSENTIAL" to mapOf("label" to "Essential", "order" to 2, "color" to "#60A5FA")
+            val knownLabels = mapOf(
+                "ALL" to "All Content",
+                "CANON" to "Canon Only",
+                "ESSENTIAL" to "Essential"
             )
-            defaultTags.forEach { (tagId, data) ->
-                batch.set(tagsRef.document(tagId), data)
+            val palette = listOf("#888899", "#4ADE80", "#60A5FA", "#F97316", "#C084FC", "#F472B6")
+            routeTags.forEachIndexed { index, tagId ->
+                batch.set(
+                    tagsRef.document(tagId),
+                    mapOf(
+                        "label" to (knownLabels[tagId] ?: tagId.lowercase().replaceFirstChar { it.uppercase() }),
+                        "order" to index,
+                        "color" to palette[index % palette.size]
+                    )
+                )
             }
 
             batch.commit().await()

@@ -12,7 +12,10 @@ import javax.inject.Inject
 
 sealed interface UniverseListUiState {
     data object Loading : UniverseListUiState
-    data class Success(val universes: List<Universe>) : UniverseListUiState
+    data class Success(
+        val universes: List<Universe>,
+        val regeneratingUniverseIds: Set<String> = emptySet()
+    ) : UniverseListUiState
     data class Error(val message: String) : UniverseListUiState
 }
 
@@ -58,8 +61,24 @@ class UniverseListViewModel @Inject constructor(
     }
 
     fun regenerateUniverse(universeId: String) {
+        val currentState = _uiState.value
+        if (currentState is UniverseListUiState.Success) {
+            _uiState.value = currentState.copy(
+                regeneratingUniverseIds = currentState.regeneratingUniverseIds + universeId
+            )
+        }
+
         viewModelScope.launch {
-            mediaRepository.generateWatchOrder(universeId)
+            try {
+                mediaRepository.generateWatchOrder(universeId)
+            } finally {
+                val endState = _uiState.value
+                if (endState is UniverseListUiState.Success) {
+                    _uiState.value = endState.copy(
+                        regeneratingUniverseIds = endState.regeneratingUniverseIds - universeId
+                    )
+                }
+            }
         }
     }
 
@@ -68,6 +87,15 @@ class UniverseListViewModel @Inject constructor(
             val nodes = repository.getNodes(universeId).first()
             nodes.forEach { node ->
                 val mediaId = TimelineViewModel.resolveMediaId(node)
+                
+                // FIX: Ensure metadata is cached locally so the "Complete Watchlist" 
+                // doesn't show "Unknown Movie".
+                if (markAsCompleted) {
+                    launch {
+                        mediaRepository.ensureMetadataCached(node)
+                    }
+                }
+
                 if (markAsCompleted) {
                     mediaRepository.updateTrackingState(mediaId, com.example.watchorderengine.data.model.TrackingState.COMPLETED)
                     mediaRepository.markAllAsWatched(mediaId)

@@ -318,6 +318,12 @@ class TimelineViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 if (newState) _isSyncing.value = true
+
+                // FIX: Ensure metadata is cached locally before marking as completed
+                // to avoid "Unknown Movie" labels in the watchlist.
+                if (newState && targetNode != null) {
+                    mediaRepository.ensureMetadataCached(targetNode)
+                }
                 
                 // 1. Sync to Firestore (Watch Order status)
                 val result = repository.setNodeCompletion(currentUniverseId, nodeId, newState, context)

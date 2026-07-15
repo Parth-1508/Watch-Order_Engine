@@ -70,8 +70,12 @@ fun UniverseListScreen(
                 is UniverseListUiState.Success -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(state.universes) { universe ->
+                            val isRegenerating = (state as? UniverseListUiState.Success)
+                                ?.regeneratingUniverseIds?.contains(universe.id) ?: false
+
                             UniverseItem(
                                 universe = universe,
+                                isRegenerating = isRegenerating,
                                 onClick = { onUniverseClick(universe.id) },
                                 onRegenerate = { viewModel.regenerateUniverse(universe.id) },
                                 onDelete = { viewModel.deleteUniverse(universe.id) },
@@ -89,6 +93,7 @@ fun UniverseListScreen(
 @Composable
 fun UniverseItem(
     universe: Universe,
+    isRegenerating: Boolean = false,
     onClick: () -> Unit,
     onRegenerate: () -> Unit,
     onDelete: () -> Unit,
@@ -106,7 +111,7 @@ fun UniverseItem(
             }
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = { showMenu = true }
+                onLongClick = { if (!isRegenerating) showMenu = true }
             ),
         shape = RoundedCornerShape(theme.appRadius),
         colors = CardDefaults.cardColors(containerColor = theme.surface),
@@ -136,6 +141,13 @@ fun UniverseItem(
                     .align(Alignment.BottomStart)
                     .padding(16.dp)
             ) {
+                if (isRegenerating) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        color = theme.accent,
+                        trackColor = theme.accent.copy(alpha = 0.2f)
+                    )
+                }
                 Text(
                     universe.name,
                     style = MaterialTheme.typography.headlineSmall,
@@ -158,7 +170,7 @@ fun UniverseItem(
                 modifier = Modifier.background(theme.surface)
             ) {
                 DropdownMenuItem(
-                    text = { Text("Regenerate Graph", color = theme.textPrimary) },
+                    text = { Text("Regenerate Timeline", color = theme.textPrimary) },
                     onClick = {
                         showMenu = false
                         onRegenerate()

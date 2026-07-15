@@ -122,7 +122,9 @@ fun CommunityScreen(
                     item { 
                         TrendingTagsSection(
                             selectedTag = selectedTag,
-                            onTagClick = { viewModel.selectTag(it) }
+                            onTagClick = { tag ->
+                                tag?.let { viewModel.onTagSelected(it) }
+                            }
                         ) 
                     }
 

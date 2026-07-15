@@ -135,6 +135,52 @@ class MediaRepository @Inject constructor(
         }
     }
 
+    /**
+     * Ensures that a MediaEntity exists in the local Room database for the given node.
+     * This prevents "Unknown Movie" labels in the watchlist if the user marks a
+     * timeline as completed before ever opening the individual media detail screens.
+     */
+    suspend fun ensureMetadataCached(node: MediaNode) = withContext(Dispatchers.IO) {
+        val mediaId = buildMediaId(node.tmdb_id, node.tmdb_media_type)
+        if (db.mediaDao().getById(mediaId) != null) return@withContext
+
+        // Pre-seed with the data we already have from the timeline/Gemini
+        db.mediaDao().upsert(
+            MediaEntity(
+                id = mediaId,
+                tmdbId = node.tmdb_id,
+                anilistId = null,
+                title = node.title,
+                originalTitle = node.title,
+                overview = "",
+                tagline = "",
+                status = "RELEASED",
+                posterUrl = node.posterUrl,
+                backdropUrl = null,
+                mediaCategory = if (node.tmdb_media_type == "movie") "MOVIE" else "TV_SHOW",
+                genres = emptyList(),
+                ageRating = "NR",
+                voteAverage = 0f,
+                voteCount = 0,
+                runtime = null,
+                numberOfSeasons = null,
+                numberOfEpisodes = null,
+                releaseDate = "${node.releaseYear}-01-01",
+                releaseYear = node.releaseYear.toString(),
+                trailerKey = null,
+                watchProvidersJson = "[]",
+                castJson = "[]",
+                recommendationsJson = "[]",
+                arcsJson = "[]"
+            )
+        )
+
+        // Optionally trigger a full fetch in the background to get overview/genres/etc.
+        repositoryScope.launch {
+            refreshDetail(mediaId)
+        }
+    }
+
     private val wpType      = Types.newParameterizedType(List::class.java, WatchProviderItem::class.java)
     private val wpAdapter   by lazy { moshi.adapter<List<WatchProviderItem>>(wpType) }
     private val arcsType    = Types.newParameterizedType(List::class.java, StoryArc::class.java)
