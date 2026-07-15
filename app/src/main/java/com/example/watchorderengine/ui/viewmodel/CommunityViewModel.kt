@@ -172,7 +172,7 @@ class CommunityViewModel @Inject constructor(
             val alreadyLiked = uid in post.likedByUsers
             post.copy(
                 likedByUsers = if (alreadyLiked) post.likedByUsers - uid else post.likedByUsers + uid,
-                likesCount   = if (alreadyLiked) (post.likesCount - 1).coerceAtLeast(0) else post.likesCount + 1
+                likesCount   = if (alreadyLiked) (post.likesCount - 1).coerceAtLeast(0L) else post.likesCount + 1L
             )
         }
         _uiState.value = CommunityUiState.Success(optimisticPosts)

@@ -160,15 +160,12 @@ object GraphEngine {
      * Assigns a visual column to each node, creating the left-right branch layout.
      *
      * STRATEGY:
-     *   Root nodes → column 0.
-     *   One successor → inherits parent's column (straight line, no branch).
-     *   Multiple successors → first inherits parent's column; each additional
-     *                         successor gets the next available rightmost column.
-     *   Merge nodes (multiple parents) → assigned the minimum parent column
-     *                                    (snaps back to the "leftmost" branch).
+     *   Root nodes → centered in the potential width or spaced out.
+     *   Successors → The first successor usually continues the parent's column.
+     *                Additional successors branch out to the right.
      *
-     * Processes nodes in topological order, so parent columns are always
-     * assigned before children need them.
+     * To improve the "tree-like" feel, we try to center parents over their children
+     * where possible, although in a DAG this is a heuristic.
      */
     private fun assignColumns(
         sortedIds: List<String>,
@@ -176,19 +173,18 @@ object GraphEngine {
         inEdges: Map<String, List<String>>
     ): Map<String, Int> {
         val columnMap = mutableMapOf<String, Int>()
-        val activeColumnsAtLevel = mutableMapOf<Int, MutableSet<Int>>()
         var nextGlobalColumn = 0
 
+        // Pass 1: Initial greedy assignment (Top-Down)
         for (nodeId in sortedIds) {
-            val parents = inEdges[nodeId]
+            val parents = inEdges[nodeId] ?: emptyList()
             
             if (nodeId !in columnMap) {
-                if (parents.isNullOrEmpty()) {
+                if (parents.isEmpty()) {
                     columnMap[nodeId] = nextGlobalColumn++
                 } else {
-                    // Try to inherit the most common parent column
-                    val parentCols = parents.mapNotNull { columnMap[it] }
-                    columnMap[nodeId] = parentCols.minOrNull() ?: nextGlobalColumn++
+                    // Inherit from the first parent (primary path)
+                    columnMap[nodeId] = columnMap[parents[0]] ?: nextGlobalColumn++
                 }
             }
 
@@ -197,12 +193,30 @@ object GraphEngine {
             
             successors.forEachIndexed { index, successor ->
                 if (successor !in columnMap) {
-                    columnMap[successor] = if (index == 0) {
-                        currentCol // Continue main branch
+                    if (index == 0) {
+                        columnMap[successor] = currentCol
                     } else {
-                        nextGlobalColumn++ // Start new branch
+                        // Find the next available column that doesn't collide
+                        // For simplicity in this engine, we just use a global counter
+                        columnMap[successor] = nextGlobalColumn++
                     }
                 }
+            }
+        }
+
+        // Pass 2: Heuristic Centering (Bottom-Up)
+        // Propagate centering from children to parents so the tree stays balanced.
+        for (nodeId in sortedIds.reversed()) {
+            val successors = outEdges[nodeId] ?: emptyList()
+            if (successors.size > 1) {
+                val childCols = successors.mapNotNull { columnMap[it] }
+                if (childCols.isNotEmpty()) {
+                    columnMap[nodeId] = (childCols.min() + childCols.max()) / 2
+                }
+            } else if (successors.size == 1) {
+                // If there's only one child, the parent should align with it.
+                // This ensures linear segments of the tree remain straight.
+                columnMap[nodeId] = columnMap[successors[0]] ?: columnMap[nodeId]!!
             }
         }
 

@@ -184,14 +184,14 @@ fun TimelineNodeCard(
             Text(
                 text = if (displayNode.isSpoilerBlurred) "???" else node.title.ifBlank { " " },
                 style = MaterialTheme.typography.labelSmall,
-                maxLines = 4,
-                overflow = TextOverflow.Visible,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
                 color = if (displayNode.isCompleted) theme.textPrimary else theme.textSecondary,
-                modifier = Modifier.padding(horizontal = 2.dp),
+                modifier = Modifier.padding(horizontal = 4.dp),
                 textAlign = TextAlign.Center,
-                fontSize = 9.sp,
+                fontSize = 10.sp,
                 fontWeight = if (displayNode.isCompleted) FontWeight.Bold else FontWeight.Medium,
-                lineHeight = 11.sp,
+                lineHeight = 12.sp,
                 softWrap = true
             )
         }

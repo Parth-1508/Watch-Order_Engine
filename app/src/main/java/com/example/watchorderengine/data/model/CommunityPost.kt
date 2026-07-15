@@ -47,7 +47,7 @@ data class CommunityPost(
      */
     var nodesJson: String = "",
 
-    var likesCount: Int = 0,
+    var likesCount: Long = 0L,
 
     /**
      * UIDs of every user who has liked this post. Checking

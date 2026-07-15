@@ -46,18 +46,19 @@ class CommunityRepository @Inject constructor(
     fun fetchGlobalFeed(): Flow<Result<List<CommunityPost>>> = callbackFlow<Result<List<CommunityPost>>> {
         val predefined = PredefinedTimelines.masterTimelines
         
-        val query = firestore.collection(COLLECTION_GLOBAL_FEED)
+        // Base query for the feed
+        val baseQuery = firestore.collection(COLLECTION_GLOBAL_FEED)
             .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(FEED_LIMIT)
 
-        val registration = query.addSnapshotListener { snapshot, error ->
+        val registration = baseQuery.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w(TAG, "Global feed listener error: ${error.message}")
                 trySend(Result.failure(error))
                 return@addSnapshotListener
             }
 
-            val userPosts = snapshot?.documents?.mapNotNull { doc ->
+            val fetchedPosts = snapshot?.documents?.mapNotNull { doc ->
                 try {
                     doc.toObject<CommunityPost>()
                 } catch (e: Exception) {
@@ -66,21 +67,14 @@ class CommunityRepository @Inject constructor(
                 }
             } ?: emptyList()
 
-            // Merge logic: Predefined always at top. 
-            // Use the size of likedByUsers as the source of truth for likesCount 
-            // to ensure it starts at 0 and increments correctly.
-            val combined = predefined.map { p -> 
-                val fsMatch = userPosts.find { it.postId == p.postId }
-                if (fsMatch != null) {
-                    p.copy(
-                        likesCount = fsMatch.likedByUsers.size,
-                        likedByUsers = fsMatch.likedByUsers
-                    )
-                } else {
-                    p.copy(likesCount = 0, likedByUsers = emptyList())
-                }
-            } + userPosts.filter { up -> 
-                predefined.none { it.postId == up.postId } 
+            // Merge logic: Predefined always at top.
+            // If a predefined post is found in the Firestore results (fetchedPosts),
+            // use the Firestore version as the source of truth for likes/state.
+            // Otherwise, use the local definition (starts at 0 likes).
+            val combined = predefined.map { p ->
+                fetchedPosts.find { it.postId == p.postId } ?: p
+            } + fetchedPosts.filter { fp ->
+                predefined.none { it.postId == fp.postId }
             }
 
             trySend(Result.success(combined))
@@ -173,7 +167,7 @@ class CommunityRepository @Inject constructor(
                 universeTitle       = title,
                 universeDescription = description,
                 nodesJson           = nodesJson,
-                likesCount          = 0,
+                likesCount          = 0L,
                 likedByUsers        = emptyList(),
                 timestamp           = System.currentTimeMillis(),
                 tags                = autoTags,
@@ -210,7 +204,8 @@ class CommunityRepository @Inject constructor(
                         postRef,
                         mapOf(
                             "likedByUsers" to FieldValue.arrayRemove(currentUserId),
-                            "likesCount"   to FieldValue.increment(-1L)
+                            "likesCount"   to FieldValue.increment(-1L),
+                            "timestamp"    to System.currentTimeMillis() // Keep official posts fresh in the query
                         )
                     )
                 } else {
@@ -219,21 +214,34 @@ class CommunityRepository @Inject constructor(
                             postRef,
                             mapOf(
                                 "likedByUsers" to FieldValue.arrayUnion(currentUserId),
-                                "likesCount"   to FieldValue.increment(1L)
+                                "likesCount"   to FieldValue.increment(1L),
+                                "timestamp"    to System.currentTimeMillis() // Keep official posts fresh in the query
                             )
                         )
                     } else {
-                        // For predefined posts that aren't in Firestore yet, create the skeleton.
-                        // Note: We only need to store the LIKES delta in Firestore for these.
-                        transaction.set(
-                            postRef,
-                            mapOf(
-                                "postId" to postId,
-                                "likedByUsers" to listOf(currentUserId),
-                                "likesCount" to 1L,
-                                "timestamp" to System.currentTimeMillis()
+                        // For predefined posts that aren't in Firestore yet, create the skeleton
+                        // using the full metadata from PredefinedTimelines so it's a valid CommunityPost.
+                        val predefinedBase = PredefinedTimelines.masterTimelines.find { it.postId == postId }
+                        
+                        if (predefinedBase != null) {
+                            val skeleton = predefinedBase.copy(
+                                likedByUsers = listOf(currentUserId),
+                                likesCount = 1L,
+                                timestamp = System.currentTimeMillis()
                             )
-                        )
+                            transaction.set(postRef, skeleton)
+                        } else {
+                            // Fallback if not found in predefined (should not happen for woe_master_* IDs)
+                            transaction.set(
+                                postRef,
+                                mapOf(
+                                    "postId" to postId,
+                                    "likedByUsers" to listOf(currentUserId),
+                                    "likesCount" to 1L,
+                                    "timestamp" to System.currentTimeMillis()
+                                )
+                            )
+                        }
                     }
                 }
                 null

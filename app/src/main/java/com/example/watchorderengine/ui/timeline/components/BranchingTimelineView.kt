@@ -29,9 +29,9 @@ import com.example.watchorderengine.viewmodel.TimelineRow
 // ─── Dimension Constants ──────────────────────────────────────────────────────
 
 private val COLUMN_WIDTH: Dp = 100.dp
-private val COLUMN_GAP: Dp = 24.dp
-private val CONNECTOR_STRIP_HEIGHT: Dp = 100.dp
-private val ROW_VERTICAL_PADDING: Dp = 24.dp
+private val COLUMN_GAP: Dp = 48.dp
+private val CONNECTOR_STRIP_HEIGHT: Dp = 80.dp
+private val ROW_VERTICAL_PADDING: Dp = 16.dp
 
 private const val CONNECTOR_STROKE_IDLE = 1.5f
 private const val CONNECTOR_STROKE_DONE = 2.5f
@@ -112,6 +112,10 @@ private fun TransformableTimelineContent(
     onNodeClick: (DisplayNode) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val maxCols = rows.maxOfOrNull { it.totalColumns } ?: 0
+    val totalGraphWidthPx = maxCols * columnWidthPx + (maxCols - 1) * columnGapPx
+    val totalGraphWidthDp = with(LocalDensity.current) { totalGraphWidthPx.toDp() }
+
     Box(
         modifier = modifier
             .graphicsLayer {
@@ -125,27 +129,28 @@ private fun TransformableTimelineContent(
         Column(
             modifier = Modifier
                 .wrapContentSize(unbounded = true)
-                .padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 64.dp)
+                .width(totalGraphWidthDp + 64.dp)
+                .padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 64.dp),
+            horizontalAlignment = Alignment.Start
         ) {
             rows.forEachIndexed { index, row ->
                 TimelineRowView(
                     row          = row,
+                    graphWidthDp = totalGraphWidthDp,
                     onNodeToggle = onNodeToggle,
                     onNodeClick  = onNodeClick
                 )
 
-                if (index < rows.lastIndex && row.outgoing.isNotEmpty()) {
+                if (index < rows.lastIndex) {
                     ConnectorStrip(
                         connections   = row.outgoing,
                         totalColumns  = row.totalColumns,
                         columnWidthPx = columnWidthPx,
                         columnGapPx   = columnGapPx,
                         modifier      = Modifier
-                            .fillMaxWidth()
+                            .width(totalGraphWidthDp)
                             .height(CONNECTOR_STRIP_HEIGHT)
                     )
-                } else if (index < rows.lastIndex) {
-                    Spacer(Modifier.height(CONNECTOR_STRIP_HEIGHT / 2))
                 }
             }
         }
@@ -232,38 +237,38 @@ private fun ZoomControls(
 @Composable
 private fun TimelineRowView(
     row: TimelineRow,
+    graphWidthDp: Dp,
     onNodeToggle: (DisplayNode) -> Unit,
     onNodeClick: (DisplayNode) -> Unit
 ) {
     val nodeByColumn = row.nodes.associateBy { it.column }
     val usedColumns = (0 until row.totalColumns)
 
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Row(
-            modifier = Modifier
-                .padding(vertical = ROW_VERTICAL_PADDING),
-            horizontalArrangement = Arrangement.spacedBy(COLUMN_GAP),
-            verticalAlignment = Alignment.Top
-        ) {
-            for (columnIndex in usedColumns) {
-                val displayNode = nodeByColumn[columnIndex]
+    Row(
+        modifier = Modifier
+            .width(graphWidthDp)
+            .padding(vertical = ROW_VERTICAL_PADDING),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.Top
+    ) {
+        for (columnIndex in usedColumns) {
+            val displayNode = nodeByColumn[columnIndex]
 
-                if (displayNode != null) {
-                    key(displayNode.node.id) {
-                        TimelineNodeCard(
-                            displayNode = displayNode,
-                            onCheckToggle = { onNodeToggle(displayNode) },
-                            onCardClick = { onNodeClick(displayNode) },
-                            modifier = Modifier.width(COLUMN_WIDTH)
-                        )
-                    }
-                } else {
-                    Spacer(
-                        modifier = Modifier
-                            .width(COLUMN_WIDTH)
-                            .height(1.dp)
+            if (displayNode != null) {
+                key(displayNode.node.id) {
+                    TimelineNodeCard(
+                        displayNode = displayNode,
+                        onCheckToggle = { onNodeToggle(displayNode) },
+                        onCardClick = { onNodeClick(displayNode) },
+                        modifier = Modifier.width(COLUMN_WIDTH)
                     )
                 }
+            } else {
+                Spacer(modifier = Modifier.width(COLUMN_WIDTH))
+            }
+            
+            if (columnIndex < usedColumns.last) {
+                Spacer(modifier = Modifier.width(COLUMN_GAP))
             }
         }
     }
@@ -288,11 +293,8 @@ private fun ConnectorStrip(
     Canvas(modifier = modifier) {
         if (totalColumns == 0) return@Canvas
 
-        val totalGraphWidth = totalColumns * columnWidthPx + (totalColumns - 1) * columnGapPx
-        val horizontalOffset = (size.width - totalGraphWidth) / 2f
-
         fun columnCenterX(columnIndex: Int): Float =
-            horizontalOffset + columnIndex * (columnWidthPx + columnGapPx) + columnWidthPx / 2f
+            columnIndex * (columnWidthPx + columnGapPx) + columnWidthPx / 2f
 
         for (connection in connections) {
             val startX = columnCenterX(connection.fromColumn)

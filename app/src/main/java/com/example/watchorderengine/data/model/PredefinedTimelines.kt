@@ -135,39 +135,47 @@ object PredefinedTimelines {
         ),
 
         // ═══════════════════════════════════════════════════════════════════
-        // FATE SERIES (Expanded Universe & Grand Order) — tag: "Anime"
+        // FATE SERIES (The Multiverse) — tag: "Anime"
         // ═══════════════════════════════════════════════════════════════════
         buildPost(
             postId = "woe_master_fate_expanded",
-            title = "Fate Series (Expanded Universe & Grand Order)",
-            description = "The comprehensive watch order covering the core Holy Grail Wars, Lord El-Melloi II, alternate Apocrypha timeline, and the Grand Order singularities.",
+            title = "Fate Series (The Multiverse Path)",
+            description = "The definitive guide to the Nasuverse. Start with Zero, then branch into the three Stay Night routes, the Grand Order singularities, and the alternate Apocrypha/Extra timelines.",
             tags = listOf("Anime"),
             color = "4169E1",
             nodes = listOf(
-                buildNode(35123,  "Fate/Zero",                                              "ANIME", 2011),
+                buildNode(45845,  "Fate/Zero",                                              "ANIME", 2011),
                 buildNode(61415,  "Fate/stay night [Unlimited Blade Works]",                 "ANIME", 2014),
                 buildNode(283984, "Fate/stay night [Heaven's Feel] I. presage flower",      "MOVIE", 2017),
-                buildNode(454316, "Fate/stay night [Heaven's Feel] II. lost butterfly",     "MOVIE", 2019),
-                buildNode(530467, "Fate/stay night [Heaven's Feel] III. spring song",      "MOVIE", 2020),
-                buildNode(85750,  "Lord El-Melloi II's Case Files {Rail Zeppelin} Grace note", "ANIME", 2019),
-                buildNode(71835,  "Fate/Apocrypha",                                          "ANIME", 2017),
-                buildNode(76092,  "Fate/Extra Last Encore",                                  "ANIME", 2018),
-                buildNode(431053, "Fate/Grand Order: First Order",                          "MOVIE", 2016),
-                buildNode(622335, "Fate/Grand Order - Camelot - Wandering; Agateram",       "MOVIE", 2020),
-                buildNode(726880, "Fate/Grand Order - Camelot - Paladin; Agateram",         "MOVIE", 2021),
-                buildNode(83302,  "Fate/Grand Order - Absolute Demonic Front: Babylonia",    "ANIME", 2019),
-                buildNode(802371, "Fate/Grand Order - Final Singularity - Solomon",         "MOVIE", 2021),
+                buildNode(390634, "Fate/stay night [Heaven's Feel] II. lost butterfly",     "MOVIE", 2019),
+                buildNode(390635, "Fate/stay night [Heaven's Feel] III. spring song",       "MOVIE", 2020),
+                buildNode(85368,  "Lord El-Melloi II's Case Files {Rail Zeppelin} Grace note", "ANIME", 2019),
+                buildNode(72304,  "Fate/Apocrypha",                                          "ANIME", 2017),
+                buildNode(76123,  "Fate/Extra Last Encore",                                  "ANIME", 2018),
+                buildNode(428142, "Fate/Grand Order: First Order",                          "MOVIE", 2016),
+                buildNode(637202, "Fate/Grand Order - Camelot - Wandering; Agateram",       "MOVIE", 2020),
+                buildNode(637462, "Fate/Grand Order - Camelot - Paladin; Agateram",         "MOVIE", 2021),
+                buildNode(90677,  "Fate/Grand Order - Absolute Demonic Front: Babylonia",   "ANIME", 2019),
+                buildNode(829920, "Fate/Grand Order - Final Singularity - Solomon",         "MOVIE", 2021),
             ),
             edges = listOf(
-                Edge("tmdb_t_35123",  "tmdb_t_61415"),
-                Edge("tmdb_t_61415",  "tmdb_m_283984"),
-                Edge("tmdb_m_283984", "tmdb_m_454316"),
-                Edge("tmdb_m_454316", "tmdb_m_530467"),
-                Edge("tmdb_t_61415",  "tmdb_t_85750"),
-                Edge("tmdb_m_431053", "tmdb_m_622335"),
-                Edge("tmdb_m_622335", "tmdb_m_726880"),
-                Edge("tmdb_m_726880", "tmdb_t_83302"),
-                Edge("tmdb_t_83302",  "tmdb_m_802371")
+                // All major paths branch from Fate/Zero (conceptual or direct)
+                Edge("tmdb_t_45845",  "tmdb_t_61415"),   // Zero -> UBW route
+                Edge("tmdb_t_45845",  "tmdb_m_283984"),  // Zero -> HF route (Branching)
+                Edge("tmdb_t_45845",  "tmdb_t_72304"),   // Zero -> Apocrypha (Branching)
+                Edge("tmdb_t_45845",  "tmdb_t_76123"),   // Zero -> Extra (Branching)
+                Edge("tmdb_t_45845",  "tmdb_m_428142"),  // Zero -> Grand Order (Conceptual link)
+
+                // The Stay Night Routes
+                Edge("tmdb_m_283984", "tmdb_m_390634"),
+                Edge("tmdb_m_390634", "tmdb_m_390635"),
+                Edge("tmdb_t_61415",  "tmdb_t_85368"),   // UBW -> Lord El-Melloi II
+
+                // The Grand Order Saga
+                Edge("tmdb_m_428142", "tmdb_m_637202"),
+                Edge("tmdb_m_637202", "tmdb_m_637462"),
+                Edge("tmdb_m_637462", "tmdb_t_90677"),
+                Edge("tmdb_t_90677",  "tmdb_m_829920")
             )
         ),
 
@@ -239,7 +247,6 @@ object PredefinedTimelines {
             authorAvatarUrl = "https://ui-avatars.com/api/?name=WO&background=141B2D&color=fff&bold=true",
             universeTitle = title,
             universeDescription = description,
-            likesCount = 0, // Source of truth is Firestore
             timestamp = masterTimestamp - (currentOffset * 1000),
             nodesJson = json.encodeToString(SharedTimelinePayload(nodes, edges)),
             tags = tags,
