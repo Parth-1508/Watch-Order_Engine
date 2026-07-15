@@ -117,7 +117,7 @@ class CommunityViewModel @Inject constructor(
      * Tapping a Trending Tag chip filters the feed to that tag; tapping the
      * same tag again clears it back to the plain feed.
      */
-    fun onTagSelected(tag: String) {
+    fun onTagSelected(tag: String?) {
         _selectedTag.value = if (_selectedTag.value == tag) null else tag
         filterPosts(_searchQuery.value, _selectedTag.value)
     }
@@ -168,24 +168,31 @@ class CommunityViewModel @Inject constructor(
 
     fun likePost(postId: String) {
         val uid = currentUserId ?: return
-        val currentState = _uiState.value as? CommunityUiState.Success ?: return
-        val previousPosts = currentState.posts
-
-        val optimisticPosts = previousPosts.map { post ->
-            if (post.postId != postId) return@map post
-            val alreadyLiked = uid in post.likedByUsers
-            post.copy(
-                likedByUsers = if (alreadyLiked) post.likedByUsers - uid else post.likedByUsers + uid,
-                likesCount   = if (alreadyLiked) (post.likesCount - 1).coerceAtLeast(0L) else post.likesCount + 1L
-            )
+        
+        // Optimistic Update: Update both the live UI state AND the backing list
+        // to prevent search/filter snapbacks before the network responds.
+        val updateFunc = { posts: List<CommunityPost> ->
+            posts.map { post ->
+                if (post.postId != postId) post
+                else {
+                    val alreadyLiked = uid in post.likedByUsers
+                    post.copy(
+                        likedByUsers = if (alreadyLiked) post.likedByUsers - uid else post.likedByUsers + uid,
+                        likesCount   = if (alreadyLiked) (post.likesCount - 1).coerceAtLeast(0L) else post.likesCount + 1L
+                    )
+                }
+            }
         }
-        _uiState.value = CommunityUiState.Success(optimisticPosts)
+
+        val previousAllPosts = allPosts
+        allPosts = updateFunc(allPosts)
+        filterPosts(_searchQuery.value, _selectedTag.value)
 
         viewModelScope.launch {
             repository.toggleLikePost(postId, uid).onFailure {
-                if (_uiState.value == CommunityUiState.Success(optimisticPosts)) {
-                    _uiState.value = CommunityUiState.Success(previousPosts)
-                }
+                // Revert on failure
+                allPosts = previousAllPosts
+                filterPosts(_searchQuery.value, _selectedTag.value)
             }
         }
     }
@@ -206,12 +213,6 @@ class CommunityViewModel @Inject constructor(
 
     fun resetShareState() {
         _shareState.value = ShareTimelineState.Idle
-    }
-
-    fun deletePost(postId: String, authorUserId: String) {
-        viewModelScope.launch {
-            repository.deletePost(postId, authorUserId)
-        }
     }
 
     fun selectPost(post: CommunityPost?) {

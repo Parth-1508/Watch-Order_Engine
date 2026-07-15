@@ -110,6 +110,10 @@ fun CommunityScreen(
                 onRefresh    = { viewModel.refreshFeed() },
                 listState    = listState
             ) {
+                val posts = (uiState as? CommunityUiState.Success)?.posts ?: emptyList()
+                val heroPost = remember(posts) { posts.maxByOrNull { it.likesCount } ?: posts.firstOrNull() }
+                val otherPosts = remember(posts, heroPost) { posts.filter { it.postId != heroPost?.postId } }
+
                 LazyColumn(
                     state             = listState,
                     modifier          = Modifier.fillMaxSize(),
@@ -123,7 +127,7 @@ fun CommunityScreen(
                         TrendingTagsSection(
                             selectedTag = selectedTag,
                             onTagClick = { tag ->
-                                tag?.let { viewModel.onTagSelected(it) }
+                                viewModel.onTagSelected(tag)
                             }
                         ) 
                     }
@@ -168,27 +172,27 @@ fun CommunityScreen(
                                     }
                                 }
                             } else {
-                                // Hero Post (Most Liked or First)
-                                item {
-                                    val heroPost = state.posts.maxByOrNull { it.likesCount } ?: state.posts.first()
-                                    HeroPostCard(
-                                        post = heroPost,
-                                        currentUserId = currentUserId,
-                                        onLikeClick = { viewModel.likePost(heroPost.postId) },
-                                        onImportClick = { viewModel.importTimeline(heroPost) },
-                                        onClick = { viewModel.selectPost(heroPost) },
-                                        tmdbCache = viewModel.getCache()
-                                    )
+                                // Hero Post
+                                if (heroPost != null) {
+                                    item {
+                                        HeroPostCard(
+                                            post = heroPost,
+                                            currentUserId = currentUserId,
+                                            onLikeClick = { viewModel.likePost(heroPost.postId) },
+                                            onImportClick = { viewModel.importTimeline(heroPost) },
+                                            onClick = { viewModel.selectPost(heroPost) },
+                                            tmdbCache = viewModel.getCache()
+                                        )
+                                    }
                                 }
 
-                                items(state.posts, key = { it.postId }) { post ->
+                                items(otherPosts, key = { it.postId }) { post ->
                                     Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                                         CommunityPostCard(
                                             post            = post,
                                             currentUserId   = currentUserId,
                                             onLikeClick     = { viewModel.likePost(post.postId) },
                                             onImportClick   = { viewModel.importTimeline(post) },
-                                            onDeleteClick   = { viewModel.deletePost(post.postId, post.userId) },
                                             onClick         = { viewModel.selectPost(post) },
                                             tmdbCache       = viewModel.getCache()
                                         )
@@ -624,13 +628,11 @@ fun CommunityPostCard(
     currentUserId: String?,
     onLikeClick: () -> Unit,
     onImportClick: () -> Unit,
-    onDeleteClick: () -> Unit,
     onClick: () -> Unit,
     tmdbCache: TmdbMetadataCache
 ) {
     val theme = LocalAppTheme.current
     val isLiked = currentUserId != null && (currentUserId in post.likedByUsers)
-    val isOwner = currentUserId != null && currentUserId == post.userId
 
     // Resolve poster: Explicit Banner > Cache Fallback (Observable via TmdbMetadataCache)
     // We avoid decoding the full nodesJson during scroll by relying on post.bannerPosterUrl.
@@ -810,15 +812,6 @@ fun CommunityPostCard(
                             modifier = Modifier.size(24.dp)
                         )
                     }
-                }
-            }
-
-            if (isOwner) {
-                IconButton(
-                    onClick = onDeleteClick,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
-                ) {
-                    Icon(Icons.Default.DeleteOutline, "Delete", tint = theme.statusFiller)
                 }
             }
         }
