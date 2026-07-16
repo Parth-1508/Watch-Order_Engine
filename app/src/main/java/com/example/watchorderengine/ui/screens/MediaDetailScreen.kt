@@ -56,6 +56,7 @@ fun MediaDetailScreen(
     onBack: () -> Unit,
     onUniverseClick: (String) -> Unit = {},
     onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit = { _, _, _, _, _ -> },
+    onAuthorClick: (String) -> Unit = {},
     viewModel: MediaDetailViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -105,6 +106,7 @@ fun MediaDetailScreen(
                     onGenerateOrder = { viewModel.generateWatchOrder(detail.id) },
                     onUniverseClick = onUniverseClick,
                     onCharacterClick = onCharacterClick,
+                    onAuthorClick = onAuthorClick,
                     viewModel = viewModel
                 )
             }
@@ -192,6 +194,7 @@ private fun DetailContent(
     onGenerateOrder: () -> Unit,
     onUniverseClick: (String) -> Unit,
     onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit,
+    onAuthorClick: (String) -> Unit,
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
@@ -620,6 +623,7 @@ private fun DetailContent(
                         ReviewsTab(
                             mediaId = detail.id,
                             mediaTitle = detail.title,
+                            onAuthorClick = onAuthorClick,
                             viewModel = viewModel
                         )
                     }
@@ -633,6 +637,7 @@ private fun DetailContent(
 private fun ReviewsTab(
     mediaId: String,
     mediaTitle: String,
+    onAuthorClick: (String) -> Unit,
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
@@ -680,7 +685,8 @@ private fun ReviewsTab(
             reviews.forEach { review ->
                 ReviewItem(
                     review = review,
-                    onDelete = { viewModel.deleteReview(review.id) }
+                    onDelete = { viewModel.deleteReview(review.id) },
+                    onAuthorClick = onAuthorClick
                 )
             }
         }
@@ -700,7 +706,8 @@ private fun ReviewsTab(
 @Composable
 private fun ReviewItem(
     review: com.example.watchorderengine.data.model.ReviewItem,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onAuthorClick: (String) -> Unit = {}
 ) {
     val theme = LocalAppTheme.current
     var isExpanded by remember { mutableStateOf(false) }
@@ -723,7 +730,13 @@ private fun ReviewItem(
                     AsyncImage(
                         model = review.authorAvatarUrl.takeIf { !it.isNullOrBlank() } ?: fallbackAvatar,
                         contentDescription = null,
-                        modifier = Modifier.size(36.dp).clip(CircleShape).background(theme.textSecondary.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(theme.textSecondary.copy(alpha = 0.3f))
+                            .clickable(enabled = review.userId != null) { 
+                                review.userId?.let { onAuthorClick(it) } 
+                            },
                         contentScale = ContentScale.Crop
                     )
                     Spacer(Modifier.width(12.dp))

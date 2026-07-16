@@ -107,6 +107,9 @@ class CommunityRepository @Inject constructor(
         if (content.contains("conjuring") || content.contains("annabelle") || content.contains("nun") || content.contains("horror") || content.contains("insidious") || content.contains("scream") || content.contains("scary") || content.contains("halloween") || content.contains(" it ") || content.contains("saw ")) {
             tags.add("Horror")
         }
+        if (content.contains("game of thrones") || content.contains("house of the dragon") || content.contains("westeros") || content.contains("targaryen") || content.contains("stark") || content.contains("winterfell") || content.contains("ice and fire")) {
+            tags.add("Game of Thrones")
+        }
         if (content.contains("star trek") || content.contains("sci-fi") || content.contains("science fiction") || content.contains("interstellar") || content.contains("dune") || content.contains("alien") || content.contains("blade runner") || content.contains("matrix")) {
             tags.add("Sci-Fi")
         }
@@ -259,6 +262,19 @@ class CommunityRepository @Inject constructor(
     /**
      * Deletes a post the current user authored.
      */
+    suspend fun deletePost(postId: String, authorUserId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val uid = auth.currentUser?.uid ?: throw IllegalStateException("Not authenticated")
+            if (uid != authorUserId) throw IllegalStateException("You are not the author of this post.")
+            
+            firestore.collection(COLLECTION_GLOBAL_FEED).document(postId).delete().await()
+            Log.d(TAG, "Deleted post $postId")
+            Unit
+        }.onFailure { e ->
+            Log.w(TAG, "deletePost failed for $postId: ${e.message}")
+        }
+    }
+
     /**
      * Imports a shared timeline into the user's private collection.
      *

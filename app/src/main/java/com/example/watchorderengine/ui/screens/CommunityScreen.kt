@@ -62,7 +62,8 @@ import kotlin.math.roundToInt
 @Composable
 fun CommunityScreen(
     viewModel: CommunityViewModel = hiltViewModel(),
-    onMediaClick: (String) -> Unit
+    onMediaClick: (String) -> Unit,
+    onAuthorClick: (String) -> Unit = {}
 ) {
     val theme         = LocalAppTheme.current
     val uiState       by viewModel.uiState.collectAsStateWithLifecycle()
@@ -193,6 +194,7 @@ fun CommunityScreen(
                                             currentUserId   = currentUserId,
                                             onLikeClick     = { viewModel.likePost(post.postId) },
                                             onImportClick   = { viewModel.importTimeline(post) },
+                                            onDeleteClick   = { viewModel.deletePost(post.postId, post.userId) },
                                             onClick         = { viewModel.selectPost(post) },
                                             tmdbCache       = viewModel.getCache()
                                         )
@@ -209,10 +211,16 @@ fun CommunityScreen(
     if (selectedPost != null) {
         CommunityPostDetailSheet(
             post = selectedPost!!,
+            currentUserId = currentUserId,
             onDismiss = { viewModel.selectPost(null) },
             onImport = { viewModel.importTimeline(selectedPost!!) },
+            onDelete = {
+                viewModel.deletePost(selectedPost!!.postId, selectedPost!!.userId)
+                viewModel.selectPost(null)
+            },
             importState = importState,
             onMediaClick = onMediaClick,
+            onAuthorClick = onAuthorClick,
             tmdbCache = viewModel.getCache()
         )
     }
@@ -554,7 +562,7 @@ fun TrendingTagsSection(
     onTagClick: (String?) -> Unit
 ) {
     val theme = LocalAppTheme.current
-    val tags = listOf("Marvel", "Star Wars", "DC Universe", "Anime", "Horror", "Sci-Fi")
+    val tags = listOf("Marvel", "Star Wars", "DC Universe", "Anime", "Horror", "Sci-Fi", "Game of Thrones")
     
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -628,11 +636,13 @@ fun CommunityPostCard(
     currentUserId: String?,
     onLikeClick: () -> Unit,
     onImportClick: () -> Unit,
+    onDeleteClick: () -> Unit,
     onClick: () -> Unit,
     tmdbCache: TmdbMetadataCache
 ) {
     val theme = LocalAppTheme.current
     val isLiked = currentUserId != null && (currentUserId in post.likedByUsers)
+    val isOwner = currentUserId != null && currentUserId == post.userId
 
     // Resolve poster: Explicit Banner > Cache Fallback (Observable via TmdbMetadataCache)
     // We avoid decoding the full nodesJson during scroll by relying on post.bannerPosterUrl.
@@ -723,7 +733,7 @@ fun CommunityPostCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (post.isOfficial) {
                         Surface(
-                            color = accentColor ?: theme.accent,
+                            color = accentColor ?: theme.accent, 
                             shape = RoundedCornerShape(4.dp),
                             shadowElevation = 2.dp
                         ) {
@@ -814,6 +824,15 @@ fun CommunityPostCard(
                     }
                 }
             }
+
+            if (isOwner) {
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                ) {
+                    Icon(Icons.Default.DeleteOutline, "Delete", tint = theme.statusFiller)
+                }
+            }
         }
     }
 }
@@ -822,10 +841,13 @@ fun CommunityPostCard(
 @Composable
 fun CommunityPostDetailSheet(
     post: CommunityPost,
+    currentUserId: String?,
     onDismiss: () -> Unit,
     onImport: () -> Unit,
+    onDelete: () -> Unit,
     importState: ImportState,
     onMediaClick: (String) -> Unit,
+    onAuthorClick: (String) -> Unit = {},
     tmdbCache: TmdbMetadataCache
 ) {
     val theme = LocalAppTheme.current
@@ -834,6 +856,31 @@ fun CommunityPostDetailSheet(
     val rows = remember(payload) { payload?.let { computePreviewRows(it, tmdbCache) } ?: emptyList() }
     val accentColor = remember(post.accentColor) {
         post.accentColor?.let { try { Color(android.graphics.Color.parseColor("#$it")) } catch(e: Exception) { null } }
+    }
+
+    val isOwner = currentUserId != null && currentUserId == post.userId
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            containerColor = theme.surface,
+            title = { Text("Delete Timeline?", color = theme.textPrimary, fontWeight = FontWeight.Black) },
+            text = { Text("This will permanently remove this timeline from the global community feed. This action cannot be undone.", color = theme.textSecondary) },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showDeleteConfirm = false
+                    onDelete() 
+                }) {
+                    Text("DELETE", color = theme.statusFiller, fontWeight = FontWeight.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("CANCEL", color = theme.textSecondary)
+                }
+            }
+        )
     }
 
     ModalBottomSheet(
@@ -867,7 +914,9 @@ fun CommunityPostDetailSheet(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
-                            modifier = Modifier.size(56.dp),
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clickable(enabled = post.userId.isNotBlank()) { onAuthorClick(post.userId) },
                             shape = CircleShape,
                             color = theme.surface,
                             border = BorderStroke(2.dp, theme.accent.copy(0.3f))
@@ -893,7 +942,7 @@ fun CommunityPostDetailSheet(
                                 Surface(
                                     color = accentColor ?: theme.accent, 
                                     shape = RoundedCornerShape(4.dp),
-                                    modifier = Modifier.padding(top = 8.dp),
+                                    modifier = Modifier.padding(top = 4.dp),
                                     shadowElevation = 2.dp
                                 ) {
                                     Row(
@@ -914,18 +963,58 @@ fun CommunityPostDetailSheet(
                                 )
                             }
                         }
+
+                        if (isOwner) {
+                            IconButton(onClick = { showDeleteConfirm = true }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.DeleteOutline,
+                                    contentDescription = "Delete my post",
+                                    tint = theme.statusFiller,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
                     }
-                    
+
                     if (post.universeDescription.isNotBlank()) {
+                        var descriptionExpanded by remember(post.postId) { mutableStateOf(false) }
+                        var descriptionCanExpand by remember(post.postId) { mutableStateOf(false) }
+
                         Spacer(Modifier.height(16.dp))
                         Text(
                             post.universeDescription,
                             color = theme.textSecondary,
                             fontSize = 15.sp,
-                            lineHeight = 22.sp
+                            lineHeight = 22.sp,
+                            maxLines = if (descriptionExpanded) Int.MAX_VALUE else 2,
+                            overflow = TextOverflow.Ellipsis,
+                            onTextLayout = { result ->
+                                if (!descriptionExpanded) descriptionCanExpand = result.hasVisualOverflow
+                            }
                         )
+                        if (descriptionCanExpand || descriptionExpanded) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .clickable { descriptionExpanded = !descriptionExpanded }
+                            ) {
+                                Text(
+                                    text = if (descriptionExpanded) "Show less" else "Read more",
+                                    color = theme.accent,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                Icon(
+                                    imageVector = if (descriptionExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = theme.accent,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
-                    
+
                     Spacer(Modifier.height(24.dp))
                     
                     Button(
@@ -933,7 +1022,7 @@ fun CommunityPostDetailSheet(
                         modifier = Modifier.fillMaxWidth().height(56.dp).graphicsLayer {
                             if (theme.isComic) rotationZ = -1f
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = accentColor ?: theme.accent),
+                        colors = ButtonDefaults.buttonColors(containerColor = theme.accent),
                         shape = RoundedCornerShape(theme.appRadius.coerceAtLeast(12.dp)),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
                         enabled = importState !is ImportState.Importing

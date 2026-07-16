@@ -1,11 +1,11 @@
 package com.example.watchorderengine.ui.timeline.components
 
 import android.os.Build
-import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
@@ -15,7 +15,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -23,28 +22,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.MediaCategory
-import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.data.cache.TmdbFetchState
 import com.example.watchorderengine.viewmodel.DisplayNode
 
-val HexagonShape = object : Shape {
-    override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val path = Path().apply {
-            val radius = size.minDimension / 2
-            val angle = (Math.PI * 2) / 6
-            for (i in 0 until 6) {
-                val x = size.width / 2 + radius * Math.cos(angle * i - Math.PI / 2).toFloat()
-                val y = size.height / 2 + radius * Math.sin(angle * i - Math.PI / 2).toFloat()
-                if (i == 0) moveTo(x, y) else lineTo(x, y)
-            }
-            close()
-        }
-        return Outline.Generic(path)
-    }
-}
+/** Fixed poster height for every node card — keeps rows aligned without needing zoom. */
+val NodePosterHeight: Dp = 128.dp
 
 /**
- * The individual node card rendered in the timeline.
+ * A single node in the simplified watch-order timeline.
+ * A clean poster card (no hexagons) with a status border and a small
+ * checkmark / lock badge — legible at a fixed scale, no pinch-zoom required.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -57,33 +44,31 @@ fun TimelineNodeCard(
     val theme = com.example.watchorderengine.ui.theme.LocalAppTheme.current
     val node = displayNode.node
     val metadata = displayNode.metadata
+    val shape = RoundedCornerShape(theme.appRadius.coerceIn(8.dp, 16.dp))
 
-    // ── Spoiler blur animation ────────────────────────────────────────────────
     val blurRadius: Dp by animateDpAsState(
-        targetValue = if (displayNode.isSpoilerBlurred) 16.dp else 0.dp,
-        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+        targetValue = if (displayNode.isSpoilerBlurred) 14.dp else 0.dp,
+        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
         label = "spoiler_blur"
     )
 
     val borderColor = when {
         displayNode.isCompleted      -> theme.statusCanon
-        displayNode.isSpoilerBlurred -> theme.statusMixed.copy(alpha = 0.5f)
-        else                         -> theme.border.copy(alpha = 0.3f)
+        displayNode.isSpoilerBlurred -> theme.statusMixed.copy(alpha = 0.6f)
+        else                         -> theme.border.copy(alpha = 0.25f)
     }
+    val borderWidth = if (displayNode.isCompleted) 2.dp else 1.dp
 
     val spoilerModifier: Modifier = if (displayNode.isSpoilerBlurred) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Modifier.blur(
-                radius = blurRadius,
-                edgeTreatment = BlurredEdgeTreatment.Unbounded
-            )
+            Modifier.blur(radius = blurRadius, edgeTreatment = BlurredEdgeTreatment.Unbounded)
         } else {
-            Modifier.alpha(0.1f)
+            Modifier.alpha(0.12f)
         }
     } else Modifier
 
     val scale by animateFloatAsState(
-        targetValue = if (displayNode.isCompleted) 1.05f else 1f,
+        targetValue = if (displayNode.isCompleted) 1.03f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
         label = "completed_scale"
     )
@@ -97,121 +82,99 @@ fun TimelineNodeCard(
                 onLongClick = onCheckToggle,
                 enabled = !displayNode.isSpoilerBlurred
             ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Top
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier.size(80.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            // Hexagonal background for skill-tree feel
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val path = Path().apply {
-                    val radius = size.minDimension / 2
-                    val angle = (Math.PI * 2) / 6
-                    for (i in 0 until 6) {
-                        val x = size.width / 2 + radius * Math.cos(angle * i - Math.PI / 2).toFloat()
-                        val y = size.height / 2 + radius * Math.sin(angle * i - Math.PI / 2).toFloat()
-                        if (i == 0) moveTo(x, y) else lineTo(x, y)
-                    }
-                    close()
-                }
-                drawPath(path, color = theme.surface)
-                drawPath(path, color = borderColor, style = Stroke(width = 2.dp.toPx()))
-
-                if (displayNode.isCompleted) {
-                    drawPath(path, color = theme.statusCanon.copy(alpha = 0.1f))
-                }
-            }
-
+        Box(contentAlignment = Alignment.TopEnd) {
             Box(
                 modifier = Modifier
-                    .size(72.dp)
-                    .clip(HexagonShape)
+                    .fillMaxWidth()
+                    .height(NodePosterHeight)
+                    .clip(shape)
                     .background(theme.surfaceHover)
-                    .then(spoilerModifier),
-                contentAlignment = Alignment.Center
+                    .border(borderWidth, borderColor, shape)
             ) {
                 when (metadata) {
                     is TmdbFetchState.Success -> {
                         AsyncImage(
                             model = metadata.detail.posterUrl,
                             contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().then(spoilerModifier),
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop
                         )
                     }
                     is TmdbFetchState.Loading -> {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = theme.accent)
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = theme.accent
+                            )
+                        }
                     }
                     else -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = node.type.icon(),
+                                contentDescription = null,
+                                tint = theme.accent.copy(alpha = 0.5f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (displayNode.isCompleted) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(theme.statusCanon.copy(alpha = 0.10f))
+                    )
+                }
+
+                if (displayNode.isSpoilerBlurred) {
+                    Icon(
+                        Icons.Default.Lock,
+                        null,
+                        tint = theme.statusMixed,
+                        modifier = Modifier.align(Alignment.Center).size(22.dp)
+                    )
+                }
+            }
+
+            if (displayNode.isCompleted) {
+                Surface(
+                    shape = CircleShape,
+                    color = theme.statusCanon,
+                    shadowElevation = 2.dp,
+                    modifier = Modifier
+                        .padding(6.dp)
+                        .size(18.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = node.type.icon(),
-                            contentDescription = null,
-                            tint = theme.accent.copy(alpha = 0.5f),
-                            modifier = Modifier.size(24.dp)
+                            Icons.Default.Check,
+                            contentDescription = "Watched",
+                            tint = Color.White,
+                            modifier = Modifier.size(12.dp)
                         )
                     }
                 }
             }
-
-            if (displayNode.isSpoilerBlurred) {
-                Icon(
-                    Icons.Default.Lock,
-                    null,
-                    tint = theme.statusMixed,
-                    modifier = Modifier.size(20.dp)
-                )
-            } else if (displayNode.isCompleted) {
-                Icon(
-                    Icons.Default.CheckCircle,
-                    null,
-                    tint = theme.statusCanon,
-                    modifier = Modifier.align(Alignment.BottomEnd).size(20.dp).offset(x = 8.dp, y = 8.dp)
-                )
-            }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Floating Title below
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 40.dp),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            Text(
-                text = if (displayNode.isSpoilerBlurred) "???" else node.title.ifBlank { " " },
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                color = if (displayNode.isCompleted) theme.textPrimary else theme.textSecondary,
-                modifier = Modifier.padding(horizontal = 4.dp),
-                textAlign = TextAlign.Center,
-                fontSize = 10.sp,
-                fontWeight = if (displayNode.isCompleted) FontWeight.Bold else FontWeight.Medium,
-                lineHeight = 12.sp,
-                softWrap = true
-            )
-        }
-    }
-}
-
-/** A small pill-shaped badge showing which phase/arc this node belongs to. */
-@Composable
-private fun PhaseBadge(phase: String) {
-    val theme = com.example.watchorderengine.ui.theme.LocalAppTheme.current
-    Surface(
-        shape = RoundedCornerShape(4.dp),
-        color = theme.surface,
-        tonalElevation = 0.dp,
-    ) {
         Text(
-            text = phase,
+            text = if (displayNode.isSpoilerBlurred) "???" else node.title.ifBlank { " " },
             style = MaterialTheme.typography.labelSmall,
-            color = theme.textSecondary,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            color = if (displayNode.isCompleted) theme.textPrimary else theme.textSecondary,
+            modifier = Modifier.padding(horizontal = 2.dp),
+            textAlign = TextAlign.Center,
+            fontSize = 10.sp,
+            fontWeight = if (displayNode.isCompleted) FontWeight.Bold else FontWeight.Medium,
+            lineHeight = 13.sp
         )
     }
 }
@@ -228,30 +191,3 @@ private fun MediaCategory.icon(): ImageVector = when (this) {
     MediaCategory.NOVEL   -> Icons.Filled.AutoStories
     MediaCategory.GAME    -> Icons.Filled.SportsEsports
 }
-
-/** Builds the metadata subtitle: "SERIES • 2021 • 26 eps" or "MOVIE • 2019 • 181 min". */
-private fun buildMetaString(node: MediaNode): String {
-    val parts = buildList {
-        add(node.type.name.lowercase().replaceFirstChar { it.uppercase() })
-        if (node.releaseYear > 0) add(node.releaseYear.toString())
-        when {
-            (node.type == MediaCategory.TV_SHOW || node.type == MediaCategory.ANIME) && (node.episodeCount > 0) ->
-                add("${node.episodeCount} eps")
-            node.durationMin > 0 ->
-                add("${node.durationMin} min")
-        }
-    }
-    return parts.joinToString(" · ")
-}
-
-/**
- * Extension function to draw a colored left-border stripe using Modifier.drawBehind().
- * Avoids an extra Box composable just for a border accent.
- */
-private fun Modifier.drawColoredLeftBorder(color: Color, width: Dp): Modifier =
-    this.drawBehind {
-        drawRect(
-            color = color,
-            size = androidx.compose.ui.geometry.Size(width.toPx(), size.height)
-        )
-    }

@@ -1532,6 +1532,10 @@ class MediaRepository @Inject constructor(
         try { db.episodeWatchedDao().sumWatchedRuntimeMinutesTypeSafe() } catch (e: Exception) { 0 }
     }
 
+    suspend fun countUserReviews(): Int = withContext(Dispatchers.IO) {
+        try { db.reviewDao().countAll() } catch (e: Exception) { 0 }
+    }
+
     suspend fun getAllRatedMedia(): List<Pair<String, Float>> = withContext(Dispatchers.IO) {
         try { db.userProgressDao().getAll().mapNotNull { p -> p.userRating?.let { p.mediaId to it } } }
         catch (e: Exception) { emptyList() }

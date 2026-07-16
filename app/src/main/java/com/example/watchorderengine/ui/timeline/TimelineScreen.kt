@@ -518,7 +518,7 @@ private fun TimelineContent(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Tip: Long-press any hexagonal node to toggle its watch status.",
+                    text = "Tip: Tap a card for details, long-press to mark it watched.",
                     color = theme.textPrimary.copy(alpha = 0.7f),
                     fontSize = 11.sp,
                     lineHeight = 16.sp

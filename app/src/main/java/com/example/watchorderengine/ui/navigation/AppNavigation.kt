@@ -48,7 +48,11 @@ sealed class Screen(val route: String) {
     object Graph              : Screen("graph")
     object Community          : Screen("community")
     object Profile            : Screen("profile")
+    object EditProfile        : Screen("edit_profile")
     object Settings           : Screen("settings")
+    object PublicProfile      : Screen("public_profile/{userId}") {
+        fun route(userId: String) = "public_profile/${java.net.URLEncoder.encode(userId, "UTF-8")}"
+    }
     object ImportList         : Screen("import_list")
     object ManualReset        : Screen("manual_reset")
     object ResetSuccess       : Screen("reset_success")
@@ -320,7 +324,8 @@ fun AppNavigation() {
 
                 composable(Screen.Community.route) {
                     CommunityScreen(
-                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
+                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                        onAuthorClick = { userId -> navController.navigate(Screen.PublicProfile.route(userId)) }
                     )
                 }
 
@@ -328,7 +333,24 @@ fun AppNavigation() {
                     ProfileScreen(
                         onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
                         onRateMediaClick = { navController.navigate(Screen.Discovery.route) },
-                        onImportClick = { navController.navigate(Screen.ImportList.route) }
+                        onImportClick = { navController.navigate(Screen.ImportList.route) },
+                        onEditProfileClick = { navController.navigate(Screen.EditProfile.route) }
+                    )
+                }
+
+                composable(Screen.EditProfile.route) {
+                    EditProfileScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(
+                    route     = Screen.PublicProfile.route,
+                    arguments = listOf(navArgument("userId") { type = NavType.StringType })
+                ) {
+                    PublicProfileScreen(
+                        onBack       = { navController.popBackStack() },
+                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
                     )
                 }
 
@@ -434,6 +456,9 @@ fun AppNavigation() {
                             navController.navigate(
                                 Screen.CharacterDetail.route(tmdbPersonId, characterName, showTitle, isAnime, anilistId)
                             )
+                        },
+                        onAuthorClick = { userId ->
+                            navController.navigate(Screen.PublicProfile.route(userId))
                         }
                     )
                 }

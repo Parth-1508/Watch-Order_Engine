@@ -72,6 +72,7 @@ fun ProfileScreen(
     onMediaClick: (String) -> Unit,
     onRateMediaClick: () -> Unit = {},
     onImportClick: () -> Unit = {},
+    onEditProfileClick: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -123,6 +124,13 @@ fun ProfileScreen(
                                 )
                             )
                     )
+
+                    IconButton(
+                        onClick = onEditProfileClick,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)
+                    ) {
+                        Icon(Icons.Default.ManageAccounts, "Edit public profile & privacy", tint = theme.textPrimary)
+                    }
 
                     Column(
                         modifier = Modifier.fillMaxSize(),

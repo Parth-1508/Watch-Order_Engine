@@ -261,6 +261,9 @@ interface ReviewDao {
     @Query("SELECT * FROM user_reviews WHERE id = :reviewId")
     suspend fun getById(reviewId: String): ReviewEntity?
 
+    @Query("SELECT COUNT(*) FROM user_reviews")
+    suspend fun countAll(): Int
+
     @Upsert
     suspend fun upsert(entity: ReviewEntity)
 

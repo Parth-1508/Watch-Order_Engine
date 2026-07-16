@@ -140,6 +140,7 @@ class CommunityViewModel @Inject constructor(
                     "dc universe" -> content.contains("batman") || content.contains("superman") || content.contains("wonder woman") || content.contains("justice league") || content.contains("dceu") || content.contains("dc universe")
                     "anime" -> content.contains("anime") || content.contains("naruto") || content.contains("fate/") || content.contains("one piece") || content.contains("dragon ball") || content.contains("bleach")
                     "horror" -> content.contains("horror") || content.contains("conjuring") || content.contains("annabelle") || content.contains("nun") || content.contains("insidious") || content.contains("scary")
+                    "game of thrones" -> content.contains("game of thrones") || content.contains("house of the dragon") || content.contains("westeros") || content.contains("targaryen") || content.contains("stark") || content.contains("winterfell") || content.contains("ice and fire")
                     "sci-fi" -> content.contains("sci-fi") || content.contains("science fiction") || content.contains("interstellar") || content.contains("star trek") || content.contains("dune")
                     else -> false
                 }
@@ -212,6 +213,12 @@ class CommunityViewModel @Inject constructor(
 
     fun resetShareState() {
         _shareState.value = ShareTimelineState.Idle
+    }
+
+    fun deletePost(postId: String, authorUserId: String) {
+        viewModelScope.launch {
+            repository.deletePost(postId, authorUserId)
+        }
     }
 
     fun selectPost(post: CommunityPost?) {
