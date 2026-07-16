@@ -8,6 +8,7 @@ import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.recommendation.Recommendation
 import com.example.watchorderengine.data.recommendation.RecommendationEngine
 import com.example.watchorderengine.data.repository.MediaRepository
+import com.example.watchorderengine.data.repository.NotificationRepository
 import com.example.watchorderengine.data.repository.UserProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +24,8 @@ class HomeViewModel @Inject constructor(
     val repository: MediaRepository,
     private val db: WatchOrderDatabase,
     private val userPrefs: UserPreferencesRepository,
-    private val userProfileRepository: UserProfileRepository
+    private val userProfileRepository: UserProfileRepository,
+    private val notificationRepository: NotificationRepository
 ) : ViewModel() {
 
     private val _selectedCategory = MutableStateFlow("Watching")
@@ -166,10 +168,48 @@ class HomeViewModel @Inject constructor(
                 repository.syncAllFromCloud()
                 generateRecommendations()
             }
+            
+            triggerSmartNotifications()
         } catch (e: Exception) {
             android.util.Log.e("HomeViewModel", "Refresh failed", e)
         } finally {
             _isLoading.value = false
+        }
+    }
+
+    private fun triggerSmartNotifications() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val lastTrigger = userPrefs.lastSmartNotifTrigger.first()
+            
+            val today = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+            }.timeInMillis
+
+            if (lastTrigger >= today) return@launch // Only once per day
+
+            // 1. Streak Notif
+            val streak = userPrefs.currentStreak.first()
+            if (streak > 0) {
+                notificationRepository.sendSystemNotification(
+                    type = com.example.watchorderengine.data.model.NotificationType.STREAK,
+                    title = "Keep the momentum!",
+                    message = "You're on a $streak-day streak. Watch something today to keep it going!"
+                )
+            }
+
+            // 2. Personalized Recommendation Notif
+            val topRec = _recommendations.value.firstOrNull()
+            if (topRec != null) {
+                notificationRepository.sendSystemNotification(
+                    type = com.example.watchorderengine.data.model.NotificationType.RECOMMENDATION,
+                    title = "Just for you",
+                    message = "Based on your taste, we think you'll love ${topRec.media.title}.",
+                    targetId = topRec.media.id,
+                    imageUrl = topRec.media.posterUrl
+                )
+            }
+
+            userPrefs.setLastSmartNotifTrigger(System.currentTimeMillis())
         }
     }
 

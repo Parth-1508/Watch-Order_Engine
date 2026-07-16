@@ -63,7 +63,8 @@ import kotlin.math.roundToInt
 fun CommunityScreen(
     viewModel: CommunityViewModel = hiltViewModel(),
     onMediaClick: (String) -> Unit,
-    onAuthorClick: (String) -> Unit = {}
+    onAuthorClick: (String) -> Unit = {},
+    onNotificationsClick: () -> Unit = {}
 ) {
     val theme         = LocalAppTheme.current
     val uiState       by viewModel.uiState.collectAsStateWithLifecycle()
@@ -72,6 +73,7 @@ fun CommunityScreen(
     val selectedPost  by viewModel.selectedPost.collectAsStateWithLifecycle()
     val searchQuery   by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedTag   by viewModel.selectedTag.collectAsStateWithLifecycle()
+    val hasUnreadNotifs by viewModel.hasUnreadNotifications.collectAsStateWithLifecycle()
     
     val currentUserId = viewModel.currentUserId
     val listState     = rememberLazyListState()
@@ -104,6 +106,8 @@ fun CommunityScreen(
             CommunityHeader(
                 searchQuery = searchQuery,
                 onSearchChange = { viewModel.onSearchQueryChanged(it) },
+                onNotificationsClick = onNotificationsClick,
+                hasUnreadNotifications = hasUnreadNotifs,
                 isLoading = uiState is CommunityUiState.Loading
             )
 
@@ -422,6 +426,8 @@ fun HeroPostCard(
 fun CommunityHeader(
     searchQuery: String,
     onSearchChange: (String) -> Unit,
+    onNotificationsClick: () -> Unit = {},
+    hasUnreadNotifications: Boolean = false,
     isLoading: Boolean = false
 ) {
     val theme = LocalAppTheme.current
@@ -459,11 +465,22 @@ fun CommunityHeader(
                 letterSpacing = 2.sp
             )
             Spacer(Modifier.weight(1f))
-            IconButton(
-                onClick = { /* Could open user profile or notifications */ },
-                modifier = Modifier.background(theme.surface, CircleShape).size(40.dp)
-            ) {
-                Icon(Icons.Outlined.Notifications, null, tint = theme.textSecondary, modifier = Modifier.size(20.dp))
+            Box {
+                IconButton(
+                    onClick = onNotificationsClick,
+                    modifier = Modifier.background(theme.surface, CircleShape).size(40.dp)
+                ) {
+                    Icon(Icons.Outlined.Notifications, null, tint = theme.textSecondary, modifier = Modifier.size(20.dp))
+                }
+                if (hasUnreadNotifications) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .align(Alignment.TopEnd)
+                            .background(theme.accent, CircleShape)
+                            .border(2.dp, theme.background, CircleShape)
+                    )
+                }
             }
         }
 

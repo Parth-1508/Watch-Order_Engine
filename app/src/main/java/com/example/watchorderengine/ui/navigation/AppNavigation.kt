@@ -47,6 +47,7 @@ sealed class Screen(val route: String) {
     object Search             : Screen("search")
     object Graph              : Screen("graph")
     object Community          : Screen("community")
+    object Notifications      : Screen("notifications")
     object Profile            : Screen("profile")
     object EditProfile        : Screen("edit_profile")
     object Settings           : Screen("settings")
@@ -326,7 +327,29 @@ fun AppNavigation() {
                 composable(Screen.Community.route) {
                     CommunityScreen(
                         onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
-                        onAuthorClick = { userId -> navController.navigate(Screen.PublicProfile.route(userId)) }
+                        onAuthorClick = { userId -> navController.navigate(Screen.PublicProfile.route(userId)) },
+                        onNotificationsClick = { navController.navigate(Screen.Notifications.route) }
+                    )
+                }
+
+                composable(Screen.Notifications.route) {
+                    NotificationScreen(
+                        onBack = { navController.popBackStack() },
+                        onNotificationClick = { notif ->
+                            // Smart navigation based on type
+                            when (notif.type) {
+                                com.example.watchorderengine.data.model.NotificationType.LIKE,
+                                com.example.watchorderengine.data.model.NotificationType.IMPORT -> {
+                                    // Could navigate to a specific post if we had PostDetailScreen, 
+                                    // but for now let's go to Community or PublicProfile of sender
+                                    notif.senderId?.let { navController.navigate(Screen.PublicProfile.route(it)) }
+                                }
+                                com.example.watchorderengine.data.model.NotificationType.RECOMMENDATION -> {
+                                    notif.targetId?.let { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
+                                }
+                                else -> {}
+                            }
+                        }
                     )
                 }
 

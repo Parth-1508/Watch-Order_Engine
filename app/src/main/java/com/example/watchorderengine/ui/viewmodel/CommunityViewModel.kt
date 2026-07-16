@@ -6,6 +6,7 @@ import com.example.watchorderengine.data.model.CommunityPost
 import com.example.watchorderengine.data.model.SharedTimelineCodec
 import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.data.repository.CommunityRepository
+import com.example.watchorderengine.data.repository.NotificationRepository
 import com.example.watchorderengine.data.repository.TmdbRepository
 import com.example.watchorderengine.data.repository.UserProfileRepository
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
@@ -45,6 +46,7 @@ sealed interface ImportState {
 class CommunityViewModel @Inject constructor(
     private val repository: CommunityRepository,
     private val userProfileRepository: UserProfileRepository,
+    private val notificationRepository: NotificationRepository,
     private val auth: FirebaseAuth,
     private val tmdbRepo: TmdbRepository,
     private val tmdbCache: TmdbMetadataCache
@@ -68,6 +70,9 @@ class CommunityViewModel @Inject constructor(
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
+    private val _hasUnreadNotifications = MutableStateFlow(false)
+    val hasUnreadNotifications: StateFlow<Boolean> = _hasUnreadNotifications.asStateFlow()
+
     /** Currently selected post for the detail bottom sheet. */
     private val _selectedPost = MutableStateFlow<CommunityPost?>(null)
     val selectedPost: StateFlow<CommunityPost?> = _selectedPost.asStateFlow()
@@ -81,6 +86,17 @@ class CommunityViewModel @Inject constructor(
 
     init {
         observeFeed()
+        observeUnreadCount()
+    }
+
+    private fun observeUnreadCount() {
+        viewModelScope.launch {
+            notificationRepository.observeNotifications().collect { result ->
+                result.onSuccess { list ->
+                    _hasUnreadNotifications.value = list.any { !it.isRead }
+                }
+            }
+        }
     }
 
     private fun observeFeed(showLoadingState: Boolean = true) {

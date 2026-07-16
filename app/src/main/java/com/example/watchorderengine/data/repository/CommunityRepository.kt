@@ -196,38 +196,31 @@ class CommunityRepository @Inject constructor(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val postRef = firestore.collection(COLLECTION_GLOBAL_FEED).document(postId)
+            var authorId: String? = null
+            var universeTitle: String = ""
 
             firestore.runTransaction { transaction ->
                 val snapshot = transaction.get(postRef)
                 
-                // For predefined posts that aren't in Firestore yet, we can't 'update', 
-                // we must 'set' the initial record.
                 if (!snapshot.exists()) {
                     val predefinedBase = PredefinedTimelines.masterTimelines.find { it.postId == postId }
                     if (predefinedBase != null) {
+                        authorId = predefinedBase.userId
+                        universeTitle = predefinedBase.universeTitle
                         val skeleton = predefinedBase.copy(
                             postId = postId,
-                            userId = currentUserId, // Set current user as owner to satisfy security rules
+                            userId = currentUserId,
                             likedByUsers = listOf(currentUserId),
                             likesCount = 1L,
                             timestamp = System.currentTimeMillis()
                         )
                         transaction.set(postRef, skeleton)
-                    } else {
-                        // Regular shared post that somehow went missing from Firestore
-                        transaction.set(
-                            postRef,
-                            mapOf(
-                                "userId" to currentUserId,
-                                "likedByUsers" to listOf(currentUserId),
-                                "likesCount" to 1L,
-                                "timestamp" to System.currentTimeMillis()
-                            ),
-                            com.google.firebase.firestore.SetOptions.merge()
-                        )
                     }
                     return@runTransaction null
                 }
+
+                authorId = snapshot.getString("userId")
+                universeTitle = snapshot.getString("universeTitle") ?: "your timeline"
 
                 @Suppress("UNCHECKED_CAST")
                 val likedBy = snapshot.get("likedByUsers") as? List<String> ?: emptyList()
@@ -252,6 +245,24 @@ class CommunityRepository @Inject constructor(
                 }
                 null
             }.await()
+
+            // ─── Smart Notification: Notify the author of the like ────────────────
+            val finalAuthorId = authorId
+            if (finalAuthorId != null && currentUserId != finalAuthorId) {
+                runCatching {
+                    val notif = com.example.watchorderengine.data.model.Notification(
+                        userId = finalAuthorId,
+                        type = com.example.watchorderengine.data.model.NotificationType.LIKE,
+                        title = "Someone liked your timeline!",
+                        message = "Your watch order for '$universeTitle' is getting some love.",
+                        senderId = currentUserId,
+                        senderName = userPrefs.username.first(),
+                        senderAvatarUrl = userPrefs.avatarUrl.first(),
+                        targetId = postId
+                    )
+                    firestore.collection("notifications").add(notif).await()
+                }
+            }
 
             Unit
         }.onFailure { e ->
@@ -361,6 +372,24 @@ class CommunityRepository @Inject constructor(
             }
 
             batch.commit().await()
+
+            // ─── Smart Notification: Notify the author of the import ──────────────
+            if (uid != post.userId) {
+                runCatching {
+                    val notif = com.example.watchorderengine.data.model.Notification(
+                        userId = post.userId,
+                        type = com.example.watchorderengine.data.model.NotificationType.IMPORT,
+                        title = "Someone imported your graph!",
+                        message = "Your watch order for '${post.universeTitle}' was added to their collection.",
+                        senderId = uid,
+                        senderName = userPrefs.username.first(),
+                        senderAvatarUrl = userPrefs.avatarUrl.first(),
+                        targetId = post.postId
+                    )
+                    firestore.collection("notifications").add(notif).await()
+                }
+            }
+
             newUniverseId
         }.onFailure { e ->
             Log.w(TAG, "importTimeline failed: ${e.message}")
