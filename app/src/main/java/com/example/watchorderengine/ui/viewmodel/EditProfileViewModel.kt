@@ -76,6 +76,8 @@ class EditProfileViewModel @Inject constructor(
     private val _isUploadingAvatar = MutableStateFlow(false)
     val isUploadingAvatar: StateFlow<Boolean> = _isUploadingAvatar.asStateFlow()
 
+    fun getAvatarModel(url: String?): Any? = userProfileRepository.getAvatarModel(url)
+
     private var existingWatchStats: UserStats? = null
 
     init {

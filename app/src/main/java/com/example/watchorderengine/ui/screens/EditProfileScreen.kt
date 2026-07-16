@@ -131,7 +131,7 @@ fun EditProfileScreen(
             ) {
                 Box(contentAlignment = Alignment.BottomEnd) {
                     AsyncImage(
-                        model = avatarUrl ?: "https://ui-avatars.com/api/?name=${displayName.ifBlank { "User" }}&background=random&color=fff",
+                        model = viewModel.getAvatarModel(avatarUrl) ?: "https://ui-avatars.com/api/?name=${displayName.ifBlank { "User" }}&background=random&color=fff",
                         contentDescription = "Profile Picture",
                         modifier = Modifier
                             .size(112.dp)

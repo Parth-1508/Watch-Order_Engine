@@ -13,6 +13,7 @@ import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.repository.CharacterRepository
 import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.ReviewRepository
+import com.example.watchorderengine.data.repository.UserProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -25,6 +26,7 @@ class MediaDetailViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: MediaRepository,
     private val characterRepository: CharacterRepository,
+    private val userProfileRepository: UserProfileRepository,
     private val userPrefs: UserPreferencesRepository,
     val reviewRepository: ReviewRepository
 ) : ViewModel() {
@@ -366,6 +368,8 @@ class MediaDetailViewModel @Inject constructor(
     fun dismissWelcomeTip() {
         _showWelcomeTip.value = false
     }
+
+    fun getAvatarModel(url: String?): Any? = userProfileRepository.getAvatarModel(url)
 
     fun markSeasonAsWatched(mediaId: String, seasonNumber: Int) {
         viewModelScope.launch {

@@ -94,9 +94,21 @@ fun ProfileScreen(
     ) { uri ->
         if (uri != null) {
             coroutineScope.launch {
-                val localPath = copyImageToAppStorage(context, uri)
-                if (localPath != null) {
-                    viewModel.updateAvatarUrl("file://$localPath")
+                try {
+                    val bitmap = withContext(Dispatchers.IO) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                            val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+                            android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                                decoder.isMutableRequired = true
+                            }
+                        } else {
+                            @Suppress("DEPRECATION")
+                            android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                        }
+                    }
+                    viewModel.updateAvatarUrlFromBitmap(bitmap)
+                } catch (e: Exception) {
+                    android.util.Log.e("ProfileScreen", "Failed to process picker image", e)
                 }
             }
         }
@@ -139,7 +151,7 @@ fun ProfileScreen(
                     ) {
                         Box(contentAlignment = Alignment.BottomEnd) {
                             AsyncImage(
-                                model = avatarUrl ?: "https://ui-avatars.com/api/?name=${username.ifBlank { "User" }}&background=random&color=fff",
+                                model = viewModel.getAvatarModel(avatarUrl) ?: "https://ui-avatars.com/api/?name=${username.ifBlank { "User" }}&background=random&color=fff",
                                 contentDescription = "Profile Picture",
                                 modifier = Modifier
                                     .size(100.dp)

@@ -33,6 +33,8 @@ class PublicProfileViewModel @Inject constructor(
     )
     val isOwnProfile: Boolean get() = auth.currentUser?.uid == userId
 
+    fun getAvatarModel(url: String?): Any? = repository.getAvatarModel(url)
+
     private val _uiState = MutableStateFlow<PublicProfileUiState>(PublicProfileUiState.Loading)
     val uiState: StateFlow<PublicProfileUiState> = _uiState.asStateFlow()
 

@@ -6,9 +6,10 @@ import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.model.UserStats
 import com.example.watchorderengine.data.db.entity.ReviewEntity
+import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.ReviewRepository
-import com.example.watchorderengine.data.prefs.UserPreferencesRepository
+import com.example.watchorderengine.data.repository.UserProfileRepository
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -20,6 +21,7 @@ import javax.inject.Inject
 class ProfileViewModel @Inject constructor(
     private val repository: MediaRepository,
     private val reviewRepository: ReviewRepository,
+    private val userProfileRepository: UserProfileRepository,
     private val userPrefs: UserPreferencesRepository,
     private val auth: FirebaseAuth,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
@@ -37,6 +39,8 @@ class ProfileViewModel @Inject constructor(
     val username: StateFlow<String> = userPrefs.username
     val avatarUrl: StateFlow<String?> = userPrefs.avatarUrl
     val userEmail: String? = auth.currentUser?.email
+
+    fun getAvatarModel(url: String?): Any? = userProfileRepository.getAvatarModel(url)
 
     private val _liveAverageRating = MutableStateFlow<Float?>(null)
     private var hasAttemptedSync = false
@@ -203,6 +207,14 @@ class ProfileViewModel @Inject constructor(
     fun updateAvatarUrl(url: String) {
         viewModelScope.launch {
             userPrefs.updateAvatarUrl(url)
+        }
+    }
+
+    fun updateAvatarUrlFromBitmap(bitmap: android.graphics.Bitmap) {
+        viewModelScope.launch {
+            userProfileRepository.processAvatarToBase64(bitmap).onSuccess { dataUri ->
+                userPrefs.updateAvatarUrl(dataUri)
+            }
         }
     }
 

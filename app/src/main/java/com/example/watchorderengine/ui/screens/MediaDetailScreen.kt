@@ -624,6 +624,7 @@ private fun DetailContent(
                             mediaId = detail.id,
                             mediaTitle = detail.title,
                             onAuthorClick = onAuthorClick,
+                            getAvatarModel = { viewModel.getAvatarModel(it) },
                             viewModel = viewModel
                         )
                     }
@@ -638,6 +639,7 @@ private fun ReviewsTab(
     mediaId: String,
     mediaTitle: String,
     onAuthorClick: (String) -> Unit,
+    getAvatarModel: (String?) -> Any?,
     viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
@@ -686,7 +688,8 @@ private fun ReviewsTab(
                 ReviewItem(
                     review = review,
                     onDelete = { viewModel.deleteReview(review.id) },
-                    onAuthorClick = onAuthorClick
+                    onAuthorClick = onAuthorClick,
+                    getAvatarModel = getAvatarModel
                 )
             }
         }
@@ -707,7 +710,8 @@ private fun ReviewsTab(
 private fun ReviewItem(
     review: com.example.watchorderengine.data.model.ReviewItem,
     onDelete: () -> Unit,
-    onAuthorClick: (String) -> Unit = {}
+    onAuthorClick: (String) -> Unit = {},
+    getAvatarModel: (String?) -> Any?
 ) {
     val theme = LocalAppTheme.current
     var isExpanded by remember { mutableStateOf(false) }
@@ -728,7 +732,7 @@ private fun ReviewItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val fallbackAvatar = "https://ui-avatars.com/api/?name=${review.authorName.ifBlank { "User" }}&background=random&color=fff"
                     AsyncImage(
-                        model = review.authorAvatarUrl.takeIf { !it.isNullOrBlank() } ?: fallbackAvatar,
+                        model = getAvatarModel(review.authorAvatarUrl) ?: fallbackAvatar,
                         contentDescription = null,
                         modifier = Modifier
                             .size(36.dp)

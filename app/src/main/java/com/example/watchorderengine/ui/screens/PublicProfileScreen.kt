@@ -83,7 +83,8 @@ fun PublicProfileScreen(
                         isFavoritesPublic = state.profile.isFavoritesPublic,
                         watchStats = state.profile.watchStats,
                         favoriteShows = state.profile.favoriteShows,
-                        onMediaClick = onMediaClick
+                        onMediaClick = onMediaClick,
+                        getAvatarModel = { viewModel.getAvatarModel(it) }
                     )
                 }
             }
@@ -100,6 +101,7 @@ private fun PublicProfileContent(
     watchStats: UserStats?,
     favoriteShows: List<MediaSummary>,
     onMediaClick: (String) -> Unit,
+    getAvatarModel: (String?) -> Any?
 ) {
     val theme = LocalAppTheme.current
 
@@ -125,7 +127,7 @@ private fun PublicProfileContent(
                 verticalArrangement = Arrangement.Center
             ) {
                 AsyncImage(
-                    model = avatarUrl ?: "https://ui-avatars.com/api/?name=${displayName.ifBlank { "User" }}&background=random&color=fff",
+                    model = getAvatarModel(avatarUrl) ?: "https://ui-avatars.com/api/?name=${displayName.ifBlank { "User" }}&background=random&color=fff",
                     contentDescription = "Profile Picture",
                     modifier = Modifier
                         .size(96.dp)

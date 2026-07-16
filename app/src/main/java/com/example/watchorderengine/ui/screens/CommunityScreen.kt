@@ -221,6 +221,7 @@ fun CommunityScreen(
             importState = importState,
             onMediaClick = onMediaClick,
             onAuthorClick = onAuthorClick,
+            getAvatarModel = { viewModel.getAvatarModel(it) },
             tmdbCache = viewModel.getCache()
         )
     }
@@ -848,6 +849,7 @@ fun CommunityPostDetailSheet(
     importState: ImportState,
     onMediaClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit = {},
+    getAvatarModel: (String?) -> Any?,
     tmdbCache: TmdbMetadataCache
 ) {
     val theme = LocalAppTheme.current
@@ -922,7 +924,7 @@ fun CommunityPostDetailSheet(
                             border = BorderStroke(2.dp, theme.accent.copy(0.3f))
                         ) {
                             AsyncImage(
-                                model = post.authorAvatarUrl ?: "https://ui-avatars.com/api/?name=${post.authorName}",
+                                model = getAvatarModel(post.authorAvatarUrl) ?: "https://ui-avatars.com/api/?name=${post.authorName}",
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize().clip(CircleShape),
                                 contentScale = ContentScale.Crop

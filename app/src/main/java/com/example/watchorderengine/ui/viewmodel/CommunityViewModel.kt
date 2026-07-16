@@ -7,6 +7,7 @@ import com.example.watchorderengine.data.model.SharedTimelineCodec
 import com.example.watchorderengine.data.model.MediaNode
 import com.example.watchorderengine.data.repository.CommunityRepository
 import com.example.watchorderengine.data.repository.TmdbRepository
+import com.example.watchorderengine.data.repository.UserProfileRepository
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -43,6 +44,7 @@ sealed interface ImportState {
 @HiltViewModel
 class CommunityViewModel @Inject constructor(
     private val repository: CommunityRepository,
+    private val userProfileRepository: UserProfileRepository,
     private val auth: FirebaseAuth,
     private val tmdbRepo: TmdbRepository,
     private val tmdbCache: TmdbMetadataCache
@@ -248,6 +250,8 @@ class CommunityViewModel @Inject constructor(
     fun resetImportState() {
         _importState.value = ImportState.Idle
     }
+
+    fun getAvatarModel(url: String?): Any? = userProfileRepository.getAvatarModel(url)
 
     fun getCache() = tmdbCache
 }

@@ -88,17 +88,36 @@ class UserProfileRepository @Inject constructor(
      */
     suspend fun processAvatarToBase64(bitmap: Bitmap): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            // Resize to 256x256 max for profile icon (Firestore friendly)
-            val scaled = if (bitmap.width > 256 || bitmap.height > 256) {
-                Bitmap.createScaledBitmap(bitmap, 256, 256, true)
+            // Resize to 180x180 for profile icon (Tiny, fast, fits Firestore 1MB easily)
+            val scaled = if (bitmap.width > 180 || bitmap.height > 180) {
+                Bitmap.createScaledBitmap(bitmap, 180, 180, true)
             } else bitmap
 
             val outputStream = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
+            // High compression for thumbnails
+            scaled.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
             val bytes = outputStream.toByteArray()
-            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            val base64 = Base64.encodeToString(bytes, Base64.DEFAULT)
             
             "data:image/jpeg;base64,$base64"
+        }
+    }
+
+    /**
+     * Helper to prepare a model for Coil's AsyncImage. 
+     * If the string is a Base64 data URI, it decodes it to a ByteArray which Coil prefers.
+     */
+    fun getAvatarModel(url: String?): Any? {
+        if (url == null) return null
+        return if (url.startsWith("data:image/jpeg;base64,")) {
+            try {
+                val base64Data = url.substringAfter("base64,")
+                Base64.decode(base64Data, Base64.DEFAULT)
+            } catch (e: Exception) {
+                url // Fallback to raw string
+            }
+        } else {
+            url
         }
     }
 }
