@@ -57,6 +57,7 @@ fun HomeScreen(
     onShowClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
     onProfileClick: () -> Unit = {},
+    getAvatarModel: (String?) -> Any? = { it },
     nextUpItem: NextUpItem? = null,
     onResumeClick: (internalId: String) -> Unit = {},
     recommendations: List<Recommendation> = emptyList()
@@ -86,6 +87,7 @@ fun HomeScreen(
                         onToggleSearch = onSearchToggle,
                         onSettingsClick = onSettingsClick,
                         onProfileClick = onProfileClick,
+                        getAvatarModel = getAvatarModel,
                         profilePictureUrl = state.profilePictureUrl
                     )
                 }
@@ -443,23 +445,24 @@ fun NextUpCard(
                     .padding(horizontal = 16.dp, vertical = 14.dp)
                     .height(52.dp),
                 shape  = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accentGold)
+                colors = ButtonDefaults.buttonColors(containerColor = accentGold),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
             ) {
                 Icon(
-                    imageVector        = Icons.Default.PlayArrow,
+                    imageVector        = Icons.Default.PlayCircle,
                     contentDescription = null,
                     tint               = Color.Black,
                     modifier           = Modifier
-                        .size(24.dp)
+                        .size(28.dp)
                         .graphicsLayer { scaleX = playScale; scaleY = playScale }
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(12.dp))
                 Text(
-                    text          = "RESUME",
+                    text          = "RESUME STORY",
                     color         = Color.Black,
                     fontWeight    = FontWeight.Black,
                     fontSize      = 16.sp,
-                    letterSpacing = 3.sp
+                    letterSpacing = 2.sp
                 )
             }
         }
@@ -474,6 +477,7 @@ fun Header(
     onToggleSearch: (Boolean) -> Unit,
     onSettingsClick: () -> Unit,
     onProfileClick: () -> Unit,
+    getAvatarModel: (String?) -> Any? = { it },
     profilePictureUrl: String? = null
 ) {
     val theme = LocalAppTheme.current
@@ -516,7 +520,7 @@ fun Header(
                 }
             } else {
                 AsyncImage(
-                    model = profilePictureUrl,
+                    model = getAvatarModel(profilePictureUrl),
                     contentDescription = "Avatar",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

@@ -103,7 +103,8 @@ fun CommunityScreen(
             // ── Top Header ──────────────────────────────────────────────────
             CommunityHeader(
                 searchQuery = searchQuery,
-                onSearchChange = { viewModel.onSearchQueryChanged(it) }
+                onSearchChange = { viewModel.onSearchQueryChanged(it) },
+                isLoading = uiState is CommunityUiState.Loading
             )
 
             CommunityPullToRefresh(
@@ -420,7 +421,8 @@ fun HeroPostCard(
 @Composable
 fun CommunityHeader(
     searchQuery: String,
-    onSearchChange: (String) -> Unit
+    onSearchChange: (String) -> Unit,
+    isLoading: Boolean = false
 ) {
     val theme = LocalAppTheme.current
     
@@ -442,7 +444,11 @@ fun CommunityHeader(
                     .background(theme.accent, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Groups, null, tint = Color.White, modifier = Modifier.size(24.dp))
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Groups, null, tint = Color.White, modifier = Modifier.size(24.dp))
+                }
             }
             Spacer(Modifier.width(16.dp))
             Text(
@@ -677,7 +683,11 @@ fun CommunityPostCard(
         shape = RoundedCornerShape(theme.appRadius),
         colors = CardDefaults.cardColors(containerColor = theme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (theme.isComic) BorderStroke(1.5.dp, Color.Black) else null
+        border = when {
+            theme.isComic -> BorderStroke(1.5.dp, Color.Black)
+            accentColor != null -> BorderStroke(1.dp, accentColor.copy(alpha = 0.5f))
+            else -> null
+        }
     ) {
         Box(modifier = Modifier.height(160.dp).background(theme.surfaceHover)) {
             if (posterUrl != null) {

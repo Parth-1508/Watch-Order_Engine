@@ -8,6 +8,7 @@ import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.recommendation.Recommendation
 import com.example.watchorderengine.data.recommendation.RecommendationEngine
 import com.example.watchorderengine.data.repository.MediaRepository
+import com.example.watchorderengine.data.repository.UserProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -21,7 +22,8 @@ import java.util.Calendar
 class HomeViewModel @Inject constructor(
     val repository: MediaRepository,
     private val db: WatchOrderDatabase,
-    private val userPrefs: UserPreferencesRepository
+    private val userPrefs: UserPreferencesRepository,
+    private val userProfileRepository: UserProfileRepository
 ) : ViewModel() {
 
     private val _selectedCategory = MutableStateFlow("Watching")
@@ -94,6 +96,8 @@ class HomeViewModel @Inject constructor(
     fun setCategory(category: String) {
         _selectedCategory.value = category
     }
+
+    fun getAvatarModel(url: String?): Any? = userProfileRepository.getAvatarModel(url)
 
     private fun observeTasteProfile() {
         viewModelScope.launch {

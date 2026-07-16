@@ -56,6 +56,7 @@ fun HomeScreenWrapper(
         onShowClick = { onMediaClick(it) },
         onSettingsClick = onSettingsClick,
         onProfileClick = onProfileClick,
+        getAvatarModel = { viewModel.getAvatarModel(it) },
         nextUpItem = nextUpItem,
         onResumeClick = { onMediaClick(it) },
         recommendations = recommendations

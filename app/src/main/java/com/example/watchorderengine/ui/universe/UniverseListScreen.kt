@@ -1,9 +1,16 @@
 package com.example.watchorderengine.ui.universe
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -14,9 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -26,6 +37,8 @@ import com.example.watchorderengine.data.model.Universe
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.viewmodel.UniverseListUiState
 import com.example.watchorderengine.viewmodel.UniverseListViewModel
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,13 +49,14 @@ fun UniverseListScreen(
 ) {
     val theme = LocalAppTheme.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
                     Text(
-                        "SELECT UNIVERSE", 
+                        "MY GRAPHS", 
                         fontWeight = FontWeight.Black, 
                         modifier = Modifier.graphicsLayer {
                             if (theme.isComic) rotationZ = -1f
@@ -58,38 +72,115 @@ fun UniverseListScreen(
         },
         containerColor = theme.background
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            when (val state = uiState) {
-                is UniverseListUiState.Loading -> CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = theme.accent
-                )
-                is UniverseListUiState.Error -> Text(
-                    state.message, 
-                    color = theme.statusFiller, 
-                    modifier = Modifier.align(Alignment.Center)
-                )
-                is UniverseListUiState.Success -> {
-                    if (state.universes.isEmpty()) {
-                        EmptyUniversesView(onCommunityRedirect)
-                    } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(state.universes) { universe ->
-                                val isRegenerating = (state as? UniverseListUiState.Success)
-                                    ?.regeneratingUniverseIds?.contains(universe.id) ?: false
+        UniversePullToRefresh(
+            isRefreshing = uiState is UniverseListUiState.Loading,
+            onRefresh = { viewModel.loadUniverses() },
+            listState = listState
+        ) {
+            Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+                when (val state = uiState) {
+                    is UniverseListUiState.Loading -> {
+                        // Handled by PullToRefresh indicator, but keep a center one for first load
+                        if (state is UniverseListUiState.Loading && listState.layoutInfo.totalItemsCount == 0) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.Center),
+                                color = theme.accent
+                            )
+                        }
+                    }
+                    is UniverseListUiState.Error -> Text(
+                        state.message, 
+                        color = theme.statusFiller, 
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                    is UniverseListUiState.Success -> {
+                        if (state.universes.isEmpty()) {
+                            EmptyUniversesView(onCommunityRedirect)
+                        } else {
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(state.universes) { universe ->
+                                    val isRegenerating = state.regeneratingUniverseIds.contains(universe.id)
 
-                                UniverseItem(
-                                    universe = universe,
-                                    isRegenerating = isRegenerating,
-                                    onClick = { onUniverseClick(universe.id) },
-                                    onRegenerate = { viewModel.regenerateUniverse(universe.id) },
-                                    onDelete = { viewModel.deleteUniverse(universe.id) },
-                                    onToggleCompletion = { viewModel.toggleUniverseCompletion(universe.id, it) }
-                                )
+                                    UniverseItem(
+                                        universe = universe,
+                                        isRegenerating = isRegenerating,
+                                        onClick = { onUniverseClick(universe.id) },
+                                        onRegenerate = { viewModel.regenerateUniverse(universe.id) },
+                                        onDelete = { viewModel.deleteUniverse(universe.id) },
+                                        onToggleCompletion = { viewModel.toggleUniverseCompletion(universe.id, it) }
+                                    )
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UniversePullToRefresh(
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    listState: LazyListState,
+    content: @Composable () -> Unit
+) {
+    val density = LocalDensity.current
+    val thresholdPx = with(density) { 64.dp.toPx() }
+    val maxDragPx   = thresholdPx * 1.6f
+    val theme = LocalAppTheme.current
+
+    val offsetY = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(isRefreshing) {
+                if (isRefreshing) return@pointerInput
+                detectVerticalDragGestures(
+                    onVerticalDrag = { change, dragAmount ->
+                        val atTop = listState.firstVisibleItemIndex == 0 &&
+                                listState.firstVisibleItemScrollOffset == 0
+                        if ((atTop && dragAmount > 0f) || offsetY.value > 0f) {
+                            change.consume()
+                            scope.launch {
+                                val next = (offsetY.value + dragAmount * 0.5f).coerceIn(0f, maxDragPx)
+                                offsetY.snapTo(next)
+                            }
+                        }
+                    },
+                    onDragEnd = {
+                        scope.launch {
+                            if (offsetY.value >= thresholdPx) onRefresh()
+                            offsetY.animateTo(0f, animationSpec = spring())
+                        }
+                    },
+                    onDragCancel = {
+                        scope.launch { offsetY.animateTo(0f, animationSpec = spring()) }
+                    }
+                )
+            }
+    ) {
+        Box(modifier = Modifier.offset { IntOffset(0, offsetY.value.roundToInt()) }) {
+            content()
+        }
+
+        if (offsetY.value > 0f || isRefreshing) {
+            val pullProgress = (offsetY.value / thresholdPx).coerceIn(0f, 1f)
+            Box(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 14.dp).size(30.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    progress = { if (isRefreshing) 0.5f else pullProgress },
+                    color = theme.accent,
+                    strokeWidth = 2.5.dp
+                )
             }
         }
     }
