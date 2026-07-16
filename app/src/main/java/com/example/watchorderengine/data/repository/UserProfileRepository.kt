@@ -1,12 +1,16 @@
 package com.example.watchorderengine.data.repository
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
 import android.util.Log
 import com.example.watchorderengine.data.model.UserProfile
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.toObject
-import com.google.firebase.storage.FirebaseStorage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -14,18 +18,18 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "UserProfileRepository"
 private const val COLLECTION_USER_PROFILES = "user_profiles"
-private const val STORAGE_AVATARS_PATH = "avatars"
 
 @Singleton
 class UserProfileRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val storage: FirebaseStorage,
     private val auth: FirebaseAuth,
+    @ApplicationContext private val context: Context
 ) {
 
     fun observeProfile(userId: String): Flow<Result<UserProfile?>> =
@@ -78,15 +82,23 @@ class UserProfileRepository @Inject constructor(
         }
     }
 
-    suspend fun uploadAvatar(localImageUri: Uri): Result<String> = withContext(Dispatchers.IO) {
+    /**
+     * Converts a local image to a highly compressed Base64 string to store 
+     * directly in Firestore. This bypasses the need for Firebase Storage.
+     */
+    suspend fun processAvatarToBase64(bitmap: Bitmap): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val uid = auth.currentUser?.uid
-                ?: throw IllegalStateException("Not authenticated — cannot upload avatar.")
-            val ref = storage.reference.child("$STORAGE_AVATARS_PATH/$uid.jpg")
-            ref.putFile(localImageUri).await()
-            ref.downloadUrl.await().toString()
-        }.onFailure { e ->
-            Log.w(TAG, "uploadAvatar failed: ${e.message}")
+            // Resize to 256x256 max for profile icon (Firestore friendly)
+            val scaled = if (bitmap.width > 256 || bitmap.height > 256) {
+                Bitmap.createScaledBitmap(bitmap, 256, 256, true)
+            } else bitmap
+
+            val outputStream = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
+            val bytes = outputStream.toByteArray()
+            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            
+            "data:image/jpeg;base64,$base64"
         }
     }
 }

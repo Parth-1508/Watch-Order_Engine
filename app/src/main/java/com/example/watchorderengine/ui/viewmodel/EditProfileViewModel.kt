@@ -146,20 +146,12 @@ class EditProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _isUploadingAvatar.value = true
             try {
-                val tempFile = File(cacheDir, "avatar_upload_${System.currentTimeMillis()}.jpg")
-                FileOutputStream(tempFile).use { out ->
-                    val bytes = ByteArrayOutputStream().apply {
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, this)
-                    }.toByteArray()
-                    out.write(bytes)
+                val result = userProfileRepository.processAvatarToBase64(bitmap)
+                result.onSuccess { dataUri ->
+                    _avatarUrl.value = dataUri
+                    // Store the data URI locally so it persists immediately
+                    userPrefs.updateAvatarUrl(dataUri)
                 }
-
-                val result = userProfileRepository.uploadAvatar(Uri.fromFile(tempFile))
-                result.onSuccess { downloadUrl ->
-                    _avatarUrl.value = downloadUrl
-                    userPrefs.updateAvatarUrl(downloadUrl)
-                }
-                tempFile.delete()
             } finally {
                 _isUploadingAvatar.value = false
             }
