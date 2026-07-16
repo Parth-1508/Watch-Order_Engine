@@ -18,6 +18,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -30,6 +31,7 @@ import com.example.watchorderengine.viewmodel.UniverseListViewModel
 @Composable
 fun UniverseListScreen(
     onUniverseClick: (String) -> Unit,
+    onCommunityRedirect: () -> Unit = {},
     viewModel: UniverseListViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -68,22 +70,77 @@ fun UniverseListScreen(
                     modifier = Modifier.align(Alignment.Center)
                 )
                 is UniverseListUiState.Success -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(state.universes) { universe ->
-                            val isRegenerating = (state as? UniverseListUiState.Success)
-                                ?.regeneratingUniverseIds?.contains(universe.id) ?: false
+                    if (state.universes.isEmpty()) {
+                        EmptyUniversesView(onCommunityRedirect)
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(state.universes) { universe ->
+                                val isRegenerating = (state as? UniverseListUiState.Success)
+                                    ?.regeneratingUniverseIds?.contains(universe.id) ?: false
 
-                            UniverseItem(
-                                universe = universe,
-                                isRegenerating = isRegenerating,
-                                onClick = { onUniverseClick(universe.id) },
-                                onRegenerate = { viewModel.regenerateUniverse(universe.id) },
-                                onDelete = { viewModel.deleteUniverse(universe.id) },
-                                onToggleCompletion = { viewModel.toggleUniverseCompletion(universe.id, it) }
-                            )
+                                UniverseItem(
+                                    universe = universe,
+                                    isRegenerating = isRegenerating,
+                                    onClick = { onUniverseClick(universe.id) },
+                                    onRegenerate = { viewModel.regenerateUniverse(universe.id) },
+                                    onDelete = { viewModel.deleteUniverse(universe.id) },
+                                    onToggleCompletion = { viewModel.toggleUniverseCompletion(universe.id, it) }
+                                )
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyUniversesView(onCommunityRedirect: () -> Unit) {
+    val theme = LocalAppTheme.current
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .background(theme.accent.copy(0.1f), androidx.compose.foundation.shape.CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AccountTree,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = theme.accent.copy(0.5f)
+                )
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(24.dp))
+            Text(
+                "NO GRAPHS YET",
+                color = theme.textPrimary,
+                fontWeight = FontWeight.Black,
+                fontSize = 18.sp,
+                letterSpacing = 1.sp
+            )
+            androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+            Text(
+                "Generate a watch order from any show detail screen, or import community-shared timelines to get started.",
+                color = theme.textSecondary,
+                fontSize = 14.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                lineHeight = 20.sp
+            )
+            androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+            Button(
+                onClick = onCommunityRedirect,
+                colors = ButtonDefaults.buttonColors(containerColor = theme.accent),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Explore, null, tint = Color.Black)
+                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                Text("EXPLORE COMMUNITY", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     }

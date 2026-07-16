@@ -194,7 +194,6 @@ fun CommunityScreen(
                                             currentUserId   = currentUserId,
                                             onLikeClick     = { viewModel.likePost(post.postId) },
                                             onImportClick   = { viewModel.importTimeline(post) },
-                                            onDeleteClick   = { viewModel.deletePost(post.postId, post.userId) },
                                             onClick         = { viewModel.selectPost(post) },
                                             tmdbCache       = viewModel.getCache()
                                         )
@@ -637,7 +636,6 @@ fun CommunityPostCard(
     currentUserId: String?,
     onLikeClick: () -> Unit,
     onImportClick: () -> Unit,
-    onDeleteClick: () -> Unit,
     onClick: () -> Unit,
     tmdbCache: TmdbMetadataCache
 ) {
@@ -823,15 +821,6 @@ fun CommunityPostCard(
                             modifier = Modifier.size(24.dp)
                         )
                     }
-                }
-            }
-
-            if (isOwner) {
-                IconButton(
-                    onClick = onDeleteClick,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
-                ) {
-                    Icon(Icons.Default.DeleteOutline, "Delete", tint = theme.statusFiller)
                 }
             }
         }

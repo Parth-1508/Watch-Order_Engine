@@ -306,7 +306,8 @@ fun AppNavigation() {
                     com.example.watchorderengine.ui.universe.UniverseListScreen(
                         onUniverseClick = { universeId ->
                             navController.navigate("timeline/$universeId")
-                        }
+                        },
+                        onCommunityRedirect = { navigateTopLevel(Screen.Community.route) }
                     )
                 }
 

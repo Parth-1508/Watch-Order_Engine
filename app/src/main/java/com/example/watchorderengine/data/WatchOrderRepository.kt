@@ -67,9 +67,17 @@ class WatchOrderRepository @Inject constructor(
         return capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
     }
 
-    /** Emits a list of all universes. Filtered by owner temporarily removed as requested. */
+    /** Emits a list of universes owned by the current user. */
     fun getUniverses(): Flow<List<Universe>> = callbackFlow {
+        val uid = auth.currentUser?.uid
+        if (uid == null) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+
         val listener = firestore.collection("universes")
+            .whereEqualTo("owner_id", uid)
             .addSnapshotListener { snap, err ->
                 if (err != null) { 
                     Log.e("WatchOrderRepo", "Error fetching universes: ${err.message}")
