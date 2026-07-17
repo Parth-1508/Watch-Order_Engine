@@ -1459,6 +1459,37 @@ class MediaRepository @Inject constructor(
         } catch (e: Exception) { emptyList() }
     }
 
+    suspend fun getRecentlyReleased(): List<MediaSummary> = withContext(Dispatchers.IO) {
+        try {
+            val results = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
+            
+            supervisorScope {
+                val mResp = async { apiService.discoverMovies(sortBy = "primary_release_date.desc", page = 1) }
+                val tResp = async { apiService.discoverTvShows(sortBy = "first_air_date.desc", page = 1) }
+                
+                val mr = mResp.await()
+                val tr = tResp.await()
+                
+                mr.body()?.results?.forEach { results.add(it.copy(mediaType = "movie")) }
+                tr.body()?.results?.forEach { results.add(it.copy(mediaType = "tv")) }
+            }
+            
+            results.forEach { result ->
+                val mediaId = buildMediaId(result.id, result.mediaType)
+                if (db.mediaDao().getById(mediaId) == null)
+                    db.mediaDao().upsert(result.toMinimalEntity(mediaId))
+            }
+
+            results.distinctBy { it.id }
+                .sortedByDescending { it.releaseDate ?: it.firstAirDate ?: "" }
+                .take(20)
+                .mapNotNull { it.toSummary() }
+        } catch (e: Exception) {
+            Log.e(TAG, "getRecentlyReleased failed", e)
+            emptyList()
+        }
+    }
+
     suspend fun discoverByGenre(
         category: TmdbConfig.DiscoveryCategory,
         providerIds: Set<Int> = emptySet()

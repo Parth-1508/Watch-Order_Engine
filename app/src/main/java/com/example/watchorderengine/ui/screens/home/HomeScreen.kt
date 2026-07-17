@@ -60,7 +60,9 @@ fun HomeScreen(
     getAvatarModel: (String?) -> Any? = { it },
     nextUpItem: NextUpItem? = null,
     onResumeClick: (internalId: String) -> Unit = {},
-    recommendations: List<Recommendation> = emptyList()
+    recommendations: List<Recommendation> = emptyList(),
+    trendingList: List<MediaSummary> = emptyList(),
+    recentlyReleased: List<MediaSummary> = emptyList()
 ) {
     val theme = LocalAppTheme.current
 
@@ -210,45 +212,82 @@ fun HomeScreen(
                 // RECOMMENDED FOR YOU Section
                 if (recommendations.isNotEmpty()) {
                     item {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Text(
-                            "RECOMMENDED FOR YOU",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color.Gray,
-                            letterSpacing = 1.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp)
-                        ) {
-                            items(recommendations, key = { it.media.id }) { recommendation ->
-                                // Mapping MediaEntity to MediaSummary for simpler UI component
-                                val summary = MediaSummary(
-                                    id = recommendation.media.id,
-                                    tmdbId = recommendation.media.tmdbId,
-                                    title = recommendation.media.title,
-                                    posterUrl = recommendation.media.posterUrl,
-                                    backdropUrl = recommendation.media.backdropUrl,
-                                    mediaCategory = com.example.watchorderengine.data.model.MediaCategory.valueOf(recommendation.media.mediaCategory),
-                                    voteAverage = recommendation.media.voteAverage,
-                                    releaseYear = recommendation.media.releaseYear,
+                        HorizontalMediaSection(
+                            title = "RECOMMENDED FOR YOU",
+                            items = recommendations.map { rec ->
+                                MediaSummary(
+                                    id = rec.media.id,
+                                    tmdbId = rec.media.tmdbId,
+                                    title = rec.media.title,
+                                    posterUrl = rec.media.posterUrl,
+                                    backdropUrl = rec.media.backdropUrl,
+                                    mediaCategory = com.example.watchorderengine.data.model.MediaCategory.valueOf(rec.media.mediaCategory),
+                                    voteAverage = rec.media.voteAverage,
+                                    releaseYear = rec.media.releaseYear,
                                     trackingState = null,
-                                    ageRating = recommendation.media.ageRating
+                                    ageRating = rec.media.ageRating
                                 )
-                                MediaCardPaged(
-                                    modifier = Modifier.width(130.dp),
-                                    show = summary,
-                                    onClick = { onShowClick(summary.id) }
-                                )
-                            }
-                        }
+                            },
+                            onShowClick = onShowClick
+                        )
                     }
                 }
+
+                // RECENTLY RELEASED Section
+                if (recentlyReleased.isNotEmpty()) {
+                    item {
+                        HorizontalMediaSection(
+                            title = "RECENTLY RELEASED",
+                            items = recentlyReleased,
+                            onShowClick = onShowClick
+                        )
+                    }
+                }
+
+                // TRENDING Section
+                if (trendingList.isNotEmpty()) {
+                    item {
+                        HorizontalMediaSection(
+                            title = "TRENDING NOW",
+                            items = trendingList,
+                            onShowClick = onShowClick
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HorizontalMediaSection(
+    title: String,
+    items: List<MediaSummary>,
+    onShowClick: (String) -> Unit
+) {
+    Column {
+        Spacer(modifier = Modifier.height(32.dp))
+        Text(
+            title,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Black,
+            color = Color.Gray,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp)
+        ) {
+            items(items, key = { it.id }) { show ->
+                MediaCardPaged(
+                    modifier = Modifier.width(130.dp),
+                    show = show,
+                    onClick = { onShowClick(show.id) }
+                )
             }
         }
     }

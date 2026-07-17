@@ -18,6 +18,8 @@ fun HomeScreenWrapper(
     val watchlist = viewModel.watchlistPaged.collectAsLazyPagingItems()
     val activeCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
+    val trendingList by viewModel.trendingList.collectAsStateWithLifecycle()
+    val recentlyReleased by viewModel.recentlyReleased.collectAsStateWithLifecycle()
     val nextUpItem by viewModel.nextUp.collectAsStateWithLifecycle()
     val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
@@ -59,6 +61,8 @@ fun HomeScreenWrapper(
         getAvatarModel = { viewModel.getAvatarModel(it) },
         nextUpItem = nextUpItem,
         onResumeClick = { onMediaClick(it) },
-        recommendations = recommendations
+        recommendations = recommendations,
+        trendingList = trendingList,
+        recentlyReleased = recentlyReleased
     )
 }

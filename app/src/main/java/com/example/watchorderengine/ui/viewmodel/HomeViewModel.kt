@@ -37,6 +37,9 @@ class HomeViewModel @Inject constructor(
     private val _trendingList = MutableStateFlow<List<MediaSummary>>(emptyList())
     val trendingList: StateFlow<List<MediaSummary>> = _trendingList.asStateFlow()
 
+    private val _recentlyReleased = MutableStateFlow<List<MediaSummary>>(emptyList())
+    val recentlyReleased: StateFlow<List<MediaSummary>> = _recentlyReleased.asStateFlow()
+
     private val _recommendations = MutableStateFlow<List<Recommendation>>(emptyList())
     val recommendations: StateFlow<List<Recommendation>> = _recommendations.asStateFlow()
 
@@ -160,6 +163,7 @@ class HomeViewModel @Inject constructor(
         _isLoading.value = true
         try {
             _trendingList.value = repository.getTrending()
+            _recentlyReleased.value = repository.getRecentlyReleased()
             generateRecommendations()
 
             val watching = repository.getWatchingList()
