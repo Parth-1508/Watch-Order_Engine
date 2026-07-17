@@ -1456,8 +1456,11 @@ class MediaRepository @Inject constructor(
                         db.mediaDao().upsert(result.toMinimalEntity(mediaId))
                 }
             }
+
             results.filter { 
                 (it.mediaType == "movie" || it.mediaType == "tv") && 
+                !it.posterPath.isNullOrBlank() && // Must have a poster
+                (it.voteCount ?: 0) >= 10 &&    // Must have some community validation
                 (it.releaseDate ?: it.firstAirDate ?: "").let { date -> date.isNotBlank() && date <= todayStr }
             }
                 .mapNotNull { it.toSummary() }
@@ -1511,6 +1514,7 @@ class MediaRepository @Inject constructor(
             }
 
             results.distinctBy { it.id }
+                .filter { !it.posterPath.isNullOrBlank() && (it.voteCount ?: 0) >= 10 } // Quality gate
                 .sortedByDescending { it.releaseDate ?: it.firstAirDate ?: "" }
                 .take(20)
                 .mapNotNull { it.toSummary() }
@@ -1550,8 +1554,14 @@ class MediaRepository @Inject constructor(
                 if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = false))
             }
 
-            val movieSummaries = movieResults.mapNotNull { it.toSummary(explicitIsMovie = true) }.distinctBy { it.id }
-            val tvSummaries    = tvResults.mapNotNull  { it.toSummary(explicitIsMovie = false) }.distinctBy { it.id }
+            val movieSummaries = movieResults
+                .filter { !it.posterPath.isNullOrBlank() }
+                .mapNotNull { it.toSummary(explicitIsMovie = true) }
+                .distinctBy { it.id }
+            val tvSummaries    = tvResults
+                .filter { !it.posterPath.isNullOrBlank() }
+                .mapNotNull  { it.toSummary(explicitIsMovie = false) }
+                .distinctBy { it.id }
             
             // Interleave and ensure we have a good number of results
             val results = movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
