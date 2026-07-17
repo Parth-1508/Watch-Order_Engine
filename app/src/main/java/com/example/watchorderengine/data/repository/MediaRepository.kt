@@ -1460,7 +1460,6 @@ class MediaRepository @Inject constructor(
             results.filter { 
                 (it.mediaType == "movie" || it.mediaType == "tv") && 
                 !it.posterPath.isNullOrBlank() && // Must have a poster
-                (it.voteCount ?: 0) >= 10 &&    // Must have some community validation
                 (it.releaseDate ?: it.firstAirDate ?: "").let { date -> date.isNotBlank() && date <= todayStr }
             }
                 .mapNotNull { it.toSummary() }
@@ -1514,7 +1513,7 @@ class MediaRepository @Inject constructor(
             }
 
             results.distinctBy { it.id }
-                .filter { !it.posterPath.isNullOrBlank() && (it.voteCount ?: 0) >= 10 } // Quality gate
+                .filter { !it.posterPath.isNullOrBlank() } // Must have a poster
                 .sortedByDescending { it.releaseDate ?: it.firstAirDate ?: "" }
                 .take(20)
                 .mapNotNull { it.toSummary() }

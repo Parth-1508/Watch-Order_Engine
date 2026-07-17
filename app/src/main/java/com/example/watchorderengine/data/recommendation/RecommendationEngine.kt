@@ -58,7 +58,7 @@ object RecommendationEngine {
         if (tasteVector.isEmpty()) {
             // Absolute fallback: return highest rated candidates from cache
             return candidates
-                .filter { it.voteCount >= minCandidateVotes && !it.posterUrl.isNullOrBlank() }
+                .filter { !it.posterUrl.isNullOrBlank() }
                 .sortedByDescending { it.voteAverage }
                 .take(topK)
                 .map { Recommendation(it, it.voteAverage.toDouble(), emptyList()) }
@@ -88,9 +88,9 @@ object RecommendationEngine {
         if (norm == 0.0) return emptyList()
         for (key in tasteVector.keys) { tasteVector[key] = tasteVector[key]!! / norm }
 
-        val eligibleCandidates = candidates.filter { it.voteCount >= minCandidateVotes && !it.posterUrl.isNullOrBlank() }
+        val eligibleCandidates = candidates.filter { !it.posterUrl.isNullOrBlank() }
 
-        val scored = (if (eligibleCandidates.size < 5) candidates.filter { !it.posterUrl.isNullOrBlank() } else eligibleCandidates).map { candidate ->
+        val scored = eligibleCandidates.map { candidate ->
             val candidateVector = candidate.genres.associateWith { 1.0 }
             val similarity = dotProduct(tasteVector, candidateVector)
             val qualityBoost = (candidate.voteAverage / 10.0).coerceIn(0.0, 1.0)
