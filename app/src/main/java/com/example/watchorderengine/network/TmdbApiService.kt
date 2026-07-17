@@ -128,6 +128,8 @@ interface TmdbApiService {
         @Query("language") language: String = "en-US",
         @Query("sort_by") sortBy: String = "popularity.desc",
         @Query("page") page: Int = 1,
+        @Query("primary_release_date.gte") releaseDateGte: String? = null,
+        @Query("primary_release_date.lte") releaseDateLte: String? = null,
         @Query("include_adult") includeAdult: Boolean = false
     ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
 
@@ -144,7 +146,9 @@ interface TmdbApiService {
         @Query("watch_region") watchRegion: String? = "IN",
         @Query("language") language: String = "en-US",
         @Query("sort_by") sortBy: String = "popularity.desc",
-        @Query("page") page: Int = 1
+        @Query("page") page: Int = 1,
+        @Query("first_air_date.gte") airDateGte: String? = null,
+        @Query("first_air_date.lte") airDateLte: String? = null
     ): Response<com.example.watchorderengine.network.model.TmdbPagedResults<com.example.watchorderengine.network.model.TmdbMediaResult>>
 
     /**

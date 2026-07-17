@@ -1446,6 +1446,9 @@ class MediaRepository @Inject constructor(
                 tResp.body()?.results?.forEach { results.add(it.copy(mediaType = "tv")) }
             }
             
+            // Filter out future releases from trending to avoid "coming soon" clutter
+            val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            
             results.forEach { result ->
                 if (result.mediaType == "movie" || result.mediaType == "tv") {
                     val mediaId = buildMediaId(result.id, result.mediaType)
@@ -1453,7 +1456,10 @@ class MediaRepository @Inject constructor(
                         db.mediaDao().upsert(result.toMinimalEntity(mediaId))
                 }
             }
-            results.filter { it.mediaType == "movie" || it.mediaType == "tv" }
+            results.filter { 
+                (it.mediaType == "movie" || it.mediaType == "tv") && 
+                (it.releaseDate ?: it.firstAirDate ?: "").let { date -> date.isNotBlank() && date <= todayStr }
+            }
                 .mapNotNull { it.toSummary() }
                 .distinctBy { it.id }
         } catch (e: Exception) { emptyList() }
@@ -1463,9 +1469,33 @@ class MediaRepository @Inject constructor(
         try {
             val results = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
             
+            // Define recency window: last 6 months up to today
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            val now = java.util.Calendar.getInstance()
+            val todayStr = sdf.format(now.time)
+            
+            now.add(java.util.Calendar.MONTH, -6)
+            val sixMonthsAgoStr = sdf.format(now.time)
+
             supervisorScope {
-                val mResp = async { apiService.discoverMovies(sortBy = "primary_release_date.desc", page = 1) }
-                val tResp = async { apiService.discoverTvShows(sortBy = "first_air_date.desc", page = 1) }
+                // Fetch movies released in theaters/digital in the last 6 months (excluding future)
+                val mResp = async { 
+                    apiService.discoverMovies(
+                        sortBy = "primary_release_date.desc", 
+                        releaseDateGte = sixMonthsAgoStr,
+                        releaseDateLte = todayStr,
+                        page = 1
+                    ) 
+                }
+                // Fetch TV shows first aired in the last 6 months
+                val tResp = async { 
+                    apiService.discoverTvShows(
+                        sortBy = "first_air_date.desc", 
+                        airDateGte = sixMonthsAgoStr,
+                        airDateLte = todayStr,
+                        page = 1
+                    ) 
+                }
                 
                 val mr = mResp.await()
                 val tr = tResp.await()
