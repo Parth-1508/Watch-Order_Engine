@@ -189,6 +189,7 @@ class AnimeListImportRepository @Inject constructor(
                             userRating    = entry.userRating ?: existing?.userRating,
                             userNotes     = existing?.userNotes ?: "",
                             priorityTag   = existing?.priorityTag ?: "NONE",
+                            currentEpisodeNumber = entry.progress, // Store progress
                             updatedAt     = now
                         )
                     )
@@ -199,10 +200,10 @@ class AnimeListImportRepository @Inject constructor(
                         mediaRepository.updateRating(mediaId, entry.userRating)
                     }
 
-                    // Handle episode marking
-                    if (entry.trackingState == TrackingState.COMPLETED || 
-                        (entry.trackingState == TrackingState.WATCHING && entry.progress > 0)) {
-                        
+                    // Handle episode marking for ANY state that has progress
+                    val hasProgress = entry.progress > 0 || entry.trackingState == TrackingState.COMPLETED
+                    
+                    if (hasProgress) {
                         val seasons = db.seasonDao().getSeasonsByMedia(mediaId)
                         val matchingSeason = seasons.find { 
                             it.name.contains(entry.title, ignoreCase = true) || 
