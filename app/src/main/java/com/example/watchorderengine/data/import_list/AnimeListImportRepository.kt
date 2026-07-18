@@ -170,61 +170,65 @@ class AnimeListImportRepository @Inject constructor(
 
                 val existing = db.userProgressDao().getProgress(mediaId)
                 if (existing != null && !overwrite) {
-                    // Still ensure it's marked as being in watchlist if we have it
+                    // Even if show exists, we might need to update progress from AniList
                     db.mediaDao().updateWatchlistStatus(mediaId, true)
-                    continue
                 }
 
-                // Ensure full details exist before marking episodes
+                // Ensure full details exist before marking episodes (crucial for absolute number mapping)
                 mediaRepository.ensureDetailsFetched(mediaId)
 
-                db.userProgressDao().upsert(
-                    UserProgressEntity(
-                        mediaId       = mediaId,
-                        trackingState = entry.trackingState.name,
-                        userRating    = entry.userRating,
-                        userNotes     = existing?.userNotes ?: "",
-                        priorityTag   = existing?.priorityTag ?: "NONE",
-                        updatedAt     = now
+                val shouldUpdateProgress = existing == null || overwrite || 
+                    (entry.trackingState == TrackingState.COMPLETED && existing.trackingState != "COMPLETED") ||
+                    (entry.progress > (existing.currentEpisodeNumber))
+
+                if (shouldUpdateProgress) {
+                    db.userProgressDao().upsert(
+                        UserProgressEntity(
+                            mediaId       = mediaId,
+                            trackingState = entry.trackingState.name,
+                            userRating    = entry.userRating ?: existing?.userRating,
+                            userNotes     = existing?.userNotes ?: "",
+                            priorityTag   = existing?.priorityTag ?: "NONE",
+                            updatedAt     = now
+                        )
                     )
-                )
 
-                // Sync the tracking state (and potentially rating) to cloud
-                mediaRepository.updateTrackingState(mediaId, entry.trackingState)
-                if (entry.userRating != null) {
-                    mediaRepository.updateRating(mediaId, entry.userRating)
-                }
-
-                // Handle episode marking
-                if (entry.trackingState == TrackingState.COMPLETED || 
-                    (entry.trackingState == TrackingState.WATCHING && entry.progress > 0)) {
-                    
-                    val seasons = db.seasonDao().getSeasonsByMedia(mediaId)
-                    val matchingSeason = seasons.find { 
-                        it.name.contains(entry.title, ignoreCase = true) || 
-                        entry.title.contains(it.name, ignoreCase = true) 
+                    // Sync the tracking state to cloud
+                    mediaRepository.updateTrackingState(mediaId, entry.trackingState)
+                    if (entry.userRating != null) {
+                        mediaRepository.updateRating(mediaId, entry.userRating)
                     }
 
-                    if (matchingSeason != null && entry.trackingState == TrackingState.COMPLETED) {
-                        Log.d(TAG, "Segmented show detected: marking season ${matchingSeason.seasonNumber} for '${entry.title}'")
-                        mediaRepository.markSeasonAsWatched(mediaId, matchingSeason.seasonNumber)
-                    } else {
-                        // Optimized bulk marking
-                        val upTo = if (entry.trackingState == TrackingState.COMPLETED) {
-                            (entry.totalEpisodes ?: 0) + 1
-                        } else {
-                            entry.progress + 1
-                        }
+                    // Handle episode marking
+                    if (entry.trackingState == TrackingState.COMPLETED || 
+                        (entry.trackingState == TrackingState.WATCHING && entry.progress > 0)) {
                         
-                        if (upTo > 1) {
-                            mediaRepository.markAllPreviousAsWatched(mediaId, upTo)
-                        } else if (entry.trackingState == TrackingState.COMPLETED) {
-                            mediaRepository.markAllAsWatched(mediaId)
+                        val seasons = db.seasonDao().getSeasonsByMedia(mediaId)
+                        val matchingSeason = seasons.find { 
+                            it.name.contains(entry.title, ignoreCase = true) || 
+                            entry.title.contains(it.name, ignoreCase = true) 
+                        }
+
+                        if (matchingSeason != null && entry.trackingState == TrackingState.COMPLETED) {
+                            Log.d(TAG, "Segmented show detected: marking season ${matchingSeason.seasonNumber} for '${entry.title}'")
+                            mediaRepository.markSeasonAsWatched(mediaId, matchingSeason.seasonNumber)
+                        } else {
+                            // Optimized bulk marking
+                            val upTo = if (entry.trackingState == TrackingState.COMPLETED) {
+                                // Fetch ACTUAL total from our DB if AniList total is missing
+                                val dbTotal = db.mediaDao().getById(mediaId)?.numberOfEpisodes ?: entry.totalEpisodes ?: 0
+                                dbTotal + 1
+                            } else {
+                                entry.progress + 1
+                            }
+                            
+                            if (upTo > 1) {
+                                mediaRepository.markAllPreviousAsWatched(mediaId, upTo)
+                            } else if (entry.trackingState == TrackingState.COMPLETED) {
+                                mediaRepository.markAllAsWatched(mediaId)
+                            }
                         }
                     }
-
-                    // Update parent show watchlist status
-                    db.mediaDao().updateWatchlistStatus(mediaId, true)
                 }
 
                 written++

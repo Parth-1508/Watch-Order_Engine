@@ -189,9 +189,20 @@ interface EpisodeWatchedDao {
     suspend fun getAllWatchedTimestamps(): List<Long>
 
     @Transaction
-    suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int, timestamp: Long) {
-        // Implementation provided via Repo usually, but kept for interface completeness
-    }
+    @Query("""
+        INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
+        SELECT id, mediaId, :timestamp FROM episodes
+        WHERE mediaId = :mediaId AND absoluteEpisodeNumber <= :upToAbsoluteNumber
+    """)
+    suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int, timestamp: Long)
+
+    @Transaction
+    @Query("""
+        INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
+        SELECT id, mediaId, :timestamp FROM episodes
+        WHERE mediaId = :mediaId
+    """)
+    suspend fun markAllAsWatched(mediaId: String, timestamp: Long)
 }
 
 // ─── ReviewDao ───────────────────────────────────────────────────────────────

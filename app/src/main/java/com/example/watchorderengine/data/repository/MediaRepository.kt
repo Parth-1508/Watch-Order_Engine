@@ -1411,8 +1411,12 @@ class MediaRepository @Inject constructor(
     }
 
     suspend fun markAllAsWatched(mediaId: String) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        // 1. Optimized Room update
+        db.episodeWatchedDao().markAllAsWatched(mediaId, now)
+        
+        // 2. Optimized Firestore sync
         val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
-        episodes.forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
         syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
     }
 
