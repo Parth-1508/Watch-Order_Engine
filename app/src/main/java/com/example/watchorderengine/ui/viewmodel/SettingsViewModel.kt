@@ -1,5 +1,6 @@
 package com.example.watchorderengine.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.WatchOrderRepository
@@ -148,9 +149,9 @@ class SettingsViewModel @Inject constructor(
             try {
                 val uid = auth.currentUser?.uid
                 if (uid != null) {
-                    // 1. Wipe Firestore data (Watchlist, Progress, Episodes, Profile)
-                    val collections = listOf("watchlist", "progress", "episode_progress", "profile")
-                    for (collection in collections) {
+                    // 1. Wipe User-Nested Firestore data
+                    val nestedCollections = listOf("watchlist", "progress", "episode_progress", "profile", "reviews")
+                    for (collection in nestedCollections) {
                         val docs = firestore.collection("users").document(uid)
                             .collection(collection).get().await()
                         
@@ -161,27 +162,47 @@ class SettingsViewModel @Inject constructor(
                         }
                     }
                     
-                    // Also delete the user root doc
-                    firestore.collection("users").document(uid).delete().await()
+                    // 2. Wipe Top-Level Collections linked to this UID
+                    val topLevelWipes = listOf(
+                        firestore.collection("notifications").whereEqualTo("userId", uid),
+                        firestore.collection("reviews").whereEqualTo("userId", uid),
+                        firestore.collection("universes").whereEqualTo("owner_id", uid)
+                    )
+
+                    for (query in topLevelWipes) {
+                        val docs = query.get().await()
+                        docs.documents.chunked(450).forEach { chunk ->
+                            val batch = firestore.batch()
+                            chunk.forEach { batch.delete(it.reference) }
+                            batch.commit().await()
+                        }
+                    }
+
+                    // 3. Delete Public Profile & Root User Doc
+                    val batch = firestore.batch()
+                    batch.delete(firestore.collection("user_profiles").document(uid))
+                    batch.delete(firestore.collection("users").document(uid))
+                    batch.commit().await()
                 }
 
-                // 2. Clear local Room database
+                // 4. Clear local Room database
                 withContext(Dispatchers.IO) {
                     db.clearAllTables()
                 }
 
-                // 3. Reset local preferences
+                // 5. Reset local preferences
                 prefsRepository.setTasteProfileCompleted(false)
                 prefsRepository.setSelectedGenres(emptySet())
                 prefsRepository.updateUsername("Guest")
                 prefsRepository.updateAvatarUrl(null)
                 prefsRepository.updateStreak(0, 0)
 
-                // 4. Sign out
+                // 6. Sign out
                 auth.signOut()
 
                 _wipeAccountState.value = WipeAccountState.Success
             } catch (e: Exception) {
+                Log.e("SettingsVM", "Wipe failed", e)
                 _wipeAccountState.value = WipeAccountState.Failure(e.message ?: "Unknown error.")
             }
         }
