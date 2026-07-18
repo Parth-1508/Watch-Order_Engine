@@ -37,6 +37,7 @@ class CharacterDetailViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             _state.value = CharacterDetailState.Loading
+            activePhotoIndex.value = 0 // Reset gallery index on new load
             val result = repository.getCharacterDetail(
                 tmdbPersonId  = tmdbPersonId,
                 characterName = characterName,

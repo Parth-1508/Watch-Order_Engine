@@ -441,10 +441,15 @@ private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
         if (detail.characterDescription.isNotBlank()) {
             SectionHeader("About this character")
             if (detail.characterDescription.length > 200) {
-                WikiLoreCard(lore = detail.characterDescription)
+                ExpandableLoreCard(lore = detail.characterDescription, source = detail.loreSource)
             } else {
                 InfoCard {
                     Text(detail.characterDescription, color = theme.textSecondary, fontSize = 13.sp, lineHeight = 19.sp)
+                    when (detail.loreSource) {
+                        "wikipedia" -> LoreAttributionFooter("Source: Wikipedia (CC BY-SA 4.0)")
+                        "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
+                        "anilist" -> LoreAttributionFooter("Source: AniList")
+                    }
                 }
             }
         } else {
@@ -462,15 +467,7 @@ private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
 
         if (showWikiSupplementBlock) {
             SectionHeader("Lore — Wikipedia")
-            WikiLoreCard(lore = detail.wikiLore!!)
-        }
-
-        if (detail.characterDescription.isNotBlank()) {
-            when (detail.loreSource) {
-                "wikipedia" -> LoreAttributionFooter("Source: Wikipedia (CC BY-SA 4.0)")
-                "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
-                "anilist" -> LoreAttributionFooter("Source: AniList")
-            }
+            ExpandableLoreCard(lore = detail.wikiLore!!, source = "wikipedia")
         }
 
         if (detail.voiceActorName != null) {
@@ -760,9 +757,12 @@ private fun KnownForCard(credit: CreditItem, onClick: () -> Unit, modifier: Modi
  * A specialized card for displaying lore that might contain spoilers.
  *
  * Includes a "Tap to Reveal" overlay and a blur effect to protect the user from spoilers.
+ *
+ * @param lore The biography text to display.
+ * @param source The source of the lore (e.g., "wikipedia", "gemini", "anilist") for attribution.
  */
 @Composable
-private fun WikiLoreCard(lore: String) {
+private fun ExpandableLoreCard(lore: String, source: String? = null) {
     val theme    = LocalAppTheme.current
     var expanded by remember { mutableStateOf(false) }
     var overflows by remember { mutableStateOf(false) }
@@ -805,7 +805,11 @@ private fun WikiLoreCard(lore: String) {
                     }
                 }
 
-                LoreAttributionFooter("Source: Wikipedia (CC BY-SA 4.0)")
+                when (source) {
+                    "wikipedia" -> LoreAttributionFooter("Source: Wikipedia (CC BY-SA 4.0)")
+                    "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
+                    "anilist" -> LoreAttributionFooter("Source: AniList")
+                }
             }
 
             if (!revealed) {

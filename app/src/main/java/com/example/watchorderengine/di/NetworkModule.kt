@@ -17,27 +17,38 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.Cache
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.io.File
 import java.util.concurrent.TimeUnit
+import javax.inject.Qualifier
 import javax.inject.Singleton
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class TmdbClient
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class AnilistClient
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class WikipediaClient
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class JikanClient
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class GeminiClient
 
 /**
  * Hilt module providing the entire network stack as singletons.
- *
- * DEPENDENCY GRAPH:
- *   BuildConfig.TMDB_READ_ACCESS_TOKEN
- *       ↓
- *   TmdbAuthInterceptor
- *       ↓
- *   OkHttpClient  ←  HttpLoggingInterceptor  ←  BuildConfig.DEBUG
- *       ↓
- *   Retrofit  ←  Moshi
- *       ↓
- *   TmdbApiService
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -75,6 +86,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @TmdbClient
     fun provideOkHttpClient(
         @ApplicationContext context: Context,
         authInterceptor: TmdbAuthInterceptor,
@@ -108,7 +120,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =
+    fun provideRetrofit(@TmdbClient okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =
         Retrofit.Builder()
             .baseUrl(TmdbConfig.BASE_URL)  // "https://api.themoviedb.org/3/"
             .client(okHttpClient)
@@ -123,14 +135,20 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideAnilistApiService(moshi: Moshi): AnilistApiService {
+    @AnilistClient
+    fun provideAnilistOkHttpClient(): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
             else HttpLoggingInterceptor.Level.NONE
         }
-        val client = OkHttpClient.Builder()
+        return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideAnilistApiService(@AnilistClient client: OkHttpClient, moshi: Moshi): AnilistApiService {
         return Retrofit.Builder()
             .baseUrl("https://graphql.anilist.co/")
             .client(client)
@@ -139,19 +157,13 @@ object NetworkModule {
             .create(AnilistApiService::class.java)
     }
 
-    /**
-     * Wikipedia REQUIRES a descriptive User-Agent header — requests with a
-     * missing or generic one are rejected with HTTP 403
-     * (https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy).
-     * This is its own OkHttpClient/Retrofit instance (not the TMDB one) since
-     * the base URL and this header requirement are both specific to Wikipedia.
-     */
     @Provides
     @Singleton
-    fun provideWikipediaApiService(moshi: Moshi): WikipediaApiService {
-        val userAgentInterceptor = okhttp3.Interceptor { chain ->
+    @WikipediaClient
+    fun provideWikipediaOkHttpClient(): OkHttpClient {
+        val userAgentInterceptor = Interceptor { chain ->
             val requestWithUserAgent = chain.request().newBuilder()
-                .header("User-Agent", "WatchOrderEngine/1.0 (Android app; contact: app-support@example.com)")
+                .header("User-Agent", "WatchOrderEngine/1.0 (https://github.com/Parth-1508/Watch-Order_Engine; contact: parth.p.pate07@gmail.com)")
                 .build()
             chain.proceed(requestWithUserAgent)
         }
@@ -159,12 +171,17 @@ object NetworkModule {
             level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
             else HttpLoggingInterceptor.Level.NONE
         }
-        val client = OkHttpClient.Builder()
+        return OkHttpClient.Builder()
             .addInterceptor(userAgentInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideWikipediaApiService(@WikipediaClient client: OkHttpClient, moshi: Moshi): WikipediaApiService {
         return Retrofit.Builder()
             .baseUrl("https://en.wikipedia.org/api/rest_v1/")
             .client(client)
@@ -173,32 +190,24 @@ object NetworkModule {
             .create(WikipediaApiService::class.java)
     }
 
-    /**
-     * Jikan v4 is a public REST mirror of MyAnimeList — no auth token required.
-     *
-     * WHY A DEDICATED RETROFIT INSTANCE:
-     *   - Different base URL from TMDB and Wikipedia.
-     *   - No auth interceptor (TMDB's TmdbAuthInterceptor must not be applied).
-     *   - Lighter OkHttpClient (no disk cache — Jikan episode filler flags rarely
-     *     change, but the data set is small enough that re-fetching on app restart
-     *     is acceptable and avoids cache-staleness bugs).
-     *
-     * RATE LIMIT: 3 req/sec.  The caller (MediaDetailViewModel) issues at most
-     * one search + a handful of episode pages per show load, well within limits.
-     */
     @Provides
     @Singleton
-    fun provideJikanApiService(moshi: Moshi): JikanApiService {
+    @JikanClient
+    fun provideJikanOkHttpClient(): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
-                    else HttpLoggingInterceptor.Level.NONE
+            else HttpLoggingInterceptor.Level.NONE
         }
-        val client = OkHttpClient.Builder()
+        return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
-            // Generous timeouts: Jikan can be slow under heavy load (it's community-run).
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideJikanApiService(@JikanClient client: OkHttpClient, moshi: Moshi): JikanApiService {
         return Retrofit.Builder()
             .baseUrl("https://api.jikan.moe/v4/")
             .client(client)
@@ -209,5 +218,12 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideGeminiService(): GeminiService = GeminiService()
+    @GeminiClient
+    fun provideGeminiOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
 }

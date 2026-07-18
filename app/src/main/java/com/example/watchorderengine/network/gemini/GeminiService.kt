@@ -1,18 +1,17 @@
 package com.example.watchorderengine.network.gemini
 
+import com.example.watchorderengine.di.GeminiClient
 import com.example.watchorderengine.BuildConfig
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -110,20 +109,13 @@ sealed interface GeminiResult {
  * character lore when other sources are insufficient.
  */
 @Singleton
-class GeminiService @Inject constructor() {
-
-    private val moshi: Moshi = Moshi.Builder()
-        .addLast(KotlinJsonAdapterFactory())
-        .build()
+class GeminiService @Inject constructor(
+    private val moshi: Moshi,
+    @GeminiClient private val client: OkHttpClient
+) {
 
     private val rawItemListAdapter =
         moshi.adapter<List<RawMediaItem>>(Types.newParameterizedType(List::class.java, RawMediaItem::class.java))
-
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
 
     private val mediaTypeJson = "application/json; charset=utf-8".toMediaType()
 
