@@ -1065,77 +1065,75 @@ class MediaRepository @Inject constructor(
 
         try {
             updateProgress("Connecting to Engine...", 0.05f)
+            
+            // 0. IMPORTANT: Start with a clean slate to prevent account pollution
+            db.userProgressDao().clearAll()
 
             // 1. Sync Watchlist
             try {
-                updateProgress("Syncing Watchlist...", 0.15f)
+                updateProgress("Syncing Watchlist...", 0.20f)
                 val watchlistSnap = firestore.collection("users").document(uid)
                     .collection("watchlist").get().await()
-                val watchlist = watchlistSnap.documents.mapNotNull { doc ->
+                
+                watchlistSnap.documents.forEach { doc ->
                     try {
-                        doc.toObject(UserProgressEntity::class.java)?.apply {
-                            // Manual extraction for maximum robustness
-                            mediaId = doc.getString("mediaId") ?: doc.getString("media_id") ?: doc.id
-                            trackingState = doc.getString("trackingState") ?: doc.getString("tracking_state") ?: "PLANNED"
-                            userRating = doc.getDouble("userRating")?.toFloat() ?: doc.getDouble("user_rating")?.toFloat()
-                            
-                            if (currentSeasonNumber == 0) {
-                                currentSeasonNumber = doc.getLong("currentSeasonNumber")?.toInt() 
-                                    ?: doc.getLong("current_season_number")?.toInt() ?: 0
-                            }
-                            if (currentEpisodeNumber == 0) {
-                                currentEpisodeNumber = doc.getLong("currentEpisodeNumber")?.toInt()
-                                    ?: doc.getLong("current_episode_number")?.toInt() ?: 0
-                            }
-                        }
+                        val mId = doc.getString("mediaId") ?: doc.getString("media_id") ?: doc.id
+                        val state = doc.getString("trackingState") ?: doc.getString("tracking_state") ?: "PLANNED"
+                        
+                        val entity = UserProgressEntity(
+                            mediaId = mId,
+                            trackingState = state,
+                            currentSeasonNumber = doc.getLong("currentSeasonNumber")?.toInt() ?: doc.getLong("current_season_number")?.toInt() ?: 0,
+                            currentEpisodeNumber = doc.getLong("currentEpisodeNumber")?.toInt() ?: doc.getLong("current_episode_number")?.toInt() ?: 0,
+                            userRating = doc.getDouble("userRating")?.toFloat() ?: doc.getDouble("user_rating")?.toFloat(),
+                            userNotes = doc.getString("userNotes") ?: doc.getString("user_notes") ?: "",
+                            priorityTag = doc.getString("priorityTag") ?: doc.getString("priority_tag") ?: "NONE",
+                            updatedAt = doc.getLong("updatedAt") ?: doc.getLong("updated_at") ?: System.currentTimeMillis()
+                        )
+                        db.userProgressDao().upsert(entity)
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to parse watchlist item ${doc.id}: ${e.message}")
-                        null
                     }
                 }
-                Log.d(TAG, "Sync: found ${watchlist.size} watchlist items in cloud")
-                watchlist.forEach { db.userProgressDao().upsert(it) }
             } catch (e: Exception) {
                 Log.e(TAG, "Watchlist sync failed: ${e.message}")
             }
 
-            // 1.2 Sync Graph/Universe Progress (Merges with watchlist data)
+            // 1.2 Sync Graph/Universe Progress (Updates existing entities with graph data)
             try {
-                updateProgress("Restoring Graph Progress...", 0.35f)
+                updateProgress("Restoring Graph Progress...", 0.40f)
                 val progressSnap = firestore.collection("users").document(uid)
                     .collection("progress").get().await()
-                val universeProgress = progressSnap.documents.mapNotNull { doc ->
+                
+                progressSnap.documents.forEach { doc ->
                     try {
-                        doc.toObject(UserProgress::class.java)?.apply {
-                            if (mediaId.isBlank()) mediaId = doc.getString("mediaId") ?: doc.getString("media_id") ?: doc.id
-                            if (userRating == null) userRating = doc.getDouble("userRating")?.toFloat() ?: doc.getDouble("user_rating")?.toFloat()
+                        val mId = doc.getString("mediaId") ?: doc.getString("media_id") ?: doc.id
+                        if (mId.isBlank()) return@forEach
+
+                        val existing = db.userProgressDao().getByMediaId(mId)
+                        
+                        // If it's a graph-only show, we create it. 
+                        // If it's already in watchlist, we just add the graph specific fields.
+                        val updatedEntity = (existing ?: UserProgressEntity(mediaId = mId)).copy(
+                            completedNodeIds = doc.get("completed_node_ids") as? List<String> ?: emptyList(),
+                            activeRoute = doc.getString("active_route"),
+                            spoilerShieldEnabled = doc.getBoolean("spoiler_shield_enabled") ?: false
+                        )
+                        
+                        // Preserve existing trackingState if it's more specific than Firestore's generic progress record
+                        if (existing != null) {
+                            val cloudState = doc.getString("trackingState") ?: doc.getString("tracking_state")
+                            if (cloudState != null) {
+                                updatedEntity.trackingState = cloudState
+                            }
+                        } else {
+                            updatedEntity.trackingState = doc.getString("trackingState") ?: doc.getString("tracking_state") ?: "PLANNED"
                         }
+
+                        db.userProgressDao().upsert(updatedEntity)
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to parse universe progress ${doc.id}: ${e.message}")
-                        null
                     }
-                }
-                Log.d(TAG, "Sync: found ${universeProgress.size} universe progress records")
-                universeProgress.forEach { up ->
-                    if (up.mediaId.isBlank()) return@forEach
-
-                    val existing = db.userProgressDao().getByMediaId(up.mediaId)
-                    val entity = UserProgressEntity(
-                        mediaId = up.mediaId,
-                        trackingState = up.trackingState.name,
-                        currentSeasonNumber = if (up.currentSeasonNumber > 0) up.currentSeasonNumber else (existing?.currentSeasonNumber ?: 0),
-                        currentEpisodeNumber = if (up.currentEpisodeNumber > 0) up.currentEpisodeNumber else (existing?.currentEpisodeNumber ?: 0),
-                        userRating = up.userRating ?: existing?.userRating,
-                        startedDate = up.startedDate ?: existing?.startedDate,
-                        completedDate = up.completedDate ?: existing?.completedDate,
-                        updatedAt = if (up.updatedAt > 0) up.updatedAt else (existing?.updatedAt ?: System.currentTimeMillis()),
-                        userNotes = up.userNotes.ifBlank { existing?.userNotes ?: "" },
-                        priorityTag = up.priorityTag.name,
-                        completedNodeIds = up.completed_node_ids.ifEmpty { existing?.completedNodeIds ?: emptyList() },
-                        activeRoute = up.active_route ?: existing?.activeRoute,
-                        spoilerShieldEnabled = up.spoiler_shield_enabled
-                    )
-                    db.userProgressDao().upsert(entity)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Graph progress sync failed: ${e.message}")
@@ -1143,23 +1141,29 @@ class MediaRepository @Inject constructor(
 
             // 1.5 Backfill missing media metadata
             try {
-                val watchlistIds = db.userProgressDao().getAll().map { it.mediaId }
-                Log.d(TAG, "Sync: Backfilling metadata for ${watchlistIds.size} tracked media items")
+                val trackedItems = db.userProgressDao().getAll()
+                val watchlistIds = trackedItems.map { it.mediaId }
                 
                 if (watchlistIds.isNotEmpty()) {
                     val totalToBackfill = watchlistIds.size
-                    watchlistIds.chunked(10).forEachIndexed { chunkIndex, batch ->
-                        val currentProgress = 0.45f + (chunkIndex.toFloat() / (watchlistIds.size / 10f).coerceAtLeast(1f)) * 0.3f
-                        updateProgress("Fetching Metadata (${chunkIndex * 10}/$totalToBackfill)...", currentProgress)
+                    watchlistIds.chunked(8).forEachIndexed { chunkIndex, batch ->
+                        val currentProgress = 0.50f + (chunkIndex.toFloat() / (watchlistIds.size / 8f).coerceAtLeast(1f)) * 0.35f
+                        updateProgress("Fetching Metadata ($totalToBackfill items)...", currentProgress)
                         
                         supervisorScope {
                             batch.map { mediaId ->
                                 async {
-                                    if (db.mediaDao().getById(mediaId) == null) {
-                                        val tmdbId = extractTmdbId(mediaId)
-                                        if (tmdbId != null) {
-                                            fetchAndCacheMediaOnly(tmdbId, mediaId)
+                                    // Ensure it's a real media ID (starts with tmdb_ or anilist_)
+                                    if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) {
+                                        if (db.mediaDao().getById(mediaId) == null) {
+                                            val tmdbId = extractTmdbId(mediaId)
+                                            if (tmdbId != null) {
+                                                fetchAndCacheMediaOnly(tmdbId, mediaId)
+                                            }
                                         }
+                                    } else {
+                                        // Cleanup invalid/wrong IDs that shouldn't be here
+                                        db.userProgressDao().deleteByMediaId(mediaId)
                                     }
                                 }
                             }.forEach { it.await() }
