@@ -476,7 +476,7 @@ class MediaRepository @Inject constructor(
                     id = "${mediaId}_s${seasonNumber}e${ep.episodeNumber}",
                     seasonId = seasonId, mediaId = mediaId,
                     episodeNumber = ep.episodeNumber, seasonNumber = seasonNumber,
-                    absoluteEpisodeNumber = offset + idx + 1,   // offset from ACTUAL count
+                    absoluteEpisodeNumber = if (seasonNumber > 0) offset + idx + 1 else 0,
                     title = ep.name ?: "Episode ${ep.episodeNumber}",
                     overview = ep.overview ?: "", airDate = ep.airDate, runtime = ep.runtime,
                     stillUrl = TmdbConfig.buildImageUrl(ep.stillPath, TmdbConfig.PosterSize.HD),

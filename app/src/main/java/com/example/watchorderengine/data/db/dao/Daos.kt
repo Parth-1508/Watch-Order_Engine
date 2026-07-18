@@ -192,7 +192,7 @@ interface EpisodeWatchedDao {
     @Query("""
         INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
         SELECT id, mediaId, :timestamp FROM episodes
-        WHERE mediaId = :mediaId AND absoluteEpisodeNumber <= :upToAbsoluteNumber
+        WHERE mediaId = :mediaId AND absoluteEpisodeNumber <= :upToAbsoluteNumber AND seasonNumber > 0
     """)
     suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int, timestamp: Long)
 
@@ -200,7 +200,7 @@ interface EpisodeWatchedDao {
     @Query("""
         INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
         SELECT id, mediaId, :timestamp FROM episodes
-        WHERE mediaId = :mediaId
+        WHERE mediaId = :mediaId AND seasonNumber > 0
     """)
     suspend fun markAllAsWatched(mediaId: String, timestamp: Long)
 }
