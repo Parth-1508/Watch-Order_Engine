@@ -209,6 +209,35 @@ data class StoryArc(
     val synopsis: String
 )
 
+// ─── Sync Progress ───────────────────────────────────────────────────────────
+
+data class SyncProgress(
+    val stage: String,
+    val progress: Float,
+    val fact: String
+)
+
+val MOVIE_FACTS = listOf(
+    "The first movie ever made was only 2 seconds long.",
+    "Godzilla has appeared in more than 30 films over 60 years.",
+    "In 'The Matrix', the green code is actually sushi recipes.",
+    "The voice actors of Mickey and Minnie Mouse were married in real life.",
+    "Toto from 'The Wizard of Oz' earned more than some human actors.",
+    "Olaf’s lines in 'Frozen' were almost entirely improvised.",
+    "Raptor sounds in 'Jurassic Park' are actually tortoises mating.",
+    "Interstellar's black hole was so accurate it led to scientific papers.",
+    "Harrison Ford was a carpenter before becoming Han Solo.",
+    "The carpet in 'The Shining' and 'Toy Story' has the same pattern.",
+    "Psycho was the first American film to show a flushing toilet.",
+    "The character 'Jar Jar Binks' was inspired by Goofy.",
+    "The ' Scream ' mask was inspired by a painting by Edvard Munch.",
+    "Gal Gadot was 5 months pregnant while filming Wonder Woman reshoots.",
+    "Pulp Fiction's budget was mostly spent on actor salaries.",
+    "The movie 'Gravity' was more expensive than India's Mars mission.",
+    "The word 'dude' is only said once in 'The Big Lebowski'.",
+    "Terminator’s famous line was almost 'I will come back'."
+)
+
 // ─── User Progress ────────────────────────────────────────────────────────────
 
 @Serializable

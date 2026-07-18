@@ -2,6 +2,7 @@ package com.example.watchorderengine.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.watchorderengine.data.model.SyncProgress
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.ReviewRepository
@@ -10,11 +11,14 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -32,34 +36,27 @@ class NavViewModel @Inject constructor(
     val connectivityStatus: StateFlow<ConnectivityObserver.Status> = connectivityObserver.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ConnectivityObserver.Status.Available)
 
-    suspend fun syncDataOnLogin() {
-        val user = auth.currentUser
-        if (user != null) {
-            // 1. Check local username
-            val currentUsername = userPrefs.username.first()
-            
-            // 2. Try to sync from Firestore first (Our primary source of truth)
-            try {
-                val doc = firestore.collection("users").document(user.uid)
-                    .collection("profile").document("metadata").get().await()
-                val cloudName = doc.getString("username")
-                if (!cloudName.isNullOrBlank()) {
-                    userPrefs.updateUsername(cloudName!!)
-                } else if (!user.displayName.isNullOrBlank() && (currentUsername == "Player One" || currentUsername == "Guest")) {
-                    // Fallback to Firebase displayName only if Firestore is empty
-                    userPrefs.updateUsername(user.displayName!!)
-                }
-            } catch (e: Exception) {
-                // Firestore fetch failed, fallback to displayName if local is default
-                if (!user.displayName.isNullOrBlank() && (currentUsername == "Player One" || currentUsername == "Guest")) {
-                    userPrefs.updateUsername(user.displayName!!)
+    private val _syncProgress = MutableStateFlow<SyncProgress?>(null)
+    val syncProgress: StateFlow<SyncProgress?> = _syncProgress.asStateFlow()
+
+    fun syncDataOnLogin(onComplete: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val user = auth.currentUser
+            if (user != null) {
+                try {
+                    mediaRepository.syncAllFromCloud { progress ->
+                        _syncProgress.value = progress
+                    }
+                    reviewRepository.syncReviewsFromFirestore()
+                } catch (e: Exception) {
+                    android.util.Log.e("NavViewModel", "Sync failed", e)
                 }
             }
-
-            user.photoUrl?.toString()?.let { userPrefs.updateAvatarUrl(it) }
+            // Ensure UI thread for navigation
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
         }
-        mediaRepository.syncAllFromCloud()
-        reviewRepository.syncReviewsFromFirestore()
     }
 
     fun logout() {

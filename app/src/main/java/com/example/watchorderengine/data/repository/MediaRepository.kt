@@ -939,13 +939,13 @@ class MediaRepository @Inject constructor(
             otherVariants.forEach { db.userProgressDao().deleteByMediaId(it) }
 
             val current = db.userProgressDao().getProgress(mediaId)
-            val entity = UserProgressEntity(
-                mediaId = mediaId, 
+            val entity = current?.copy(
                 trackingState = state.name,
-                userRating   = current?.userRating,
-                userNotes    = current?.userNotes    ?: "",
-                priorityTag  = current?.priorityTag  ?: "NONE",
-                updatedAt    = System.currentTimeMillis()
+                updatedAt = System.currentTimeMillis()
+            ) ?: UserProgressEntity(
+                mediaId = mediaId,
+                trackingState = state.name,
+                updatedAt = System.currentTimeMillis()
             )
             db.userProgressDao().upsert(entity)
 
@@ -1054,19 +1054,39 @@ class MediaRepository @Inject constructor(
      * Synchronizes all user data from Firestore to the local Room database.
      * Call this after a successful login.
      */
-    suspend fun syncAllFromCloud(): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun syncAllFromCloud(
+        onProgress: (SyncProgress) -> Unit = {}
+    ): Result<Unit> = withContext(Dispatchers.IO) {
         val uid = auth.currentUser?.uid ?: return@withContext Result.failure(Exception("Not authenticated"))
         
+        fun updateProgress(stage: String, progress: Float) {
+            onProgress(SyncProgress(stage, progress, MOVIE_FACTS.random()))
+        }
+
         try {
+            updateProgress("Connecting to Engine...", 0.05f)
+
             // 1. Sync Watchlist
             try {
+                updateProgress("Syncing Watchlist...", 0.15f)
                 val watchlistSnap = firestore.collection("users").document(uid)
                     .collection("watchlist").get().await()
                 val watchlist = watchlistSnap.documents.mapNotNull { doc ->
                     try {
                         doc.toObject(UserProgressEntity::class.java)?.apply {
-                            if (mediaId.isBlank()) mediaId = doc.getString("media_id") ?: doc.id
-                            if (userRating == null) userRating = doc.getDouble("user_rating")?.toFloat()
+                            // Manual extraction for maximum robustness
+                            mediaId = doc.getString("mediaId") ?: doc.getString("media_id") ?: doc.id
+                            trackingState = doc.getString("trackingState") ?: doc.getString("tracking_state") ?: "PLANNED"
+                            userRating = doc.getDouble("userRating")?.toFloat() ?: doc.getDouble("user_rating")?.toFloat()
+                            
+                            if (currentSeasonNumber == 0) {
+                                currentSeasonNumber = doc.getLong("currentSeasonNumber")?.toInt() 
+                                    ?: doc.getLong("current_season_number")?.toInt() ?: 0
+                            }
+                            if (currentEpisodeNumber == 0) {
+                                currentEpisodeNumber = doc.getLong("currentEpisodeNumber")?.toInt()
+                                    ?: doc.getLong("current_episode_number")?.toInt() ?: 0
+                            }
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to parse watchlist item ${doc.id}: ${e.message}")
@@ -1081,13 +1101,14 @@ class MediaRepository @Inject constructor(
 
             // 1.2 Sync Graph/Universe Progress (Merges with watchlist data)
             try {
+                updateProgress("Restoring Graph Progress...", 0.35f)
                 val progressSnap = firestore.collection("users").document(uid)
                     .collection("progress").get().await()
                 val universeProgress = progressSnap.documents.mapNotNull { doc ->
                     try {
                         doc.toObject(UserProgress::class.java)?.apply {
-                            if (mediaId.isBlank()) mediaId = doc.getString("media_id") ?: doc.id
-                            if (userRating == null) userRating = doc.getDouble("user_rating")?.toFloat()
+                            if (mediaId.isBlank()) mediaId = doc.getString("mediaId") ?: doc.getString("media_id") ?: doc.id
+                            if (userRating == null) userRating = doc.getDouble("userRating")?.toFloat() ?: doc.getDouble("user_rating")?.toFloat()
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to parse universe progress ${doc.id}: ${e.message}")
@@ -1124,20 +1145,26 @@ class MediaRepository @Inject constructor(
             try {
                 val watchlistIds = db.userProgressDao().getAll().map { it.mediaId }
                 Log.d(TAG, "Sync: Backfilling metadata for ${watchlistIds.size} tracked media items")
-                supervisorScope {
-                    watchlistIds.filter { db.mediaDao().getById(it) == null }
-                        .chunked(10)
-                        .forEach { batch ->
+                
+                if (watchlistIds.isNotEmpty()) {
+                    val totalToBackfill = watchlistIds.size
+                    watchlistIds.chunked(10).forEachIndexed { chunkIndex, batch ->
+                        val currentProgress = 0.45f + (chunkIndex.toFloat() / (watchlistIds.size / 10f).coerceAtLeast(1f)) * 0.3f
+                        updateProgress("Fetching Metadata (${chunkIndex * 10}/$totalToBackfill)...", currentProgress)
+                        
+                        supervisorScope {
                             batch.map { mediaId ->
                                 async {
-                                    val tmdbId = extractTmdbId(mediaId)
-                                    if (tmdbId != null) {
-                                        fetchAndCacheMediaOnly(tmdbId, mediaId)
+                                    if (db.mediaDao().getById(mediaId) == null) {
+                                        val tmdbId = extractTmdbId(mediaId)
+                                        if (tmdbId != null) {
+                                            fetchAndCacheMediaOnly(tmdbId, mediaId)
+                                        }
                                     }
                                 }
                             }.forEach { it.await() }
-                            if (watchlistIds.size > 20) kotlinx.coroutines.delay(100)
                         }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Metadata backfill failed: ${e.message}")
@@ -1145,6 +1172,7 @@ class MediaRepository @Inject constructor(
 
             // 2. Sync Episode Progress
             try {
+                updateProgress("Syncing Episode History...", 0.85f)
                 val episodeSnap = firestore.collection("users").document(uid)
                     .collection("episode_progress").get().await()
                 val episodes = episodeSnap.documents.mapNotNull { doc ->
@@ -1161,6 +1189,7 @@ class MediaRepository @Inject constructor(
 
             // 3. Sync Profile Data
             try {
+                updateProgress("Finalizing Profile...", 0.95f)
                 val profileSnap = firestore.collection("users").document(uid)
                     .collection("profile").document("metadata").get().await()
                 
@@ -1179,6 +1208,7 @@ class MediaRepository @Inject constructor(
                 Log.e(TAG, "Profile metadata sync failed: ${e.message}")
             }
 
+            updateProgress("Sync Complete!", 1.0f)
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Sync from cloud failed completely: ${e.message}", e)

@@ -154,6 +154,9 @@ fun AppNavigation() {
     val navViewModel: com.example.watchorderengine.ui.viewmodel.NavViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
+    var isSyncing by remember { mutableStateOf(false) }
+    val syncProgress by navViewModel.syncProgress.collectAsState()
+
     val navigateTopLevel: (String) -> Unit = { route ->
         navController.navigate(route) {
             popUpTo(navController.graph.findStartDestination().id) {
@@ -226,10 +229,15 @@ fun AppNavigation() {
                     OpeningScreen(
                     onEnter = {
                         scope.launch {
-                            navViewModel.syncDataOnLogin()
-                            val target = navViewModel.getInitialRoute()
-                            navController.navigate(target) {
-                                popUpTo(Screen.Opening.route) { inclusive = true }
+                            isSyncing = true
+                            navViewModel.syncDataOnLogin {
+                                scope.launch {
+                                    val target = navViewModel.getInitialRoute()
+                                    isSyncing = false
+                                    navController.navigate(target) {
+                                        popUpTo(Screen.Opening.route) { inclusive = true }
+                                    }
+                                }
                             }
                         }
                     },
@@ -245,10 +253,15 @@ fun AppNavigation() {
                     LoginScreen(
                         onLoginSuccess = {
                             scope.launch {
-                                navViewModel.syncDataOnLogin()
-                                val target = navViewModel.getInitialRoute()
-                                navController.navigate(target) {
-                                    popUpTo(Screen.Login.route) { inclusive = true }
+                                isSyncing = true
+                                navViewModel.syncDataOnLogin {
+                                    scope.launch {
+                                        val target = navViewModel.getInitialRoute()
+                                        isSyncing = false
+                                        navController.navigate(target) {
+                                            popUpTo(Screen.Login.route) { inclusive = true }
+                                        }
+                                    }
                                 }
                             }
                         },
@@ -510,6 +523,10 @@ fun AppNavigation() {
                 }
             }
         }
+    }
+
+    if (isSyncing) {
+        SyncingScreen(syncProgress = syncProgress)
     }
 }
 
