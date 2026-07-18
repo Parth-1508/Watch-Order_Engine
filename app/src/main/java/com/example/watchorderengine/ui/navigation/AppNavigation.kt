@@ -60,8 +60,9 @@ sealed class Screen(val route: String) {
     object ResetPassword      : Screen("reset-password?oobCode={oobCode}&all={all}") {
         fun route(oobCode: String) = "reset-password?oobCode=$oobCode"
     }
-    object Detail    : Screen("detail/{mediaId}") {
-        fun route(mediaId: String) = "detail/$mediaId"
+    object Detail    : Screen("detail/{mediaId}?initialSeason={initialSeason}") {
+        fun route(mediaId: String, initialSeason: Int? = null) = 
+            "detail/$mediaId" + (initialSeason?.let { "?initialSeason=$it" } ?: "")
     }
     object CharacterDetail : Screen("character/{tmdbPersonId}/{characterName}/{showTitle}/{isAnime}/{anilistId}") {
         fun route(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean, anilistId: Int? = null): String {
@@ -477,11 +478,21 @@ fun AppNavigation() {
 
                 composable(
                     route     = Screen.Detail.route,
-                    arguments = listOf(navArgument("mediaId") { type = NavType.StringType })
+                    arguments = listOf(
+                        navArgument("mediaId") { type = NavType.StringType },
+                        navArgument("initialSeason") { type = NavType.IntType; defaultValue = -1 }
+                    )
                 ) { backStackEntry ->
-                    val mediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
+                    val rawMediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
+                    // Handle embedded query params if present (e.g. from onResumeClick)
+                    val mediaId = rawMediaId.substringBefore("?")
+                    val querySeason = rawMediaId.substringAfter("initialSeason=", "").substringBefore("&").toIntOrNull()
+                    
+                    val initialSeason = querySeason ?: backStackEntry.arguments?.getInt("initialSeason")?.takeIf { it >= 0 }
+
                     MediaDetailScreen(
                         mediaId         = safeMediaId(mediaId),
+                        initialSeason   = initialSeason,
                         onBack          = { navController.popBackStack() },
                         onUniverseClick = { universeId ->
                             navController.navigate("timeline/$universeId")

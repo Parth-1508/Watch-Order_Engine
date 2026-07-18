@@ -60,7 +60,14 @@ fun HomeScreenWrapper(
         onProfileClick = onProfileClick,
         getAvatarModel = { viewModel.getAvatarModel(it) },
         nextUpItem = nextUpItem,
-        onResumeClick = { onMediaClick(it) },
+        onResumeClick = { internalId -> 
+            val season = nextUpItem?.targetSeason
+            if (season != null) {
+                onMediaClick(internalId + "?initialSeason=$season")
+            } else {
+                onMediaClick(internalId)
+            }
+        },
         recommendations = recommendations,
         trendingList = trendingList,
         recentlyReleased = recentlyReleased

@@ -233,7 +233,8 @@ class HomeViewModel @Inject constructor(
                     episodeLabel    = "Movie",
                     posterUrl       = mostRecent.posterUrl,
                     backdropUrl     = mostRecent.backdropUrl,
-                    progressPercent = 0
+                    progressPercent = 0,
+                    targetSeason    = null
                 )
             } else {
                 val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
@@ -262,7 +263,8 @@ class HomeViewModel @Inject constructor(
                         backdropUrl = highResBackdrop,
                         progressPercent = (watchedNormalized.size * 100 / episodes
                             .filter { it.seasonNumber > 0 }
-                            .size.coerceAtLeast(1))
+                            .size.coerceAtLeast(1)),
+                        targetSeason = nextEp.seasonNumber
                     )
                 } else {
                     _nextUp.value = null

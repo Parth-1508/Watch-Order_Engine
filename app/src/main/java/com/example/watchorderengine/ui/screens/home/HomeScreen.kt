@@ -45,6 +45,7 @@ data class NextUpItem(
     val posterUrl: String?,
     val backdropUrl: String?,
     val progressPercent: Int = 0,
+    val targetSeason: Int? = null,
 )
 
 @Composable

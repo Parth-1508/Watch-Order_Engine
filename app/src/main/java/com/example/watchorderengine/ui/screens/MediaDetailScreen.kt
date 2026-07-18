@@ -54,6 +54,7 @@ import com.example.watchorderengine.ui.viewmodel.MediaDetailViewModel
 @Composable
 fun MediaDetailScreen(
     mediaId: String,
+    initialSeason: Int? = null,
     onBack: () -> Unit,
     onUniverseClick: (String) -> Unit = {},
     onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit = { _, _, _, _, _ -> },
@@ -72,8 +73,7 @@ fun MediaDetailScreen(
     val aggregatedReviews by viewModel.aggregatedReviews.collectAsStateWithLifecycle()
 
     LaunchedEffect(mediaId) {
-        android.util.Log.d("MediaDetail", "Loading mediaId: $mediaId")
-        viewModel.loadMediaDetail(mediaId)
+        viewModel.loadMediaDetail(mediaId, initialSeason = initialSeason)
     }
     
     val episodesBySeason by viewModel.episodes.collectAsStateWithLifecycle()
@@ -183,7 +183,23 @@ private fun DetailContent(
     val theme = LocalAppTheme.current
     val initialTab = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) "chronology" else "episodes"
     var activeTab by remember { mutableStateOf(initialTab) }
-    var selectedSeason by remember { mutableIntStateOf(detail.seasons.firstOrNull()?.seasonNumber ?: 1) }
+    
+    // Default to initialSeason if provided, else S1 if exists, else first available
+    val defaultSeason = remember(detail) {
+        detail.seasons.find { it.seasonNumber == 1 }?.seasonNumber
+            ?: detail.seasons.find { it.seasonNumber > 0 }?.seasonNumber
+            ?: detail.seasons.firstOrNull()?.seasonNumber 
+            ?: 1
+    }
+    var selectedSeason by remember { mutableIntStateOf(defaultSeason) }
+    
+    // Sync UI state if ViewModel loaded a different season (e.g. from Resume)
+    val currentSeasonInVm = episodes.firstOrNull()?.seasonNumber
+    LaunchedEffect(currentSeasonInVm) {
+        if (currentSeasonInVm != null && currentSeasonInVm != selectedSeason) {
+            selectedSeason = currentSeasonInVm
+        }
+    }
 
     val watchedCount = detail.userProgress?.totalEpisodesWatched ?: 0
     val totalEps = detail.numberOfEpisodes ?: 0
@@ -523,6 +539,7 @@ private fun DetailContent(
                             ) {
                                 items(detail.seasons) { season ->
                                     val isSelected = season.seasonNumber == selectedSeason
+                                    val label = if (season.seasonNumber == 0) "Specials" else "S${season.seasonNumber}"
                                     Surface(
                                         modifier = Modifier.clickable { 
                                             selectedSeason = season.seasonNumber
@@ -533,7 +550,7 @@ private fun DetailContent(
                                         border = if (isSelected) null else BorderStroke(1.dp, theme.textSecondary.copy(alpha = 0.1f))
                                     ) {
                                         Text(
-                                            "S${season.seasonNumber}",
+                                            label,
                                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                                             color = if (isSelected) theme.background else theme.textSecondary,
                                             fontSize = 10.sp,
@@ -1015,7 +1032,8 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Ep ${episode.episodeNumber}", color = theme.textSecondary, fontSize = 10.sp)
+                            val prefix = if (episode.seasonNumber == 0) "Special " else "Ep "
+                            Text("$prefix${episode.episodeNumber}", color = theme.textSecondary, fontSize = 10.sp)
                             Spacer(modifier = Modifier.width(8.dp))
                             val isFiller =
                                 episode.episodeType == com.example.watchorderengine.data.model.EpisodeType.FILLER

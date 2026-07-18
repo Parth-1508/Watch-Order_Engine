@@ -84,7 +84,7 @@ class MediaDetailViewModel @Inject constructor(
     private var reviewsJob: Job? = null
     private var characterArtJob: Job? = null
 
-    fun loadMediaDetail(mediaId: String, forceRefresh: Boolean = false) {
+    fun loadMediaDetail(mediaId: String, forceRefresh: Boolean = false, initialSeason: Int? = null) {
         val sanitizedMediaId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
         if (!forceRefresh && _mediaDetail.value?.id == sanitizedMediaId) return 
         
@@ -114,10 +114,13 @@ class MediaDetailViewModel @Inject constructor(
 
                         if (needsLoad) {
                             val currentSeason = _episodes.value.firstOrNull()?.seasonNumber
-                            val initialSeason = currentSeason ?: detail.seasons.find { it.seasonNumber > 0 }?.seasonNumber
+                            val targetSeason = initialSeason 
+                                                ?: currentSeason 
+                                                ?: detail.seasons.find { it.seasonNumber == 1 }?.seasonNumber
+                                                ?: detail.seasons.find { it.seasonNumber > 0 }?.seasonNumber
                                                 ?: detail.seasons.firstOrNull()?.seasonNumber 
                                                 ?: 1
-                            loadEpisodes(sanitizedMediaId, initialSeason)
+                            loadEpisodes(sanitizedMediaId, targetSeason)
                         }
                         
                         // Look for ALL universes containing this media
