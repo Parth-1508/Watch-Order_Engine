@@ -933,6 +933,8 @@ class MediaRepository @Inject constructor(
 
             db.userProgressDao().upsert(entity)
 
+            val tmdbId = extractTmdbId(mediaId)
+
             // SYNC TO FIRESTORE: Save watchlist progress
             if (userPrefs.cloudSyncEnabled.first()) {
                 try {
