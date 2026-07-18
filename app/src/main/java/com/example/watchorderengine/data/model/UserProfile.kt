@@ -11,7 +11,6 @@ import kotlinx.serialization.json.Json
  * Firestore-backed public profile document for a single user.
  */
 data class UserProfile(
-    @DocumentId
     var userId: String = "",
 
     var displayName: String = "",

@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
+import com.example.watchorderengine.R
 import com.example.watchorderengine.data.model.UserProfile
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -34,6 +35,19 @@ class UserProfileRepository @Inject constructor(
 
     fun observeProfile(userId: String): Flow<Result<UserProfile?>> =
         callbackFlow<Result<UserProfile?>> {
+            if (userId == "woe_admin") {
+                trySend(Result.success(
+                    UserProfile(
+                        userId = "woe_admin",
+                        displayName = "Watch Order Engine",
+                        avatarUrl = "woe_internal_avatar",
+                        isStatsPublic = true
+                    )
+                ))
+                close()
+                return@callbackFlow
+            }
+
             val registration = firestore.collection(COLLECTION_USER_PROFILES)
                 .document(userId)
                 .addSnapshotListener { snapshot, error ->
@@ -54,6 +68,17 @@ class UserProfileRepository @Inject constructor(
         }.flowOn(Dispatchers.IO)
 
     suspend fun getProfile(userId: String): Result<UserProfile?> = withContext(Dispatchers.IO) {
+        if (userId == "woe_admin") {
+            return@withContext Result.success(
+                UserProfile(
+                    userId = "woe_admin",
+                    displayName = "Watch Order Engine",
+                    avatarUrl = "woe_internal_avatar",
+                    isStatsPublic = true,
+                    isFavoritesPublic = false
+                )
+            )
+        }
         runCatching {
             firestore.collection(COLLECTION_USER_PROFILES)
                 .document(userId)
@@ -109,6 +134,7 @@ class UserProfileRepository @Inject constructor(
      */
     fun getAvatarModel(url: String?): Any? {
         if (url == null) return null
+        if (url == "woe_internal_avatar") return R.drawable.ic_launcher_foreground
         return if (url.startsWith("data:image/jpeg;base64,")) {
             try {
                 val base64Data = url.substringAfter("base64,")

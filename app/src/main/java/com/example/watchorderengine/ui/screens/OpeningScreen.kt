@@ -34,9 +34,9 @@ import com.example.watchorderengine.ui.theme.LocalAppTheme
 fun OpeningScreen(
     onEnter: () -> Unit
 ) {
-    // Lock to default "Engine" colors instead of using theme.accent
-    val engineAccent = Color(0xFFFFBF3C) // WatchOrderColors.AccentGold
-    val engineSurface = Color(0xFF141B2D) // WatchOrderColors.CardSurface
+    // Colors matching the new logo branding
+    val engineAccent = Color(0xFFFFC300) 
+    val engineSurface = Color(0xFF0B0D14)
     
     val infiniteTransition = rememberInfiniteTransition(label = "opening")
     
@@ -106,12 +106,11 @@ fun OpeningScreen(
                     shadowElevation = 20.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            "WO",
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Black,
-                            fontStyle = FontStyle.Italic,
-                            color = Color.White
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_launcher_foreground),
+                            contentDescription = "Watch Order Engine Logo",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(64.dp)
                         )
                     }
                 }

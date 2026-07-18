@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import androidx.paging.filter
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.repository.MediaRepository
@@ -71,12 +72,17 @@ class DiscoveryViewModel @Inject constructor(
     val platformFilter: StateFlow<PlatformFilterState> = _platformFilter.asStateFlow()
 
     private val _swipedIds = MutableStateFlow<Set<String>>(emptySet())
+    val swipedIds: StateFlow<Set<String>> = _swipedIds.asStateFlow()
 
     val pagingData: Flow<PagingData<MediaSummary>> = combine(
         _activeCategory,
-        _platformFilter
-    ) { category, filter ->
+        _platformFilter,
+        _swipedIds
+    ) { category, filter, swiped ->
         repository.getDiscoveryStream(category, filter.selectedProviderIds)
+            .map { pagingData ->
+                pagingData.filter { it.id !in swiped }
+            }
     }.flattenMerge()
         .cachedIn(viewModelScope)
 

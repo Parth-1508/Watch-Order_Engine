@@ -220,7 +220,7 @@ object PredefinedTimelines {
             postId = postId,
             userId = "woe_admin",
             authorName = "Watch Order Engine",
-            authorAvatarUrl = "https://ui-avatars.com/api/?name=WO&background=141B2D&color=fff&bold=true",
+            authorAvatarUrl = "woe_internal_avatar",
             universeTitle = title,
             universeDescription = description,
             bannerPosterUrl = nodes.firstOrNull { !it.posterUrl.isNullOrBlank() }?.posterUrl,

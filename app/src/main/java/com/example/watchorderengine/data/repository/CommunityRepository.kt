@@ -70,11 +70,17 @@ class CommunityRepository @Inject constructor(
 
                 // Merge logic: Predefined always at top.
                 // If a predefined post is found in the Firestore results (fetchedPosts),
-                // use the Firestore version as the source of truth for likes/state.
-                // Otherwise, use the local definition (starts at 0 likes).
+                // use the local definition for identity (avatar, author) but the 
+                // Firestore version for dynamic state (likes).
                 val predefinedIds = predefined.map { it.postId }.toSet()
                 predefined.map { p ->
-                    fetchedPosts.find { it.postId == p.postId } ?: p
+                    val fetched = fetchedPosts.find { it.postId == p.postId }
+                    if (fetched != null) {
+                        p.copy(
+                            likesCount = fetched.likesCount,
+                            likedByUsers = fetched.likedByUsers
+                        )
+                    } else p
                 } + fetchedPosts.filter { it.postId !in predefinedIds }
             } ?: predefined
 

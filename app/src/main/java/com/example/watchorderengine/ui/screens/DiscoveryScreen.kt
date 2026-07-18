@@ -50,13 +50,17 @@ fun DiscoveryScreen(
     val isLoading = pagingItems.loadState.refresh is androidx.paging.LoadState.Loading
     val activeCategory by viewModel.activeCategory.collectAsStateWithLifecycle()
     val platformFilter by viewModel.platformFilter.collectAsStateWithLifecycle()
+    val swipedIds by viewModel.swipedIds.collectAsStateWithLifecycle()
 
     // Create a local deck from paging items
     // We only show a few items at a time to keep the stack performance high
-    val deck = remember(pagingItems.itemCount, pagingItems.loadState) {
+    val deck = remember(pagingItems.itemCount, pagingItems.loadState, swipedIds) {
         val list = mutableListOf<MediaSummary>()
         for (i in 0 until pagingItems.itemCount) {
-            pagingItems[i]?.let { list.add(it) }
+            val item = pagingItems[i]
+            if (item != null && item.id !in swipedIds) {
+                list.add(item)
+            }
             if (list.size >= 5) break // Only show top 5 in stack
         }
         list.reversed() // Reverse so the first item is drawn last (on top)
