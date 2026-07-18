@@ -25,7 +25,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -36,8 +35,7 @@ import javax.inject.Singleton
 class WatchOrderRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth,
-    private val db: WatchOrderDatabase,
-    private val userPrefs: UserPreferencesRepository
+    private val db: WatchOrderDatabase
 ) {
 
     private fun universeRef(universeId: String): DocumentReference =

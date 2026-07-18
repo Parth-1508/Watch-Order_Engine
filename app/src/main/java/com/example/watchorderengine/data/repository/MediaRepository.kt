@@ -8,6 +8,9 @@ import com.example.watchorderengine.data.WatchOrderRepository
 import com.example.watchorderengine.data.graph.FranchiseAnchors
 import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.db.entity.*
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import com.example.watchorderengine.data.model.*
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.sync.SyncWorker
@@ -1477,36 +1480,32 @@ class MediaRepository @Inject constructor(
 
     // ─── Trending / Discovery ─────────────────────────────────────────────────
 
-    suspend fun getTrending(providerIds: Set<Int> = emptySet()): List<MediaSummary> = withContext(Dispatchers.IO) {
+    fun getDiscoveryStream(
+        category: TmdbConfig.DiscoveryCategory?,
+        providerIds: Set<Int>
+    ): Flow<PagingData<MediaSummary>> {
+        return Pager(
+            config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+            pagingSourceFactory = { DiscoveryPagingSource(this, category, providerIds) }
+        ).flow
+    }
+
+    suspend fun getTrendingPaged(providerIds: Set<Int> = emptySet(), page: Int = 1): List<MediaSummary> = withContext(Dispatchers.IO) {
         try {
             val results = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
             
             if (providerIds.isEmpty()) {
-                supervisorScope {
-                    val d1 = async { apiService.getTrending(page = 1) }
-                    val d2 = async { apiService.getTrending(page = 2) }
-                    val d3 = async { apiService.getTrending(page = 3) }
-                    
-                    val r1 = d1.await()
-                    val r2 = d2.await()
-                    val r3 = d3.await()
-                    
-                    if (r1.isSuccessful) r1.body()?.results?.let { results.addAll(it) }
-                    if (r2.isSuccessful) r2.body()?.results?.let { results.addAll(it) }
-                    if (r3.isSuccessful) r3.body()?.results?.let { results.addAll(it) }
-                }
+                val response = apiService.getTrending(page = page)
+                if (response.isSuccessful) response.body()?.results?.let { results.addAll(it) }
             } else {
                 val providersStr = providerIds.joinToString("|")
-                // Fetch popular on these platforms
-                val mResp = apiService.discoverMovies(providerIds = providersStr, page = 1)
-                val tResp = apiService.discoverTvShows(providerIds = providersStr, page = 1)
+                val mResp = apiService.discoverMovies(providerIds = providersStr, page = page)
+                val tResp = apiService.discoverTvShows(providerIds = providersStr, page = page)
                 
-                // Add mediaType manually since discover results don't have it (it's implicit)
                 mResp.body()?.results?.forEach { results.add(it.copy(mediaType = "movie")) }
                 tResp.body()?.results?.forEach { results.add(it.copy(mediaType = "tv")) }
             }
             
-            // Filter out future releases from trending to avoid "coming soon" clutter
             val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
             
             results.forEach { result ->
@@ -1519,12 +1518,56 @@ class MediaRepository @Inject constructor(
 
             results.filter { 
                 (it.mediaType == "movie" || it.mediaType == "tv") && 
-                !it.posterPath.isNullOrBlank() && // Must have a poster
+                !it.posterPath.isNullOrBlank() && 
                 (it.releaseDate ?: it.firstAirDate ?: "").let { date -> date.isNotBlank() && date <= todayStr }
             }
                 .mapNotNull { it.toSummary() }
                 .distinctBy { it.id }
         } catch (e: Exception) { emptyList() }
+    }
+
+    suspend fun discoverByGenrePaged(
+        category: TmdbConfig.DiscoveryCategory,
+        providerIds: Set<Int> = emptySet(),
+        page: Int = 1
+    ): List<MediaSummary> = withContext(Dispatchers.IO) {
+        try {
+            val providersStr = providerIds.joinToString("|").takeIf { it.isNotBlank() }
+            
+            val movieResults = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
+            val tvResults = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
+            
+            val mResp = apiService.discoverMovies(genreId = category.movieGenreId.toString(), providerIds = providersStr, page = page)
+            if (mResp.isSuccessful) mResp.body()?.results?.let { movieResults.addAll(it) }
+            
+            val tResp = apiService.discoverTvShows(genreId = category.tvGenreId.toString(), providerIds = providersStr, page = page)
+            if (tResp.isSuccessful) tResp.body()?.results?.let { tvResults.addAll(it) }
+
+            movieResults.forEach { result ->
+                val id = buildMediaId(result.id, "movie")
+                if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = true))
+            }
+            tvResults.forEach { result ->
+                val id = buildMediaId(result.id, "tv")
+                if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = false))
+            }
+
+            val movieSummaries = movieResults
+                .filter { !it.posterPath.isNullOrBlank() }
+                .mapNotNull { it.toSummary(explicitIsMovie = true) }
+            val tvSummaries    = tvResults
+                .filter { !it.posterPath.isNullOrBlank() }
+                .mapNotNull  { it.toSummary(explicitIsMovie = false) }
+
+            (movieSummaries + tvSummaries).sortedByDescending { it.voteAverage }.distinctBy { it.id }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getTrending(providerIds: Set<Int> = emptySet()): List<MediaSummary> = withContext(Dispatchers.IO) {
+        // Legacy fallback for 3 pages
+        (1..3).flatMap { getTrendingPaged(providerIds, it) }.distinctBy { it.id }
     }
 
     suspend fun getRecentlyReleased(): List<MediaSummary> = withContext(Dispatchers.IO) {
@@ -1585,56 +1628,8 @@ class MediaRepository @Inject constructor(
         category: TmdbConfig.DiscoveryCategory,
         providerIds: Set<Int> = emptySet()
     ): List<MediaSummary> = withContext(Dispatchers.IO) {
-        try {
-            val providersStr = providerIds.joinToString("|").takeIf { it.isNotBlank() }
-            
-            // If providers are selected, fetch 2 pages to ensure we have enough "Great" shows
-            val pagesToFetch = if (providerIds.isNotEmpty()) 2 else 1
-            
-            val movieResults = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
-            val tvResults = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
-            
-            for (page in 1..pagesToFetch) {
-                val mResp = apiService.discoverMovies(genreId = category.movieGenreId.toString(), providerIds = providersStr, page = page)
-                if (mResp.isSuccessful) mResp.body()?.results?.let { movieResults.addAll(it) }
-                
-                val tResp = apiService.discoverTvShows(genreId = category.tvGenreId.toString(), providerIds = providersStr, page = page)
-                if (tResp.isSuccessful) tResp.body()?.results?.let { tvResults.addAll(it) }
-            }
-
-            movieResults.forEach { result ->
-                val id = buildMediaId(result.id, "movie")
-                if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = true))
-            }
-            tvResults.forEach { result ->
-                val id = buildMediaId(result.id, "tv")
-                if (db.mediaDao().getById(id) == null) db.mediaDao().upsert(result.toMinimalEntity(id, explicitIsMovie = false))
-            }
-
-            val movieSummaries = movieResults
-                .filter { !it.posterPath.isNullOrBlank() }
-                .mapNotNull { it.toSummary(explicitIsMovie = true) }
-                .distinctBy { it.id }
-            val tvSummaries    = tvResults
-                .filter { !it.posterPath.isNullOrBlank() }
-                .mapNotNull  { it.toSummary(explicitIsMovie = false) }
-                .distinctBy { it.id }
-            
-            // Interleave and ensure we have a good number of results
-            val results = movieSummaries.zip(tvSummaries) { m, t -> listOf(m, t) }.flatten() +
-                movieSummaries.drop(tvSummaries.size) + tvSummaries.drop(movieSummaries.size)
-            
-            // If we have very few results for a specific platform, try to fetch generic popular
-            if (results.size < 10 && providerIds.isNotEmpty()) {
-                val genericTrending = getTrending(providerIds)
-                (results + genericTrending).distinctBy { it.id }.take(40)
-            } else {
-                results.take(40)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "discoverByGenre failed for ${category.label}: ${e.message}")
-            emptyList()
-        }
+        // Legacy fallback for 2 pages
+        (1..2).flatMap { discoverByGenrePaged(category, providerIds, it) }.distinctBy { it.id }.take(40)
     }
 
     // ─── Profile / stats ──────────────────────────────────────────────────────

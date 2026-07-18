@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import androidx.compose.ui.res.stringResource
+import androidx.paging.compose.collectAsLazyPagingItems
+import com.example.watchorderengine.R
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.network.TmdbConfig
 import com.example.watchorderengine.ui.theme.LocalAppTheme
@@ -43,10 +46,21 @@ fun DiscoveryScreen(
     viewModel: DiscoveryViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
-    val deck by viewModel.discoveryDeck.collectAsStateWithLifecycle()
-    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val pagingItems = viewModel.pagingData.collectAsLazyPagingItems()
+    val isLoading = pagingItems.loadState.refresh is androidx.paging.LoadState.Loading
     val activeCategory by viewModel.activeCategory.collectAsStateWithLifecycle()
     val platformFilter by viewModel.platformFilter.collectAsStateWithLifecycle()
+
+    // Create a local deck from paging items
+    // We only show a few items at a time to keep the stack performance high
+    val deck = remember(pagingItems.itemCount, pagingItems.loadState) {
+        val list = mutableListOf<MediaSummary>()
+        for (i in 0 until pagingItems.itemCount) {
+            pagingItems[i]?.let { list.add(it) }
+            if (list.size >= 5) break // Only show top 5 in stack
+        }
+        list.reversed() // Reverse so the first item is drawn last (on top)
+    }
 
     Box(
         modifier = Modifier
@@ -56,7 +70,7 @@ fun DiscoveryScreen(
         if (deck.isNotEmpty()) {
             AsyncImage(
                 model = deck.last().backdropUrl ?: deck.last().posterUrl,
-                contentDescription = "Background artwork for ${deck.last().title}",
+                contentDescription = null,
                 modifier = Modifier.fillMaxSize().alpha(0.15f),
                 contentScale = ContentScale.Crop
             )
@@ -73,7 +87,7 @@ fun DiscoveryScreen(
             ) {
                 item {
                     CategoryChip(
-                        label = "All",
+                        label = stringResource(R.string.discovery_all),
                         isSelected = activeCategory == null,
                         onClick = { viewModel.selectCategory(null) }
                     )
@@ -98,7 +112,7 @@ fun DiscoveryScreen(
             ) {
                 item {
                     Text(
-                        "PLATFORMS:",
+                        stringResource(R.string.discovery_platforms),
                         color = theme.textSecondary,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Black,
@@ -121,9 +135,9 @@ fun DiscoveryScreen(
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                if (isLoading) {
+                if (isLoading && deck.isEmpty()) {
                     CircularProgressIndicator(color = theme.accent)
-                } else if (deck.isEmpty()) {
+                } else if (deck.isEmpty() && !isLoading) {
                     EmptyDiscoveryView(theme) { viewModel.resetDeck() }
                 } else {
                     deck.forEachIndexed { index, media ->
@@ -140,13 +154,13 @@ fun DiscoveryScreen(
         }
 
         // Retry UI if loading fails and deck is empty
-        if (!isLoading && deck.isEmpty() && activeCategory != null) {
+        if (pagingItems.loadState.refresh is androidx.paging.LoadState.Error && deck.isEmpty()) {
              Box(Modifier.align(Alignment.Center)) {
                  Button(
-                     onClick = { viewModel.resetDeck() },
+                     onClick = { pagingItems.retry() },
                      colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
                  ) {
-                     Text("Retry Connection", color = Color.White)
+                     Text(stringResource(R.string.discovery_retry), color = Color.White)
                  }
              }
         }
@@ -265,7 +279,7 @@ fun DiscoveryCard(
     ) {
         AsyncImage(
             model = media.posterUrl,
-            contentDescription = "Poster for ${media.title}",
+            contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
@@ -280,7 +294,7 @@ fun DiscoveryCard(
                     .clip(CircleShape)
                     .background(theme.background.copy(alpha = 0.5f))
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Not interested", tint = theme.textPrimary)
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.discovery_not_interested), tint = theme.textPrimary)
             }
         }
 
@@ -321,10 +335,10 @@ fun DiscoveryCard(
         // Action Indicators
         if (isTop && (abs(offsetX) > 100 || abs(offsetY) > 100)) {
             val label = when {
-                offsetX > 100 -> "WATCHING"
-                offsetX < -100 -> "SKIP"
-                offsetY < -100 -> "PLANNING"
-                offsetY > 100 -> "PAUSE"
+                offsetX > 100 -> stringResource(R.string.discovery_watching)
+                offsetX < -100 -> stringResource(R.string.discovery_skip)
+                offsetY < -100 -> stringResource(R.string.discovery_planning)
+                offsetY > 100 -> stringResource(R.string.discovery_pause)
                 else -> ""
             }
             val color = when {
@@ -422,14 +436,14 @@ fun EmptyDiscoveryView(theme: com.example.watchorderengine.ui.theme.AppThemeConf
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            "You're all caught up!",
+            stringResource(R.string.discovery_caught_up),
             color = theme.textPrimary,
             fontSize = 20.sp,
             fontWeight = FontWeight.Black,
             fontStyle = FontStyle.Italic
         )
         Text(
-            "Check back later, or reset to see skipped titles again.",
+            stringResource(R.string.discovery_reset_deck_desc),
             color = theme.textSecondary,
             fontSize = 13.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -440,7 +454,7 @@ fun EmptyDiscoveryView(theme: com.example.watchorderengine.ui.theme.AppThemeConf
             onClick = onReset,
             colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
         ) {
-            Text("Reset Deck", fontWeight = FontWeight.Bold, color = Color.White)
+            Text(stringResource(R.string.discovery_reset_deck_button), fontWeight = FontWeight.Bold, color = Color.White)
         }
     }
 }

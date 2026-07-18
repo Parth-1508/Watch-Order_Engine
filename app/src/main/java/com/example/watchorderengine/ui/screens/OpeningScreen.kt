@@ -26,12 +26,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.example.watchorderengine.R
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 
 @Composable
 fun OpeningScreen(
-    onEnter: () -> Unit,
-    onSkip: () -> Unit
+    onEnter: () -> Unit
 ) {
     // Lock to default "Engine" colors instead of using theme.accent
     val engineAccent = Color(0xFFFFBF3C) // WatchOrderColors.AccentGold
@@ -119,13 +120,13 @@ fun OpeningScreen(
             // Title
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("WATCH", fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = Color.White)
-                    Text("ORDER", fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = Color.White)
+                    Text(stringResource(R.string.opening_watch), fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = Color.White)
+                    Text(stringResource(R.string.opening_order), fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = Color.White)
                 }
-                Text("ENGINE", fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = engineAccent)
+                Text(stringResource(R.string.opening_engine), fontSize = 36.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = engineAccent)
                 
                 Text(
-                    "The ultimate DAG-powered ecosystem for mapping and tracking your viewing timelines.",
+                    stringResource(R.string.opening_description),
                     color = Color.Gray,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
@@ -140,10 +141,10 @@ fun OpeningScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp)
             ) {
                 items(listOf(
-                    Triple("🗺️", "Skill Tree", "Map franchise watch orders as branching visual timelines."),
-                    Triple("🃏", "Discovery Deck", "Swipe through trending media to find your next obsession."),
-                    Triple("🏆", "Player Profile", "Track viewing stats, streaks, and ratings across the cloud.")
-                )) { (emoji, title, desc) ->
+                    Triple("🗺️", R.string.opening_skill_tree_title, R.string.opening_skill_tree_desc),
+                    Triple("🃏", R.string.opening_discovery_deck_title, R.string.opening_discovery_deck_desc),
+                    Triple("🏆", R.string.opening_player_profile_title, R.string.opening_player_profile_desc)
+                )) { (emoji, titleRes, descRes) ->
                     Surface(
                         modifier = Modifier.width(180.dp),
                         shape = RoundedCornerShape(24.dp),
@@ -152,8 +153,8 @@ fun OpeningScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(emoji, fontSize = 24.sp)
-                            Text(title, color = Color.White, fontWeight = FontWeight.Black, fontSize = 14.sp)
-                            Text(desc, color = Color.Gray, fontSize = 10.sp, lineHeight = 14.sp)
+                            Text(stringResource(titleRes), color = Color.White, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                            Text(stringResource(descRes), color = Color.Gray, fontSize = 10.sp, lineHeight = 14.sp)
                         }
                     }
                 }
@@ -168,7 +169,7 @@ fun OpeningScreen(
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = engineAccent)
             ) {
-                Text("ENTER THE ENGINE", fontWeight = FontWeight.Black, letterSpacing = 2.sp, color = Color.Black)
+                Text(stringResource(R.string.opening_enter), fontWeight = FontWeight.Black, letterSpacing = 2.sp, color = Color.Black)
             }
         }
     }

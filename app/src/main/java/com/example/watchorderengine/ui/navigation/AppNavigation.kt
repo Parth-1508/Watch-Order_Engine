@@ -228,26 +228,21 @@ fun AppNavigation() {
             ) {
                 composable(Screen.Opening.route) {
                     OpeningScreen(
-                    onEnter = {
-                        scope.launch {
-                            isSyncing = true
-                            navViewModel.syncDataOnLogin {
-                                scope.launch {
-                                    val target = navViewModel.getInitialRoute()
-                                    isSyncing = false
-                                    navController.navigate(target) {
-                                        popUpTo(Screen.Opening.route) { inclusive = true }
+                        onEnter = {
+                            scope.launch {
+                                isSyncing = true
+                                navViewModel.syncDataOnLogin {
+                                    scope.launch {
+                                        val target = navViewModel.getInitialRoute()
+                                        isSyncing = false
+                                        navController.navigate(target) {
+                                            popUpTo(Screen.Opening.route) { inclusive = true }
+                                        }
                                     }
                                 }
                             }
                         }
-                    },
-                    onSkip = {
-                        navController.navigate(Screen.Login.route) {
-                            popUpTo(Screen.Opening.route) { inclusive = true }
-                        }
-                    }
-                )
+                    )
                 }
 
                 composable(Screen.Login.route) {

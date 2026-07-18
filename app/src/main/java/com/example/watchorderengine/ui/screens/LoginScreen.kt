@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.res.stringResource
+import com.example.watchorderengine.R
 import com.example.watchorderengine.ui.viewmodel.LoginViewModel
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -157,8 +159,8 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(32.dp).verticalScroll(rememberScrollState())
             ) {
-                Text("WATCH ORDER", fontSize = 32.sp, fontWeight = FontWeight.Black, color = engineAccent)
-                Text("ENGINE", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(stringResource(R.string.login_title_watch_order), fontSize = 32.sp, fontWeight = FontWeight.Black, color = engineAccent)
+                Text(stringResource(R.string.login_title_engine), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 
                 Spacer(Modifier.height(48.dp))
 
@@ -166,7 +168,7 @@ fun LoginScreen(
                     OutlinedTextField(
                         value = username,
                         onValueChange = { username = it },
-                        label = { Text("Display Name") },
+                        label = { Text(stringResource(R.string.login_display_name)) },
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = engineAccent,
@@ -183,7 +185,7 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Email") },
+                    label = { Text(stringResource(R.string.login_email)) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = engineAccent,
@@ -200,7 +202,7 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.login_password)) },
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -218,9 +220,9 @@ fun LoginScreen(
                 }
 
                 if (resetEmailSent) {
-                    Text("Link sent! Check your email.", color = Color(0xFF4ADE80), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                    Text(stringResource(R.string.login_link_sent), color = Color(0xFF4ADE80), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                     TextButton(onClick = onManualResetClick) {
-                        Text("Link not opening? Paste it here.", color = engineAccent, fontSize = 12.sp)
+                        Text(stringResource(R.string.login_link_not_opening), color = engineAccent, fontSize = 12.sp)
                     }
                 }
 
@@ -232,7 +234,7 @@ fun LoginScreen(
                     Button(
                         onClick = {
                             if (email.isBlank() || (password.isBlank() && !isSignUp)) {
-                                errorMessage = "Please fill all fields"
+                                errorMessage = context.getString(R.string.login_fill_all_fields)
                                 return@Button
                             }
                             isLoading = true
@@ -255,7 +257,7 @@ fun LoginScreen(
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = engineAccent)
                     ) {
-                        Text(if (isSignUp) "CREATE ACCOUNT" else "LOGIN", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text(if (isSignUp) stringResource(R.string.login_create_account) else stringResource(R.string.login_button_login), color = Color.Black, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(Modifier.height(16.dp))
@@ -280,7 +282,7 @@ fun LoginScreen(
                         ) {
                             Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Google", fontSize = 12.sp)
+                            Text(stringResource(R.string.login_google), fontSize = 12.sp)
                         }
 
                         OutlinedButton(
@@ -291,7 +293,7 @@ fun LoginScreen(
                         ) {
                             Icon(Icons.Outlined.Phone, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Phone", fontSize = 12.sp)
+                            Text(stringResource(R.string.login_phone), fontSize = 12.sp)
                         }
                     }
 
@@ -303,14 +305,14 @@ fun LoginScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(onClick = { isSignUp = !isSignUp; errorMessage = null; resetEmailSent = false }) {
-                            Text(if (isSignUp) "Login instead" else "Create account", color = engineAccent, fontSize = 13.sp)
+                            Text(if (isSignUp) stringResource(R.string.login_instead) else stringResource(R.string.login_create_account_small), color = engineAccent, fontSize = 13.sp)
                         }
 
                         if (!isSignUp) {
                             TextButton(
                                 enabled = !isLoading && resendTimer == 0,
                                 onClick = {
-                                    if (email.isBlank()) { errorMessage = "Enter email to reset"; return@TextButton }
+                                    if (email.isBlank()) { errorMessage = context.getString(R.string.login_enter_email_to_reset); return@TextButton }
                                     isLoading = true
                                     auth.sendPasswordResetEmail(email.trim()).addOnCompleteListener { 
                                         isLoading = false
@@ -319,7 +321,7 @@ fun LoginScreen(
                                     }
                                 }
                             ) {
-                                Text(if (resendTimer > 0) "Resend in ${resendTimer}s" else "Forgot Password?", color = Color.Gray, fontSize = 13.sp)
+                                Text(if (resendTimer > 0) stringResource(R.string.login_resend_in, resendTimer) else stringResource(R.string.login_forgot_password), color = Color.Gray, fontSize = 13.sp)
                             }
                         }
                     }
@@ -332,7 +334,7 @@ fun LoginScreen(
                             isLoading = false
                         }
                     }) {
-                        Text("Continue as Guest", color = Color.Gray)
+                        Text(stringResource(R.string.login_continue_as_guest), color = Color.Gray)
                     }
                 }
             }
@@ -345,8 +347,8 @@ fun LoginScreen(
                 containerColor = Color(0xFF141B2D),
                 titleContentColor = engineAccent,
                 textContentColor = Color.White,
-                title = { Text("Reset Link Detected", fontWeight = FontWeight.Black) },
-                text = { Text("We found a password reset link in your clipboard. Would you like to use it now?") },
+                title = { Text(stringResource(R.string.login_reset_link_detected), fontWeight = FontWeight.Black) },
+                text = { Text(stringResource(R.string.login_reset_link_text)) },
                 confirmButton = {
                     TextButton(onClick = {
                         val link = clipboardLink ?: ""
@@ -354,12 +356,12 @@ fun LoginScreen(
                         clipboardLink = null
                         onCodeDetected(code)
                     }) {
-                        Text("CONTINUE", color = engineAccent, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.login_continue), color = engineAccent, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { clipboardLink = null }) {
-                        Text("CANCEL", color = Color.Gray)
+                        Text(stringResource(R.string.login_cancel), color = Color.Gray)
                     }
                 }
             )
@@ -392,21 +394,21 @@ fun PhoneLoginView(
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
             }
-            Text("PHONE LOGIN", fontSize = 20.sp, fontWeight = FontWeight.Black, color = engineAccent)
+            Text(stringResource(R.string.login_phone_title), fontSize = 20.sp, fontWeight = FontWeight.Black, color = engineAccent)
         }
 
         Spacer(Modifier.height(32.dp))
 
         if (!isCodeSent) {
             Text(
-                "Enter your phone number with country code (e.g. +91 9876543210)",
+                stringResource(R.string.login_phone_desc),
                 color = Color.Gray, fontSize = 14.sp, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = phoneNumber,
                 onValueChange = onPhoneChange,
-                label = { Text("Phone Number") },
+                label = { Text(stringResource(R.string.login_phone_number)) },
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
@@ -427,18 +429,18 @@ fun PhoneLoginView(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 if (isLoading) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
-                else Text("SEND CODE", color = Color.Black, fontWeight = FontWeight.Bold)
+                else Text(stringResource(R.string.login_send_code), color = Color.Black, fontWeight = FontWeight.Bold)
             }
         } else {
             Text(
-                "We sent a 6-digit code to $phoneNumber",
+                stringResource(R.string.login_code_sent, phoneNumber),
                 color = Color.Gray, fontSize = 14.sp, textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = verificationCode,
                 onValueChange = onCodeChange,
-                label = { Text("Verification Code") },
+                label = { Text(stringResource(R.string.login_verification_code)) },
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
@@ -459,10 +461,10 @@ fun PhoneLoginView(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 if (isLoading) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
-                else Text("VERIFY & LOGIN", color = Color.Black, fontWeight = FontWeight.Bold)
+                else Text(stringResource(R.string.login_verify_login), color = Color.Black, fontWeight = FontWeight.Bold)
             }
             TextButton(onClick = onSendCode, enabled = !isLoading, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Resend Code", color = Color.Gray)
+                Text(stringResource(R.string.login_resend_code), color = Color.Gray)
             }
         }
 

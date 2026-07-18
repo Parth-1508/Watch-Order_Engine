@@ -256,7 +256,7 @@ class CharacterRepository @Inject constructor(
             .sortedWith(compareBy(nullsLast<String>()) { it.year })
     }
 
-    private fun nameMatches(candidate: String?, characterName: String): Boolean {
+    internal fun nameMatches(candidate: String?, characterName: String): Boolean {
         if (candidate.isNullOrBlank()) return false
         val a = candidate.lowercase()
         val b = characterName.lowercase()
@@ -315,7 +315,7 @@ class CharacterRepository @Inject constructor(
      * Checks if a Wikipedia extract actually pertains to our character/movie.
      * Prevents the "random results" issue reported for common names like "Ally".
      */
-    private fun isLoreRelevant(
+    internal fun isLoreRelevant(
         extract: String,
         characterName: String,
         mediaTitle: String,

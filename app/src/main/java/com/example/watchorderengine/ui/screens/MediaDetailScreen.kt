@@ -44,6 +44,8 @@ import com.example.watchorderengine.data.model.WatchProviderItem
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.EpisodeItem
+import androidx.compose.ui.res.stringResource
+import com.example.watchorderengine.R
 import com.example.watchorderengine.data.model.MediaDetail
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.ui.components.FactLoadingView
@@ -104,7 +106,6 @@ fun MediaDetailScreen(
                     generationSuccess = generationSuccess,
                     bulkMarkPrompt = bulkMarkPrompt,
                     showWelcomeTip = showWelcomeTip,
-                    aggregatedReviews = aggregatedReviews,
                     onDismissGenerationError = { viewModel.dismissGenerationError() },
                     onDismissGenerationSuccess = { viewModel.dismissGenerationSuccess() },
                     onBack = onBack,
@@ -115,7 +116,8 @@ fun MediaDetailScreen(
                     onUniverseClick = onUniverseClick,
                     onCharacterClick = onCharacterClick,
                     onAuthorClick = onAuthorClick,
-                    viewModel = viewModel
+                    viewModel = viewModel,
+                    initialSeason = initialSeason
                 )
             }
         }
@@ -167,7 +169,6 @@ private fun DetailContent(
     generationSuccess: Boolean,
     bulkMarkPrompt: EpisodeItem?,
     showWelcomeTip: Boolean,
-    aggregatedReviews: List<com.example.watchorderengine.data.model.ReviewItem>,
     onDismissGenerationError: () -> Unit,
     onDismissGenerationSuccess: () -> Unit,
     onBack: () -> Unit,
@@ -178,7 +179,8 @@ private fun DetailContent(
     onUniverseClick: (String) -> Unit,
     onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit,
     onAuthorClick: (String) -> Unit,
-    viewModel: MediaDetailViewModel
+    viewModel: MediaDetailViewModel,
+    initialSeason: Int? = null
 ) {
     val theme = LocalAppTheme.current
     val initialTab = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) "chronology" else "episodes"
@@ -186,6 +188,7 @@ private fun DetailContent(
     
     // Default to initialSeason if provided, else S1 if exists, else first available
     val defaultSeason = remember(detail) {
+        initialSeason ?:
         detail.seasons.find { it.seasonNumber == 1 }?.seasonNumber
             ?: detail.seasons.find { it.seasonNumber > 0 }?.seasonNumber
             ?: detail.seasons.firstOrNull()?.seasonNumber 
@@ -213,6 +216,13 @@ private fun DetailContent(
         }
     }
 
+    val tabLabels = mapOf(
+        "episodes" to R.string.detail_episodes,
+        "characters" to R.string.detail_characters,
+        "chronology" to R.string.detail_chronology,
+        "reviews" to R.string.detail_reviews
+    )
+
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -231,16 +241,16 @@ private fun DetailContent(
                         containerColor = theme.surface,
                         titleContentColor = theme.textPrimary,
                         textContentColor = theme.textSecondary,
-                        title = { Text("Mark previous episodes?") },
-                        text = { Text("You haven't marked episodes before ${bulkMarkPrompt.episodeNumber}. Do you want to mark all previous episodes as watched?") },
+                        title = { Text(stringResource(R.string.detail_mark_previous_title)) },
+                        text = { Text(stringResource(R.string.detail_mark_previous_text, bulkMarkPrompt.episodeNumber)) },
                         confirmButton = {
                             TextButton(onClick = { viewModel.confirmBulkMark(detail.id) }) {
-                                Text("Mark Episodes", color = theme.accent)
+                                Text(stringResource(R.string.detail_mark_episodes), color = theme.accent)
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { viewModel.dismissBulkMark() }) {
-                                Text("Cancel", color = theme.textSecondary)
+                                Text(stringResource(R.string.detail_cancel), color = theme.textSecondary)
                             }
                         }
                     )
@@ -288,7 +298,7 @@ private fun DetailContent(
                             onClick = {
                                 val sendIntent = android.content.Intent().apply {
                                     action = android.content.Intent.ACTION_SEND
-                                    putExtra(android.content.Intent.EXTRA_TEXT, "Check out ${detail.title} on Watch Order Engine!")
+                                    putExtra(android.content.Intent.EXTRA_TEXT, context.getString(R.string.detail_share_text, detail.title))
                                     type = "text/plain"
                                 }
                                 val shareIntent = android.content.Intent.createChooser(sendIntent, null)
@@ -472,7 +482,7 @@ private fun DetailContent(
                                 }
                         ) {
                             Text(
-                                text = tab.uppercase(),
+                                text = stringResource(tabLabels[tab] ?: R.string.app_name).uppercase(),
                                 color = if (isSelected) theme.textPrimary else theme.textSecondary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -512,7 +522,7 @@ private fun DetailContent(
                                     Icon(Icons.Default.Lightbulb, null, tint = theme.accent, modifier = Modifier.size(20.dp))
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        text = "Tip: Mark the episode you just watched, and you'll be able to mark all previous episodes at once!",
+                                        text = stringResource(R.string.detail_welcome_tip),
                                         color = theme.textSecondary,
                                         fontSize = 12.sp,
                                         modifier = Modifier.weight(1f),
@@ -577,7 +587,7 @@ private fun DetailContent(
                     } else if (episodes.isEmpty()) {
                         item {
                             Text(
-                                "No episodes found for this season.",
+                                stringResource(R.string.detail_no_episodes),
                                 color = theme.textSecondary,
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(16.dp)
@@ -591,16 +601,11 @@ private fun DetailContent(
                 }
                 "characters" -> {
                     item {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            detail.cast.take(10).forEach { cast ->
-                                CharacterRow(
-                                    cast = cast,
-                                    viewModel = viewModel,
-                                    characterArtUrl = if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME) viewModel.characterArtFor(cast.character) else null,
-                                    onClick = { onCharacterClick(cast.tmdbId, cast.character, detail.title, detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME, detail.anilistId) }
-                                )
-                            }
-                        }
+                        CharactersTab(
+                            detail = detail,
+                            onCharacterClick = onCharacterClick,
+                            viewModel = viewModel
+                        )
                     }
                 }
                 "chronology" -> {
@@ -1314,7 +1319,7 @@ private fun CharactersTab(
         }
         if (isAnime && characterArt.isEmpty()) {
             Text(
-                "Looking up character art on AniList…",
+                stringResource(R.string.detail_looking_up_characters),
                 color = theme.textSecondary,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(top = 4.dp)

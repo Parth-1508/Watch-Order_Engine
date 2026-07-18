@@ -35,7 +35,8 @@ class AnimeListImportRepositoryTest {
             userRating = 10f,
             progress = 12,
             totalEpisodes = 12,
-            source = ImportedAnimeEntry.Source.ANILIST
+            source = ImportedAnimeEntry.Source.ANILIST,
+            mediaCategory = com.example.watchorderengine.data.model.MediaCategory.ANIME
         )
         assertEquals(100, entry.anilistId)
         assertEquals(ImportedAnimeEntry.Source.ANILIST, entry.source)

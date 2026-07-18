@@ -1,3 +1,76 @@
 <resources>
     <string name="app_name">Watch Order Engine</string>
+
+    <!-- Opening Screen -->
+    <string name="opening_watch">WATCH</string>
+    <string name="opening_order">ORDER</string>
+    <string name="opening_engine">ENGINE</string>
+    <string name="opening_description">The ultimate DAG-powered ecosystem for mapping and tracking your viewing timelines.</string>
+    <string name="opening_skill_tree_title">Skill Tree</string>
+    <string name="opening_skill_tree_desc">Map franchise watch orders as branching visual timelines.</string>
+    <string name="opening_discovery_deck_title">Discovery Deck</string>
+    <string name="opening_discovery_deck_desc">Swipe through trending media to find your next obsession.</string>
+    <string name="opening_player_profile_title">Player Profile</string>
+    <string name="opening_player_profile_desc">Track viewing stats, streaks, and ratings across the cloud.</string>
+    <string name="opening_enter">ENTER THE ENGINE</string>
+
+    <!-- Media Detail Screen -->
+    <string name="detail_episodes">Episodes</string>
+    <string name="detail_characters">Characters</string>
+    <string name="detail_chronology">Chronology</string>
+    <string name="detail_reviews">Reviews</string>
+    <string name="detail_no_episodes">No episodes found for this season.</string>
+    <string name="detail_looking_up_characters">Looking up character art on AniList…</string>
+    <string name="detail_tip_title">Tip:</string>
+    <string name="detail_welcome_tip">Mark the episode you just watched, and you\'ll be able to mark all previous episodes at once!</string>
+    <string name="detail_mark_previous_title">Mark previous episodes?</string>
+    <string name="detail_mark_previous_text">You haven\'t marked episodes before %1$d. Do you want to mark all previous episodes as watched?</string>
+    <string name="detail_mark_episodes">Mark Episodes</string>
+    <string name="detail_cancel">Cancel</string>
+    <string name="detail_share_text">Check out %1$s on Watch Order Engine!</string>
+
+    <!-- Discovery Screen -->
+    <string name="discovery_platforms">PLATFORMS:</string>
+    <string name="discovery_not_interested">Not interested</string>
+    <string name="discovery_watching">WATCHING</string>
+    <string name="discovery_skip">SKIP</string>
+    <string name="discovery_planning">PLANNING</string>
+    <string name="discovery_pause">PAUSE</string>
+    <string name="discovery_caught_up">You\'re all caught up!</string>
+    <string name="discovery_reset_deck_desc">Check back later, or reset to see skipped titles again.</string>
+    <string name="discovery_reset_deck_button">Reset Deck</string>
+    <string name="discovery_retry">Retry Connection</string>
+    <string name="discovery_all">All</string>
+
+    <!-- Login Screen -->
+    <string name="login_title_watch_order">WATCH ORDER</string>
+    <string name="login_title_engine">ENGINE</string>
+    <string name="login_display_name">Display Name</string>
+    <string name="login_email">Email</string>
+    <string name="login_password">Password</string>
+    <string name="login_link_sent">Link sent! Check your email.</string>
+    <string name="login_link_not_opening">Link not opening? Paste it here.</string>
+    <string name="login_create_account">CREATE ACCOUNT</string>
+    <string name="login_button_login">LOGIN</string>
+    <string name="login_google">Google</string>
+    <string name="login_phone">Phone</string>
+    <string name="login_instead">Login instead</string>
+    <string name="login_create_account_small">Create account</string>
+    <string name="login_forgot_password">Forgot Password?</string>
+    <string name="login_resend_in">Resend in %1$ds</string>
+    <string name="login_continue_as_guest">Continue as Guest</string>
+    <string name="login_fill_all_fields">Please fill all fields</string>
+    <string name="login_enter_email_to_reset">Enter email to reset</string>
+    <string name="login_reset_link_detected">Reset Link Detected</string>
+    <string name="login_reset_link_text">We found a password reset link in your clipboard. Would you like to use it now?</string>
+    <string name="login_continue">CONTINUE</string>
+    <string name="login_cancel">CANCEL</string>
+    <string name="login_phone_title">PHONE LOGIN</string>
+    <string name="login_phone_desc">Enter your phone number with country code (e.g. +91 9876543210)</string>
+    <string name="login_phone_number">Phone Number</string>
+    <string name="login_send_code">SEND CODE</string>
+    <string name="login_code_sent">We sent a 6-digit code to %1$s</string>
+    <string name="login_verification_code">Verification Code</string>
+    <string name="login_verify_login">VERIFY &amp; LOGIN</string>
+    <string name="login_resend_code">Resend Code</string>
 </resources>
