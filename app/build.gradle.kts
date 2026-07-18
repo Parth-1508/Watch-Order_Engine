@@ -79,6 +79,7 @@ dependencies {
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.storage)
+    implementation(libs.play.services.auth)
     
     implementation(libs.javax.inject)
     implementation(libs.kotlinx.coroutines.play.services)

@@ -1180,6 +1180,8 @@ class MediaRepository @Inject constructor(
             // 3. Sync Profile Data
             try {
                 updateProgress("Finalizing Profile...", 0.95f)
+                
+                // 3.1 Private Metadata (Streak, Taste Done)
                 val profileSnap = firestore.collection("users").document(uid)
                     .collection("profile").document("metadata").get().await()
                 
@@ -1193,6 +1195,19 @@ class MediaRepository @Inject constructor(
                     userPrefs.setTasteProfileCompleted(isTasteDone)
                     userPrefs.updateStreak(lastActive, streak)
                     userPrefs.setSelectedGenres(genres.toSet())
+                }
+
+                // 3.2 Public Profile (Username, Avatar)
+                val publicProfileSnap = firestore.collection("user_profiles").document(uid).get().await()
+                if (publicProfileSnap.exists()) {
+                    val cloudName = publicProfileSnap.getString("username")
+                    val cloudAvatar = publicProfileSnap.getString("avatarUrl")
+                    if (!cloudName.isNullOrBlank()) {
+                        userPrefs.updateUsername(cloudName)
+                    }
+                    if (!cloudAvatar.isNullOrBlank()) {
+                        userPrefs.updateAvatarUrl(cloudAvatar)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Profile metadata sync failed: ${e.message}")
