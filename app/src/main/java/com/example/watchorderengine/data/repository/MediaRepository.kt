@@ -1428,12 +1428,15 @@ class MediaRepository @Inject constructor(
                 supervisorScope {
                     val d1 = async { apiService.getTrending(page = 1) }
                     val d2 = async { apiService.getTrending(page = 2) }
+                    val d3 = async { apiService.getTrending(page = 3) }
                     
                     val r1 = d1.await()
                     val r2 = d2.await()
+                    val r3 = d3.await()
                     
                     if (r1.isSuccessful) r1.body()?.results?.let { results.addAll(it) }
                     if (r2.isSuccessful) r2.body()?.results?.let { results.addAll(it) }
+                    if (r3.isSuccessful) r3.body()?.results?.let { results.addAll(it) }
                 }
             } else {
                 val providersStr = providerIds.joinToString("|")
@@ -1471,39 +1474,37 @@ class MediaRepository @Inject constructor(
         try {
             val results = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
             
-            // Define recency window: last 6 months up to today
             val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
             val now = java.util.Calendar.getInstance()
             val todayStr = sdf.format(now.time)
             
-            now.add(java.util.Calendar.MONTH, -6)
-            val sixMonthsAgoStr = sdf.format(now.time)
+            // Recency: last 3 months (Narrower window for better quality)
+            now.add(java.util.Calendar.MONTH, -3)
+            val threeMonthsAgoStr = sdf.format(now.time)
 
             supervisorScope {
-                // Fetch movies released in theaters/digital in the last 6 months (excluding future)
-                val mResp = async { 
-                    apiService.discoverMovies(
-                        sortBy = "primary_release_date.desc", 
-                        releaseDateGte = sixMonthsAgoStr,
-                        releaseDateLte = todayStr,
-                        page = 1
-                    ) 
+                // Fetch 2 pages to ensure we don't miss anything popular that was recently released
+                for (page in 1..2) {
+                    val mResp = async { 
+                        apiService.discoverMovies(
+                            sortBy = "popularity.desc", // Popular first, but within date range
+                            releaseDateGte = threeMonthsAgoStr,
+                            releaseDateLte = todayStr,
+                            page = page
+                        ) 
+                    }
+                    val tResp = async { 
+                        apiService.discoverTvShows(
+                            sortBy = "popularity.desc",
+                            airDateGte = threeMonthsAgoStr,
+                            airDateLte = todayStr,
+                            page = page
+                        ) 
+                    }
+                    
+                    mResp.await().body()?.results?.forEach { results.add(it.copy(mediaType = "movie")) }
+                    tResp.await().body()?.results?.forEach { results.add(it.copy(mediaType = "tv")) }
                 }
-                // Fetch TV shows first aired in the last 6 months
-                val tResp = async { 
-                    apiService.discoverTvShows(
-                        sortBy = "first_air_date.desc", 
-                        airDateGte = sixMonthsAgoStr,
-                        airDateLte = todayStr,
-                        page = 1
-                    ) 
-                }
-                
-                val mr = mResp.await()
-                val tr = tResp.await()
-                
-                mr.body()?.results?.forEach { results.add(it.copy(mediaType = "movie")) }
-                tr.body()?.results?.forEach { results.add(it.copy(mediaType = "tv")) }
             }
             
             results.forEach { result ->
@@ -1513,9 +1514,9 @@ class MediaRepository @Inject constructor(
             }
 
             results.distinctBy { it.id }
-                .filter { !it.posterPath.isNullOrBlank() } // Must have a poster
-                .sortedByDescending { it.releaseDate ?: it.firstAirDate ?: "" }
-                .take(20)
+                .filter { !it.posterPath.isNullOrBlank() }
+                .sortedByDescending { it.releaseDate ?: it.firstAirDate ?: "" } // Sort by date for the "Recently Released" feel
+                .take(25)
                 .mapNotNull { it.toSummary() }
         } catch (e: Exception) {
             Log.e(TAG, "getRecentlyReleased failed", e)
