@@ -187,7 +187,6 @@ class GeminiService @Inject constructor(
                 .build()
 
             try {
-                android.util.Log.d("GeminiService", "Sending sort request to Gemini (Key starts with: ${apiKey.take(6)}...)")
                 val response = client.newCall(request).execute()
                 val body = response.body?.string() ?: continue
                 
@@ -202,13 +201,11 @@ class GeminiService @Inject constructor(
                     return@withContext GeminiResult.Success(sanitizeAgainstRawItems(parsed, rawItems))
                 } else {
                     lastError = "Gemini error HTTP ${response.code}: $body"
-                    android.util.Log.e("GeminiService", "Key failed (${response.code}). Trying next key if available...")
                     if (response.code == 401 || response.code == 429) continue
                     else break
                 }
             } catch (e: Exception) {
                 lastError = "Network error: ${e.message}"
-                android.util.Log.e("GeminiService", "Network error with key. Trying next...")
                 continue
             }
         }

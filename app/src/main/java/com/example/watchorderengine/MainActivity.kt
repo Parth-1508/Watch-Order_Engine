@@ -25,7 +25,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         // Ensure user is signed in (anonymously) so repository calls don't fail
-        // FIX: Don't trigger if we are already in the middle of a reset or auth task
         if (auth.currentUser == null) {
             auth.signInAnonymously().addOnFailureListener {
                 android.util.Log.e("MainActivity", "Anonymous sign-in failed", it)

@@ -82,15 +82,12 @@ class WatchOrderRepository @Inject constructor(
                     return@addSnapshotListener 
                 }
                 
-                Log.d("WatchOrderRepo", "Fetched ${snap?.documents?.size ?: 0} documents from 'universes'")
-                
                 val universes = snap?.documents?.mapNotNull { doc ->
                     try {
                         val u = doc.toObject<Universe>()
                         if (u != null) {
                             // Ensure the ID is always set from the document ID
                             u.id = doc.id
-                            Log.d("WatchOrderRepo", "Parsed universe: ${u.name} (id=${u.id})")
                         }
                         u
                     } catch (e: Exception) {

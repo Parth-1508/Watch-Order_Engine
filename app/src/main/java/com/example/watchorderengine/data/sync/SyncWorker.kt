@@ -56,7 +56,6 @@ class SyncWorker @AssistedInject constructor(
                             completed  = task.completed,
                         ).getOrThrow()
                         db.pendingSyncTaskDao().deleteById(task.id)
-                        Log.d(SYNC_TAG, "Flushed NODE_COMPLETION $nodeId ✓")
                     }
 
                     TaskType.EPISODE_WATCHED -> {
@@ -73,7 +72,6 @@ class SyncWorker @AssistedInject constructor(
                             watched   = task.completed,
                         ).getOrThrow()
                         db.pendingSyncTaskDao().deleteById(task.id)
-                        Log.d(SYNC_TAG, "Flushed EPISODE_WATCHED $episodeId ✓")
                     }
 
                     TaskType.REVIEW_SUBMISSION -> {
@@ -85,7 +83,6 @@ class SyncWorker @AssistedInject constructor(
                         }
                         reviewRepository.syncReviewDirect(reviewId).getOrThrow()
                         db.pendingSyncTaskDao().deleteById(task.id)
-                        Log.d(SYNC_TAG, "Flushed REVIEW_SUBMISSION $reviewId ✓")
                     }
 
                     else -> {

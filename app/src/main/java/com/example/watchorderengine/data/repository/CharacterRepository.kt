@@ -302,7 +302,6 @@ class CharacterRepository @Inject constructor(
         }
 
         // 4. Gemini Fallback if Wikipedia failed or was irrelevant
-        Log.d(TAG, "Wikipedia failed for '$characterName' in '$mediaTitle' — trying Gemini fallback...")
         val geminiLore = geminiService.fetchCharacterLore(characterName, mediaTitle, actorName)
         if (geminiLore != null) {
             return Triple(geminiLore, null, "gemini")

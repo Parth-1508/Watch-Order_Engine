@@ -333,11 +333,6 @@ class MediaDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val wasWatched = episode.isWatched
             
-            // Log for Boruto debugging
-            if (sanitizedId.contains("70881")) {
-                android.util.Log.d("BorutoDebug", "Toggling episode ${episode.id} for $sanitizedId. WasWatched=$wasWatched")
-            }
-
             repository.toggleEpisodeWatched(episode.id, sanitizedId, context)
             
             // If we just marked it as watched, check if there are previous unwatched episodes
