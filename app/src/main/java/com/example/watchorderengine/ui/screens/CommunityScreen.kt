@@ -982,14 +982,44 @@ fun CommunityPostDetailSheet(
                             }
                         }
 
-                        if (isOwner) {
-                            IconButton(onClick = { showDeleteConfirm = true }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.DeleteOutline,
-                                    contentDescription = "Delete my post",
-                                    tint = theme.statusFiller,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // Import Button (Compact version next to title)
+                            Surface(
+                                onClick = onImport,
+                                modifier = Modifier.size(44.dp),
+                                shape = CircleShape,
+                                color = theme.surface.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.5f)),
+                                enabled = importState !is ImportState.Importing,
+                                tonalElevation = 2.dp
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (importState is ImportState.Importing) {
+                                        CircularProgressIndicator(
+                                            color = theme.accent, 
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.CloudDownload,
+                                            contentDescription = "Import",
+                                            tint = theme.accent,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (isOwner && !post.isOfficial) {
+                                IconButton(onClick = { showDeleteConfirm = true }) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.DeleteOutline,
+                                        contentDescription = "Delete my post",
+                                        tint = theme.statusFiller,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1033,26 +1063,6 @@ fun CommunityPostDetailSheet(
                         }
                     }
 
-                    Spacer(Modifier.height(24.dp))
-                    
-                    Button(
-                        onClick = onImport,
-                        modifier = Modifier.fillMaxWidth().height(56.dp).graphicsLayer {
-                            if (theme.isComic) rotationZ = -1f
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = theme.accent),
-                        shape = RoundedCornerShape(theme.appRadius.coerceAtLeast(12.dp)),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
-                        enabled = importState !is ImportState.Importing
-                    ) {
-                        if (importState is ImportState.Importing) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                        } else {
-                            Icon(Icons.Default.CloudDownload, null, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text("IMPORT TO MY GRAPHS", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                        }
-                    }
                 }
 
                 HorizontalDivider(color = theme.textSecondary.copy(0.1f), thickness = 1.dp)

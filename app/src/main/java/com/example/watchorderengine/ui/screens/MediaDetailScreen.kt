@@ -80,6 +80,13 @@ fun MediaDetailScreen(
     val bulkMarkPrompt by viewModel.bulkMarkPrompt.collectAsStateWithLifecycle()
     val showWelcomeTip by viewModel.showWelcomeTip.collectAsStateWithLifecycle()
 
+    LaunchedEffect(showWelcomeTip) {
+        if (showWelcomeTip) {
+            kotlinx.coroutines.delay(4000)
+            viewModel.dismissWelcomeTip()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()

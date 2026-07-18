@@ -208,8 +208,25 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideJikanApiService(@JikanClient client: OkHttpClient, moshi: Moshi): JikanApiService {
+        // BASE URL: Tenrai (api.tenrai.org), not Jikan directly.
+        //
+        // Tenrai's v1 endpoints are an intentional 1:1 mirror of the Jikan v4
+        // schema (same paths, same field names) — it exists specifically so
+        // Jikan clients can migrate with just a base URL swap, no model changes.
+        // See: https://api.tenrai.org/llms.txt
+        //
+        // Jikan itself scrapes MAL and frequently 504s under load; Tenrai serves
+        // from its own pre-cached database instead, which is why this fixes the
+        // canon/filler episode fetches (MediaRepository) and MAL review fetches
+        // (ReviewRepository) that were failing.
+        //
+        // NOTE: Tenrai has no user-data endpoints (no /users/{username}/animelist).
+        // The anime-list import feature deliberately uses its own separate
+        // Retrofit instance pointed at api.jikan.moe (see
+        // AnimeListImportRepository.buildJikanRetrofit) and is unaffected by
+        // this change — leave that one on real Jikan.
         return Retrofit.Builder()
-            .baseUrl("https://api.jikan.moe/v4/")
+            .baseUrl("https://api.tenrai.org/v1/")
             .client(client)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()

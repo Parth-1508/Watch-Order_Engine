@@ -167,8 +167,8 @@ object PredefinedTimelines {
         ),
 
         // ═══════════════════════════════════════════════════════════════════
-        // THE CONJURING UNIVERSE  — tag: "Horror"
-        // ═══════════════════════════════════════════════════════════════════
+// THE CONJURING UNIVERSE  — tag: "Horror"
+// ═══════════════════════════════════════════════════════════════════
         buildPost(
             postId = "woe_master_conjuring",
             title = "The Conjuring Universe (Chronological)",
@@ -176,30 +176,32 @@ object PredefinedTimelines {
             tags = listOf("Horror"),
             color = "8B0000",
             nodes = listOf(
-                buildNode(460465, "The Nun",                                    "MOVIE", 2018, 96, 1f, 7f, "The Nun", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
-                buildNode(951491, "The Nun II",                                 "MOVIE", 2023, 111, 2f, 9f, "The Nun", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
-                buildNode(345911, "Annabelle: Creation",                        "MOVIE", 2017, 109, 3f, 4f, "Annabelle", tags = listOf(GraphEngine.ROUTE_ALL, "ANNABELLE")),
-                buildNode(224141, "Annabelle",                                  "MOVIE", 2014, 99, 4f, 2f, "Annabelle", tags = listOf(GraphEngine.ROUTE_ALL, "ANNABELLE")),
-                buildNode(138843, "The Conjuring",                             "MOVIE", 2013, 112, 5f, 1f, "The Conjuring", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
+                buildNode(439079, "The Nun",                                    "MOVIE", 2018, 96, 1f, 7f, "The Nun", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
+                buildNode(968051, "The Nun II",                                 "MOVIE", 2023, 111, 2f, 9f, "The Nun", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
+                buildNode(396422, "Annabelle: Creation",                        "MOVIE", 2017, 109, 3f, 4f, "Annabelle", tags = listOf(GraphEngine.ROUTE_ALL, "ANNABELLE")),
+                buildNode(250546, "Annabelle",                                  "MOVIE", 2014, 99, 4f, 2f, "Annabelle", tags = listOf(GraphEngine.ROUTE_ALL, "ANNABELLE")),
+                buildNode(138843, "The Conjuring",                              "MOVIE", 2013, 112, 5f, 1f, "The Conjuring", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
                 buildNode(259693, "The Conjuring 2",                            "MOVIE", 2016, 134, 6f, 3f, "The Conjuring", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
-                buildNode(495764, "Annabelle Comes Home",                       "MOVIE", 2019, 106, 7f, 6f, "Annabelle", tags = listOf(GraphEngine.ROUTE_ALL, "ANNABELLE")),
-                buildNode(494798, "The Curse of La Llorona",                    "MOVIE", 2019, 93, 8f, 5f, "Spin-off", tags = listOf(GraphEngine.ROUTE_ALL, "SPINOFF")),
-                buildNode(497582, "The Conjuring: The Devil Made Me Do It",     "MOVIE", 2021, 112, 9f, 8f, "The Conjuring", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
+                buildNode(521029, "Annabelle Comes Home",                       "MOVIE", 2019, 106, 7f, 6f, "Annabelle", tags = listOf(GraphEngine.ROUTE_ALL, "ANNABELLE")),
+                buildNode(480414, "The Curse of La Llorona",                    "MOVIE", 2019, 93, 8f, 5f, "Spin-off", tags = listOf(GraphEngine.ROUTE_ALL, "SPINOFF")),
+                buildNode(423108, "The Conjuring: The Devil Made Me Do It",     "MOVIE", 2021, 112, 9f, 8f, "The Conjuring", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
+                buildNode(1038392, "The Conjuring: Last Rites",                 "MOVIE", 2025, 135, 10f, 10f, "The Conjuring", tags = listOf(GraphEngine.ROUTE_ALL, "CONJURING")),
             ),
             edges = listOf(
-                Edge("tmdb_m_460465", "tmdb_m_951491"),
-                Edge("tmdb_m_951491", "tmdb_m_138843"),
+                Edge("tmdb_m_439079", "tmdb_m_968051"),
+                Edge("tmdb_m_968051", "tmdb_m_138843"),
                 Edge("tmdb_m_138843", "tmdb_m_259693"),
-                Edge("tmdb_m_259693", "tmdb_m_497582"),
-                Edge("tmdb_m_345911", "tmdb_m_224141"),
-                Edge("tmdb_m_224141", "tmdb_m_495764"),
-                Edge("tmdb_m_259693", "tmdb_m_495764", "OPTIONAL"),
-                Edge("tmdb_m_259693", "tmdb_m_494798", "OPTIONAL"),
+                Edge("tmdb_m_259693", "tmdb_m_423108"),
+                Edge("tmdb_m_423108", "tmdb_m_1038392"),
+                Edge("tmdb_m_396422", "tmdb_m_250546"),
+                Edge("tmdb_m_250546", "tmdb_m_521029"),
+                Edge("tmdb_m_259693", "tmdb_m_521029", "OPTIONAL"),
+                Edge("tmdb_m_259693", "tmdb_m_480414", "OPTIONAL"),
             )
         ),
     )
 
-    // ─── Builders ───────────────────────────────────────────────────────────
+        // ─── Builders ───────────────────────────────────────────────────────────
 
     private fun chain(ids: List<String>, type: String = "REQUIRED"): List<Edge> =
         ids.zipWithNext { from, to -> Edge(from_node_id = from, to_node_id = to, type = type) }

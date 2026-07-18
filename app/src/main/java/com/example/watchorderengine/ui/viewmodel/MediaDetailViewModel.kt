@@ -285,6 +285,12 @@ class MediaDetailViewModel @Inject constructor(
                     _generationSuccess.value = true
                     // Reload to reflect changes in episode types
                     loadMediaDetail(mediaId, forceRefresh = true)
+                    
+                    // Auto-dismiss success after 4 seconds
+                    launch {
+                        kotlinx.coroutines.delay(4000)
+                        _generationSuccess.value = false
+                    }
                 }
             } finally {
                 _isAnalyzing.value = false
@@ -303,7 +309,6 @@ class MediaDetailViewModel @Inject constructor(
     fun updateTrackingState(mediaId: String, state: TrackingState?) {
         viewModelScope.launch {
             try {
-                if (state == TrackingState.COMPLETED) _isBulkSyncing.value = true
                 if (state == null) {
                     repository.removeFromWatchlist(mediaId)
                 } else {
@@ -349,15 +354,10 @@ class MediaDetailViewModel @Inject constructor(
     fun confirmBulkMark(mediaId: String) {
         val episode = _bulkMarkPrompt.value ?: return
         viewModelScope.launch {
-            try {
-                _isBulkSyncing.value = true
-                repository.markPreviousEpisodesAsWatchedSequentially(mediaId, episode.seasonNumber, episode.episodeNumber)
-                _bulkMarkPrompt.value = null
-                loadMediaDetail(mediaId, forceRefresh = true)
-                checkAutoCompletion(mediaId)
-            } finally {
-                _isBulkSyncing.value = false
-            }
+            repository.markPreviousEpisodesAsWatchedSequentially(mediaId, episode.seasonNumber, episode.episodeNumber)
+            _bulkMarkPrompt.value = null
+            loadMediaDetail(mediaId, forceRefresh = true)
+            checkAutoCompletion(mediaId)
         }
     }
 
@@ -373,28 +373,18 @@ class MediaDetailViewModel @Inject constructor(
 
     fun markSeasonAsWatched(mediaId: String, seasonNumber: Int) {
         viewModelScope.launch {
-            try {
-                _isBulkSyncing.value = true
-                repository.markSeasonAsWatched(mediaId, seasonNumber)
-                loadMediaDetail(mediaId, forceRefresh = true)
-                checkAutoCompletion(mediaId)
-            } finally {
-                _isBulkSyncing.value = false
-            }
+            repository.markSeasonAsWatched(mediaId, seasonNumber)
+            loadMediaDetail(mediaId, forceRefresh = true)
+            checkAutoCompletion(mediaId)
         }
     }
 
     fun unmarkSeasonAsWatched(mediaId: String, seasonNumber: Int) {
         viewModelScope.launch {
-            try {
-                _isBulkSyncing.value = true
-                repository.unmarkSeasonAsWatched(mediaId, seasonNumber)
-                loadMediaDetail(mediaId, forceRefresh = true)
-                // If we unmark, it shouldn't be completed anymore
-                checkAutoCompletion(mediaId)
-            } finally {
-                _isBulkSyncing.value = false
-            }
+            repository.unmarkSeasonAsWatched(mediaId, seasonNumber)
+            loadMediaDetail(mediaId, forceRefresh = true)
+            // If we unmark, it shouldn't be completed anymore
+            checkAutoCompletion(mediaId)
         }
     }
 
