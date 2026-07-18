@@ -94,21 +94,10 @@ class MediaRepository @Inject constructor(
     internal fun isTvId(mediaId: String):    Boolean = mediaId.contains("_t_")
 
     /**
-     * Returns a set of normalized episode IDs that the user has watched for this show,
-     * including history recovered from legacy ID formats.
+     * Returns a set of normalized episode IDs that the user has watched for this show.
      */
     suspend fun getNormalizedWatchedIds(mediaId: String): Set<String> = withContext(Dispatchers.IO) {
-        val tmdbId = extractTmdbId(mediaId)
-        val rawId    = tmdbId?.toString() ?: mediaId.substringAfterLast("_")
-        val legacyPrefix = "tmdb_$rawId"
-
-        buildSet {
-            addAll(db.episodeWatchedDao().getWatchedIds(mediaId))
-            addAll(db.episodeWatchedDao().getWatchedIds(legacyPrefix))
-            addAll(db.episodeWatchedDao().getWatchedIds(rawId))
-            // Also include current entity ID if different
-            db.mediaDao().getById(mediaId)?.let { addAll(db.episodeWatchedDao().getWatchedIds(it.id)) }
-        }.map { id ->
+        db.episodeWatchedDao().getWatchedIds(mediaId).map { id ->
             id.removePrefix("tmdb_m_")
               .removePrefix("tmdb_t_")
               .removePrefix("tmdb_")
@@ -930,23 +919,18 @@ class MediaRepository @Inject constructor(
 
     suspend fun updateTrackingState(mediaId: String, state: TrackingState) =
         withContext(Dispatchers.IO) {
-            val tmdbId = extractTmdbId(mediaId)
-            val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
-            val legacyPrefix = "tmdb_$rawId"
-            
-            // Clean up other variants before setting new state to prevent duplicate "Watching" entries
-            val otherVariants = setOf("tmdb_m_$rawId", "tmdb_t_$rawId", legacyPrefix, rawId) - mediaId
-            otherVariants.forEach { db.userProgressDao().deleteByMediaId(it) }
-
+            val now = System.currentTimeMillis()
             val current = db.userProgressDao().getProgress(mediaId)
+            
             val entity = current?.copy(
                 trackingState = state.name,
-                updatedAt = System.currentTimeMillis()
+                updatedAt = now
             ) ?: UserProgressEntity(
                 mediaId = mediaId,
                 trackingState = state.name,
-                updatedAt = System.currentTimeMillis()
+                updatedAt = now
             )
+
             db.userProgressDao().upsert(entity)
 
             // SYNC TO FIRESTORE: Save watchlist progress
