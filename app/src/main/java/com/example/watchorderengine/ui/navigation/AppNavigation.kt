@@ -440,12 +440,11 @@ fun AppNavigation() {
                         navArgument("all") { type = NavType.StringType; defaultValue = "" }
                     ),
                     deepLinks = listOf(
-                        navDeepLink {
-                            uriPattern = "https://watch-order-engine.firebaseapp.com/__/auth/action?{all}"
-                        },
-                        navDeepLink {
-                            uriPattern = "https://watch-order-engine.web.app/__/auth/action?{all}"
-                        }
+                        // Standard Firebase Auth landing page
+                        navDeepLink { uriPattern = "https://watch-order-engine.firebaseapp.com/__/auth/action?{all}" },
+                        navDeepLink { uriPattern = "https://watch-order-engine.web.app/__/auth/action?{all}" },
+                        // Future-proof App Links (No Dynamic Links needed)
+                        navDeepLink { uriPattern = "watchorderengine://reset-password?oobCode={oobCode}" }
                     )
                 ) { backStackEntry ->
                     val oobCodeArg = backStackEntry.arguments?.getString("oobCode") ?: ""
