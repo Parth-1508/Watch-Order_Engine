@@ -58,6 +58,8 @@ data class ImportedAnimeEntry(
     val malId: Int?,
     val anilistId: Int?,
     val title: String,
+    val romajiTitle: String? = null,
+    val nativeTitle: String? = null,
     val coverImageUrl: String?,
     val trackingState: TrackingState,
     /** User's 1.0–10.0 rating (null if unrated). */
