@@ -32,36 +32,34 @@ class NavViewModel @Inject constructor(
     val connectivityStatus: StateFlow<ConnectivityObserver.Status> = connectivityObserver.observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ConnectivityObserver.Status.Available)
 
-    fun syncDataOnLogin() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val user = auth.currentUser
-            if (user != null) {
-                // 1. Check local username
-                val currentUsername = userPrefs.username.first()
-                
-                // 2. Try to sync from Firestore first (Our primary source of truth)
-                try {
-                    val doc = firestore.collection("users").document(user.uid)
-                        .collection("profile").document("metadata").get().await()
-                    val cloudName = doc.getString("username")
-                    if (!cloudName.isNullOrBlank()) {
-                        userPrefs.updateUsername(cloudName!!)
-                    } else if (!user.displayName.isNullOrBlank() && (currentUsername == "Player One" || currentUsername == "Guest")) {
-                        // Fallback to Firebase displayName only if Firestore is empty
-                        userPrefs.updateUsername(user.displayName!!)
-                    }
-                } catch (e: Exception) {
-                    // Firestore fetch failed, fallback to displayName if local is default
-                    if (!user.displayName.isNullOrBlank() && (currentUsername == "Player One" || currentUsername == "Guest")) {
-                        userPrefs.updateUsername(user.displayName!!)
-                    }
+    suspend fun syncDataOnLogin() {
+        val user = auth.currentUser
+        if (user != null) {
+            // 1. Check local username
+            val currentUsername = userPrefs.username.first()
+            
+            // 2. Try to sync from Firestore first (Our primary source of truth)
+            try {
+                val doc = firestore.collection("users").document(user.uid)
+                    .collection("profile").document("metadata").get().await()
+                val cloudName = doc.getString("username")
+                if (!cloudName.isNullOrBlank()) {
+                    userPrefs.updateUsername(cloudName!!)
+                } else if (!user.displayName.isNullOrBlank() && (currentUsername == "Player One" || currentUsername == "Guest")) {
+                    // Fallback to Firebase displayName only if Firestore is empty
+                    userPrefs.updateUsername(user.displayName!!)
                 }
-
-                user.photoUrl?.toString()?.let { userPrefs.updateAvatarUrl(it) }
+            } catch (e: Exception) {
+                // Firestore fetch failed, fallback to displayName if local is default
+                if (!user.displayName.isNullOrBlank() && (currentUsername == "Player One" || currentUsername == "Guest")) {
+                    userPrefs.updateUsername(user.displayName!!)
+                }
             }
-            mediaRepository.syncAllFromCloud()
-            reviewRepository.syncReviewsFromFirestore()
+
+            user.photoUrl?.toString()?.let { userPrefs.updateAvatarUrl(it) }
         }
+        mediaRepository.syncAllFromCloud()
+        reviewRepository.syncReviewsFromFirestore()
     }
 
     fun logout() {

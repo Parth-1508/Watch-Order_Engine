@@ -1059,113 +1059,129 @@ class MediaRepository @Inject constructor(
         
         try {
             // 1. Sync Watchlist
-            val watchlistSnap = firestore.collection("users").document(uid)
-                .collection("watchlist").get().await()
-            val watchlist = watchlistSnap.documents.mapNotNull { doc ->
-                try {
-                    doc.toObject(UserProgressEntity::class.java)?.apply {
-                        // Resilience: if camelCase fails, try snake_case fallback
-                        if (mediaId.isBlank()) mediaId = doc.getString("media_id") ?: ""
-                        if (userRating == null) userRating = doc.getDouble("user_rating")?.toFloat()
+            try {
+                val watchlistSnap = firestore.collection("users").document(uid)
+                    .collection("watchlist").get().await()
+                val watchlist = watchlistSnap.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(UserProgressEntity::class.java)?.apply {
+                            if (mediaId.isBlank()) mediaId = doc.getString("media_id") ?: doc.id
+                            if (userRating == null) userRating = doc.getDouble("user_rating")?.toFloat()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse watchlist item ${doc.id}: ${e.message}")
+                        null
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse watchlist item ${doc.id}: ${e.message}")
-                    null
                 }
+                Log.d(TAG, "Sync: found ${watchlist.size} watchlist items in cloud")
+                watchlist.forEach { db.userProgressDao().upsert(it) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Watchlist sync failed: ${e.message}")
             }
-            Log.d(TAG, "Sync: found ${watchlist.size} watchlist items in cloud")
-            watchlist.forEach { db.userProgressDao().upsert(it) }
 
             // 1.2 Sync Graph/Universe Progress (Merges with watchlist data)
-            val progressSnap = firestore.collection("users").document(uid)
-                .collection("progress").get().await()
-            val universeProgress = progressSnap.documents.mapNotNull { doc ->
-                try {
-                    doc.toObject(UserProgress::class.java)?.apply {
-                        // Resilience: bridge field name differences
-                        if (mediaId.isBlank()) mediaId = doc.getString("media_id") ?: ""
-                        if (userRating == null) userRating = doc.getDouble("user_rating")?.toFloat()
+            try {
+                val progressSnap = firestore.collection("users").document(uid)
+                    .collection("progress").get().await()
+                val universeProgress = progressSnap.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(UserProgress::class.java)?.apply {
+                            if (mediaId.isBlank()) mediaId = doc.getString("media_id") ?: doc.id
+                            if (userRating == null) userRating = doc.getDouble("user_rating")?.toFloat()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse universe progress ${doc.id}: ${e.message}")
+                        null
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse universe progress ${doc.id}: ${e.message}")
-                    null
                 }
-            }
-            Log.d(TAG, "Sync: found ${universeProgress.size} universe progress records")
-            universeProgress.forEach { up ->
-                if (up.mediaId.isBlank()) return@forEach // Skip invalid/empty records
+                Log.d(TAG, "Sync: found ${universeProgress.size} universe progress records")
+                universeProgress.forEach { up ->
+                    if (up.mediaId.isBlank()) return@forEach
 
-                val existing = db.userProgressDao().getByMediaId(up.mediaId)
-                val entity = UserProgressEntity(
-                    mediaId = up.mediaId,
-                    trackingState = up.trackingState.name,
-                    currentSeasonNumber = if (up.currentSeasonNumber > 0) up.currentSeasonNumber else (existing?.currentSeasonNumber ?: 0),
-                    currentEpisodeNumber = if (up.currentEpisodeNumber > 0) up.currentEpisodeNumber else (existing?.currentEpisodeNumber ?: 0),
-                    userRating = up.userRating ?: existing?.userRating, // PRESERVE RATING
-                    startedDate = up.startedDate ?: existing?.startedDate,
-                    completedDate = up.completedDate ?: existing?.completedDate,
-                    updatedAt = if (up.updatedAt > 0) up.updatedAt else (existing?.updatedAt ?: System.currentTimeMillis()),
-                    userNotes = up.userNotes.ifBlank { existing?.userNotes ?: "" },
-                    priorityTag = up.priorityTag.name,
-                    completedNodeIds = up.completed_node_ids.ifEmpty { existing?.completedNodeIds ?: emptyList() },
-                    activeRoute = up.active_route ?: existing?.activeRoute,
-                    spoilerShieldEnabled = up.spoiler_shield_enabled
-                )
-                db.userProgressDao().upsert(entity)
+                    val existing = db.userProgressDao().getByMediaId(up.mediaId)
+                    val entity = UserProgressEntity(
+                        mediaId = up.mediaId,
+                        trackingState = up.trackingState.name,
+                        currentSeasonNumber = if (up.currentSeasonNumber > 0) up.currentSeasonNumber else (existing?.currentSeasonNumber ?: 0),
+                        currentEpisodeNumber = if (up.currentEpisodeNumber > 0) up.currentEpisodeNumber else (existing?.currentEpisodeNumber ?: 0),
+                        userRating = up.userRating ?: existing?.userRating,
+                        startedDate = up.startedDate ?: existing?.startedDate,
+                        completedDate = up.completedDate ?: existing?.completedDate,
+                        updatedAt = if (up.updatedAt > 0) up.updatedAt else (existing?.updatedAt ?: System.currentTimeMillis()),
+                        userNotes = up.userNotes.ifBlank { existing?.userNotes ?: "" },
+                        priorityTag = up.priorityTag.name,
+                        completedNodeIds = up.completed_node_ids.ifEmpty { existing?.completedNodeIds ?: emptyList() },
+                        activeRoute = up.active_route ?: existing?.activeRoute,
+                        spoilerShieldEnabled = up.spoiler_shield_enabled
+                    )
+                    db.userProgressDao().upsert(entity)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Graph progress sync failed: ${e.message}")
             }
 
-            // 1.5 Backfill missing media metadata from TMDB in parallel (OPTIMIZED: fetch Media only)
-            val allTrackedMediaIds = (watchlist.map { it.mediaId } + universeProgress.map { it.mediaId }).distinct()
-            
-            Log.d(TAG, "Sync: Backfilling metadata for ${allTrackedMediaIds.size} unique media items")
-            supervisorScope {
-                allTrackedMediaIds.filter { db.mediaDao().getById(it) == null }
-                    .chunked(10) // Process in smaller batches to avoid overwhelming TMDB/Network
-                    .forEach { batch ->
-                        batch.map { mediaId ->
-                            async {
-                                val tmdbId = extractTmdbId(mediaId)
-                                if (tmdbId != null) {
-                                    fetchAndCacheMediaOnly(tmdbId, mediaId)
+            // 1.5 Backfill missing media metadata
+            try {
+                val watchlistIds = db.userProgressDao().getAll().map { it.mediaId }
+                Log.d(TAG, "Sync: Backfilling metadata for ${watchlistIds.size} tracked media items")
+                supervisorScope {
+                    watchlistIds.filter { db.mediaDao().getById(it) == null }
+                        .chunked(10)
+                        .forEach { batch ->
+                            batch.map { mediaId ->
+                                async {
+                                    val tmdbId = extractTmdbId(mediaId)
+                                    if (tmdbId != null) {
+                                        fetchAndCacheMediaOnly(tmdbId, mediaId)
+                                    }
                                 }
-                            }
-                        }.forEach { it.await() }
-                        // Small delay between batches if it's a very large sync
-                        if (allTrackedMediaIds.size > 20) kotlinx.coroutines.delay(100)
-                    }
+                            }.forEach { it.await() }
+                            if (watchlistIds.size > 20) kotlinx.coroutines.delay(100)
+                        }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Metadata backfill failed: ${e.message}")
             }
 
             // 2. Sync Episode Progress
-            val episodeSnap = firestore.collection("users").document(uid)
-                .collection("episode_progress").get().await()
-            val episodes = episodeSnap.documents.mapNotNull { doc ->
-                val epId = doc.id
-                val mediaId = doc.getString("media_id") ?: ""
-                val watched = doc.getBoolean("watched") ?: false
-                if (watched) EpisodeWatchedEntity(epId, mediaId) else null
+            try {
+                val episodeSnap = firestore.collection("users").document(uid)
+                    .collection("episode_progress").get().await()
+                val episodes = episodeSnap.documents.mapNotNull { doc ->
+                    val epId = doc.id
+                    val mediaId = doc.getString("media_id") ?: ""
+                    val watched = doc.getBoolean("watched") ?: false
+                    if (watched) EpisodeWatchedEntity(epId, mediaId) else null
+                }
+                Log.d(TAG, "Sync: found ${episodes.size} watched episodes in cloud")
+                db.episodeWatchedDao().markWatchedAll(episodes)
+            } catch (e: Exception) {
+                Log.e(TAG, "Episode progress sync failed: ${e.message}")
             }
-            Log.d(TAG, "Sync: found ${episodes.size} watched episodes in cloud")
-            db.episodeWatchedDao().markWatchedAll(episodes)
 
             // 3. Sync Profile Data
-            val profileSnap = firestore.collection("users").document(uid)
-                .collection("profile").document("metadata").get().await()
-            
-            if (profileSnap.exists()) {
-                val isTasteDone = profileSnap.getBoolean("is_taste_profile_completed") ?: false
-                val lastActive = profileSnap.getLong("last_active_date") ?: 0L
-                val streak = profileSnap.getLong("current_streak")?.toInt() ?: 0
-                val genres = profileSnap.get("selected_genres") as? List<String> ?: emptyList()
+            try {
+                val profileSnap = firestore.collection("users").document(uid)
+                    .collection("profile").document("metadata").get().await()
                 
-                Log.d(TAG, "Sync: profile metadata found (tasteDone=$isTasteDone, streak=$streak)")
-                userPrefs.setTasteProfileCompleted(isTasteDone)
-                userPrefs.updateStreak(lastActive, streak)
-                userPrefs.setSelectedGenres(genres.toSet())
+                if (profileSnap.exists()) {
+                    val isTasteDone = profileSnap.getBoolean("is_taste_profile_completed") ?: false
+                    val lastActive = profileSnap.getLong("last_active_date") ?: 0L
+                    val streak = profileSnap.getLong("current_streak")?.toInt() ?: 0
+                    val genres = profileSnap.get("selected_genres") as? List<String> ?: emptyList()
+                    
+                    Log.d(TAG, "Sync: profile metadata found (tasteDone=$isTasteDone, streak=$streak)")
+                    userPrefs.setTasteProfileCompleted(isTasteDone)
+                    userPrefs.updateStreak(lastActive, streak)
+                    userPrefs.setSelectedGenres(genres.toSet())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Profile metadata sync failed: ${e.message}")
             }
 
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Sync from cloud failed: ${e.message}", e)
+            Log.e(TAG, "Sync from cloud failed completely: ${e.message}", e)
             Result.failure(e)
         }
     }

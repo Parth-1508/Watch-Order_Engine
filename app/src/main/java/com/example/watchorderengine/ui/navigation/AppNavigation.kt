@@ -226,10 +226,8 @@ fun AppNavigation() {
                     OpeningScreen(
                     onEnter = {
                         scope.launch {
+                            navViewModel.syncDataOnLogin()
                             val target = navViewModel.getInitialRoute()
-                            if (target != "login") {
-                                navViewModel.syncDataOnLogin()
-                            }
                             navController.navigate(target) {
                                 popUpTo(Screen.Opening.route) { inclusive = true }
                             }
