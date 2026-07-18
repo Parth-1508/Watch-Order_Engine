@@ -42,6 +42,22 @@ import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.CharacterDetailState
 import com.example.watchorderengine.ui.viewmodel.CharacterDetailViewModel
 
+/**
+ * Main screen for viewing character details.
+ *
+ * Displays a hero image (with a toggleable gallery if multiple images are available),
+ * core stats (gender, age, birth year), and a tabbed interface for character biography,
+ * actor biography, chronological appearances in the franchise, and general filmography.
+ *
+ * @param tmdbPersonId The unique identifier for the actor in TMDB.
+ * @param characterName The display name of the character.
+ * @param showTitle The title of the parent show or movie franchise.
+ * @param isAnime Boolean flag indicating if the character/show is anime (used for specific art rendering).
+ * @param onBack Callback to navigate back.
+ * @param onMediaClick Callback when a related media item is clicked, passing its media ID.
+ * @param anilistId Optional AniList identifier for anime-specific data fetching.
+ * @param viewModel The state holder for this screen.
+ */
 @Composable
 fun CharacterDetailScreen(
     tmdbPersonId: Int,
@@ -83,6 +99,9 @@ fun CharacterDetailScreen(
 
 // ─── Loading / Error ────────────────────────────────────────────────────────────
 
+/**
+ * Loading state view for the character detail screen.
+ */
 @Composable
 private fun CharacterDetailLoading(onBack: () -> Unit) {
     val theme = LocalAppTheme.current
@@ -100,6 +119,9 @@ private fun CharacterDetailLoading(onBack: () -> Unit) {
     }
 }
 
+/**
+ * Error state view for the character detail screen, allowing for retries.
+ */
 @Composable
 private fun CharacterDetailError(message: String, onRetry: () -> Unit, onBack: () -> Unit) {
     val theme = LocalAppTheme.current
@@ -149,6 +171,16 @@ private fun chipRadius(appRadius: androidx.compose.ui.unit.Dp) =
 
 // ─── Body ───────────────────────────────────────────────────────────────────────
 
+/**
+ * The main content of the character detail screen, shown after data is successfully loaded.
+ *
+ * @param detail The [CharacterDetail] data model.
+ * @param photoIndex The currently selected index in the hero image gallery.
+ * @param onPhotoSelect Callback to update the selected gallery index.
+ * @param onBack Callback for the back button.
+ * @param onMediaClick Callback for clicking media items.
+ * @param isAnime Whether to show anime-specific UI elements.
+ */
 @Composable
 private fun CharacterDetailBody(
     detail: CharacterDetail,
@@ -376,6 +408,9 @@ private fun roleColor(role: String, theme: com.example.watchorderengine.ui.theme
     else -> theme.textSecondary
 }
 
+/**
+ * A small card-like component used to display a single character attribute (e.g., Age, Gender).
+ */
 @Composable
 private fun QuickStat(label: String, value: String, modifier: Modifier = Modifier) {
     val theme = LocalAppTheme.current
@@ -395,6 +430,9 @@ private fun QuickStat(label: String, value: String, modifier: Modifier = Modifie
 
 // ─── Tab 0: Character ───────────────────────────────────────────────────────────
 
+/**
+ * Tab content showing character-specific lore, biography, and voice actor information.
+ */
 @Composable
 private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
     val theme = LocalAppTheme.current
@@ -506,6 +544,9 @@ private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
 
 // ─── Tab 1: Actor ───────────────────────────────────────────────────────────────
 
+/**
+ * Tab content showing the actor's biography and personal details.
+ */
 @Composable
 private fun ActorTab(detail: CharacterDetail) {
     val theme = LocalAppTheme.current
@@ -554,6 +595,9 @@ private fun ActorTab(detail: CharacterDetail) {
 
 // ─── Tab: Appearances ───
 
+/**
+ * Tab content listing all appearances of this character within the current franchise.
+ */
 @Composable
 private fun AppearancesTab(detail: CharacterDetail) {
     val theme = LocalAppTheme.current
@@ -633,6 +677,9 @@ private fun AppearanceCard(appearance: com.example.watchorderengine.data.model.C
 
 // ─── Tab 2: Filmography ─────────────────────────────────────────────────────────
 
+/**
+ * Tab content listing the actor's general filmography (known for and all credits).
+ */
 @Composable
 private fun FilmographyTab(detail: CharacterDetail, onMediaClick: (String) -> Unit) {
     val theme = LocalAppTheme.current
@@ -709,6 +756,11 @@ private fun KnownForCard(credit: CreditItem, onClick: () -> Unit, modifier: Modi
     }
 }
 
+/**
+ * A specialized card for displaying lore that might contain spoilers.
+ *
+ * Includes a "Tap to Reveal" overlay and a blur effect to protect the user from spoilers.
+ */
 @Composable
 private fun WikiLoreCard(lore: String) {
     val theme    = LocalAppTheme.current

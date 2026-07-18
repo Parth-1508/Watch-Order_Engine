@@ -103,6 +103,12 @@ sealed interface GeminiResult {
     data class Error(val message: String) : GeminiResult
 }
 
+/**
+ * Service responsible for interacting with Google's Gemini AI.
+ * 
+ * It handles sorting media items into a logical watch order and fetching fallback
+ * character lore when other sources are insufficient.
+ */
 @Singleton
 class GeminiService @Inject constructor() {
 
@@ -266,6 +272,12 @@ class GeminiService @Inject constructor() {
         null
     }
 
+    /**
+     * Retrieves all available Gemini API keys from the build configuration.
+     * 
+     * Multiple keys are supported to allow for simple load balancing or fallback
+     * if one key hits a rate limit.
+     */
     private fun getAllApiKeys(): List<String> {
         return listOfNotNull(
             BuildConfig.GEMINI_API_KEY.takeIf { it.isNotBlank() },
@@ -280,6 +292,11 @@ class GeminiService @Inject constructor() {
     }
 
 
+    /**
+     * Ensures the watch order returned by Gemini matches the set of items originally
+     * provided. It filters out any hallucinated items and adds back any missing items
+     * as "Uncategorized".
+     */
     private fun sanitizeAgainstRawItems(
         watchOrder: GeminiWatchOrder,
         rawItems: List<RawMediaItem>
@@ -308,6 +325,12 @@ class GeminiService @Inject constructor() {
         return GeminiWatchOrder(nodes = cleanNodes + missing, edges = cleanEdges)
     }
 
+    /**
+     * Constructs the prompt for the Gemini model to perform the watch order sorting.
+     * 
+     * The prompt provides the raw items in JSON format and specifies strict rules
+     * to prevent hallucinations and ensure output consistency.
+     */
     private fun buildSortPrompt(showTitle: String, rawItems: List<RawMediaItem>): String {
         val itemsJson = rawItemListAdapter.toJson(rawItems)
 
