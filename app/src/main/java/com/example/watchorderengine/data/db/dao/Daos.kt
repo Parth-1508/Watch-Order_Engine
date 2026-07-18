@@ -90,6 +90,18 @@ interface EpisodeDao {
     suspend fun getAllEpisodesByMedia(mediaId: String): List<EpisodeEntity>
 
     @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM episodes e
+            LEFT JOIN episode_watched w ON e.id = w.episodeId
+            WHERE e.mediaId = :mediaId 
+              AND (e.seasonNumber < :targetSeason OR (e.seasonNumber = :targetSeason AND e.episodeNumber < :targetEpisode))
+              AND e.seasonNumber > 0
+              AND w.episodeId IS NULL
+        )
+    """)
+    suspend fun hasUnwatchedEpisodesBefore(mediaId: String, targetSeason: Int, targetEpisode: Int): Boolean
+
+    @Query("""
         SELECT MAX(e.absoluteEpisodeNumber) FROM episodes e
         INNER JOIN episode_watched w ON e.id = w.episodeId
         WHERE e.mediaId = :mediaId
@@ -200,9 +212,27 @@ interface EpisodeWatchedDao {
     @Query("""
         INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
         SELECT id, mediaId, :timestamp FROM episodes
+        WHERE mediaId = :mediaId 
+          AND (seasonNumber < :targetSeason OR (seasonNumber = :targetSeason AND episodeNumber < :targetEpisode))
+          AND seasonNumber > 0
+    """)
+    suspend fun markBulkPreviousAsWatched(mediaId: String, targetSeason: Int, targetEpisode: Int, timestamp: Long)
+
+    @Transaction
+    @Query("""
+        INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
+        SELECT id, mediaId, :timestamp FROM episodes
         WHERE mediaId = :mediaId AND seasonNumber > 0
     """)
     suspend fun markAllAsWatched(mediaId: String, timestamp: Long)
+
+    @Transaction
+    @Query("""
+        INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
+        SELECT id, mediaId, :timestamp FROM episodes
+        WHERE mediaId = :mediaId AND seasonNumber = :seasonNumber
+    """)
+    suspend fun markSeasonAsWatchedBulk(mediaId: String, seasonNumber: Int, timestamp: Long)
 }
 
 // ─── ReviewDao ───────────────────────────────────────────────────────────────

@@ -124,7 +124,7 @@ fun TimelineScreen(
 
             when (val state = uiState) {
                 is TimelineUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { 
-                    CircularProgressIndicator(color = theme.accent) 
+                    CircularProgressIndicator(color = theme.accent)
                 }
                 is TimelineUiState.Success -> TimelineContent(state, viewModel)
                 is TimelineUiState.Error -> Text("Error: ${state.message}", color = theme.statusFiller, modifier = Modifier.padding(16.dp))

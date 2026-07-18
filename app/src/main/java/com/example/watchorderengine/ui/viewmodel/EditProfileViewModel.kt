@@ -207,7 +207,9 @@ class EditProfileViewModel @Inject constructor(
                 .eachCount()
             val topGenres = genreCounts.entries.sortedByDescending { it.value }.take(3).map { it.key }
 
-            val totalMovies = completed.count { it.mediaCategory == MediaCategory.MOVIE }
+            val totalMovies = completed.count { 
+                it.mediaCategory == MediaCategory.MOVIE || it.id.contains("_m_")
+            }
             val score = computeScore(totalWatched, totalMovies, reviews, streak)
 
             val stats = UserStats(

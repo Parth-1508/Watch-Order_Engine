@@ -46,6 +46,7 @@ import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.EpisodeItem
 import com.example.watchorderengine.data.model.MediaDetail
 import com.example.watchorderengine.data.model.TrackingState
+import com.example.watchorderengine.ui.components.FactLoadingView
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.MediaDetailViewModel
@@ -141,35 +142,10 @@ fun MediaDetailScreen(
 
 @Composable
 fun SyncingOverlay() {
-    val theme = LocalAppTheme.current
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(theme.background.copy(alpha = 0.8f))
-            .clickable(enabled = false) { },
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(
-                color = theme.accent,
-                modifier = Modifier.size(48.dp),
-                strokeWidth = 4.dp
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "Syncing progress to cloud...",
-                color = theme.textPrimary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
-            Text(
-                "This might take a moment",
-                color = theme.textSecondary,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-    }
+    FactLoadingView(
+        title = "Syncing progress to cloud...",
+        stage = "This might take a moment"
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

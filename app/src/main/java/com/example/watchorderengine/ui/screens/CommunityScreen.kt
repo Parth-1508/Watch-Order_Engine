@@ -585,7 +585,7 @@ fun TrendingTagsSection(
     onTagClick: (String?) -> Unit
 ) {
     val theme = LocalAppTheme.current
-    val tags = listOf("Marvel", "Star Wars", "DC Universe", "Anime", "Horror", "Sci-Fi", "Game of Thrones")
+    val tags = listOf("Marvel", "Star Wars", "DC Universe", "Anime", "Horror", "Sci-Fi")
     
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),

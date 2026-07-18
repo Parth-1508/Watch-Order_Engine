@@ -136,7 +136,11 @@ class ProfileViewModel @Inject constructor(
                 val recentlyWatched = (watching + completed).take(6)
 
                 // ── Profile score ────────────────────────────────────────────────
-                val totalMovies = completed.count { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE }
+                // Update: Count both Movie category AND Anime films (identified by TMDB movie ID prefix)
+                val totalMovies = completed.count { 
+                    it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE || 
+                    it.id.contains("_m_") 
+                }
                 val score = computeProfileScore(
                     episodes = totalWatched,
                     movies   = totalMovies,

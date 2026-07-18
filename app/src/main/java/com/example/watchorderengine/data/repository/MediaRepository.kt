@@ -1402,11 +1402,15 @@ class MediaRepository @Inject constructor(
     suspend fun markPreviousEpisodesAsWatchedSequentially(
         mediaId: String, targetSeason: Int, targetEpisode: Int
     ) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        // 1. Optimized Room update using bulk SQL
+        db.episodeWatchedDao().markBulkPreviousAsWatched(mediaId, targetSeason, targetEpisode, now)
+        
+        // 2. Sync to Firestore (still needs IDs for bulk update)
         val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
             .filter { it.seasonNumber < targetSeason ||
                 (it.seasonNumber == targetSeason && it.episodeNumber < targetEpisode) }
         
-        episodes.forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
         syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
     }
 
@@ -1421,9 +1425,13 @@ class MediaRepository @Inject constructor(
     }
 
     suspend fun markSeasonAsWatched(mediaId: String, seasonNumber: Int) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        // 1. Optimized Room update
+        db.episodeWatchedDao().markSeasonAsWatchedBulk(mediaId, seasonNumber, now)
+        
+        // 2. Sync to Firestore
         val seasonId = "${mediaId}_s$seasonNumber"
         val episodes = db.episodeDao().getEpisodesBySeason(seasonId)
-        episodes.forEach { db.episodeWatchedDao().markWatched(EpisodeWatchedEntity(it.id, mediaId)) }
         syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
     }
 
@@ -1464,13 +1472,7 @@ class MediaRepository @Inject constructor(
     suspend fun hasUnwatchedEpisodesBefore(
         mediaId: String, targetSeason: Int, targetEpisode: Int
     ): Boolean = withContext(Dispatchers.IO) {
-        val episodes   = db.episodeDao().getAllEpisodesByMedia(mediaId)
-        val watchedIds = db.episodeWatchedDao().getWatchedIds(mediaId).toSet()
-        episodes.any {
-            (it.seasonNumber < targetSeason ||
-             (it.seasonNumber == targetSeason && it.episodeNumber < targetEpisode)) &&
-            it.id !in watchedIds
-        }
+        db.episodeDao().hasUnwatchedEpisodesBefore(mediaId, targetSeason, targetEpisode)
     }
 
     // ─── Trending / Discovery ─────────────────────────────────────────────────
