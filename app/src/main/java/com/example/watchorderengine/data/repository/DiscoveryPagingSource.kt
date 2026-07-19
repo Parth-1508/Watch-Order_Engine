@@ -14,11 +14,17 @@ class DiscoveryPagingSource(
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaSummary> {
         val page = params.key ?: 1
         return try {
-            val items = if (category != null) {
+            val rawItems = if (category != null) {
                 repository.discoverByGenrePaged(category, providerIds, page)
             } else {
                 repository.getTrendingPaged(providerIds, page)
             }
+
+            // Exclude already tracked or skipped items at the source
+            val tracked = repository.getAllTrackedMediaIds()
+            val skipped = repository.getSkippedMediaIds()
+            
+            val items = rawItems.filter { it.id !in tracked && it.id !in skipped }
 
             LoadResult.Page(
                 data = items,

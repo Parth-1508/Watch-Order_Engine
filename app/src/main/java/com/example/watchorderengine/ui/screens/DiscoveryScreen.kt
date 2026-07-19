@@ -30,7 +30,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import androidx.compose.ui.res.stringResource
-import androidx.paging.compose.collectAsLazyPagingItems
 import com.example.watchorderengine.R
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.network.TmdbConfig
@@ -46,25 +45,10 @@ fun DiscoveryScreen(
     viewModel: DiscoveryViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
-    val pagingItems = viewModel.pagingData.collectAsLazyPagingItems()
-    val isLoading = pagingItems.loadState.refresh is androidx.paging.LoadState.Loading
+    val deck by viewModel.discoveryDeck.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val activeCategory by viewModel.activeCategory.collectAsStateWithLifecycle()
     val platformFilter by viewModel.platformFilter.collectAsStateWithLifecycle()
-    val swipedIds by viewModel.swipedIds.collectAsStateWithLifecycle()
-
-    // Create a local deck from paging items
-    // We only show a few items at a time to keep the stack performance high
-    val deck = remember(pagingItems.itemCount, pagingItems.loadState, swipedIds) {
-        val list = mutableListOf<MediaSummary>()
-        for (i in 0 until pagingItems.itemCount) {
-            val item = pagingItems[i]
-            if (item != null && item.id !in swipedIds) {
-                list.add(item)
-            }
-            if (list.size >= 5) break // Only show top 5 in stack
-        }
-        list.reversed() // Reverse so the first item is drawn last (on top)
-    }
 
     Box(
         modifier = Modifier
@@ -141,27 +125,29 @@ fun DiscoveryScreen(
             ) {
                 if (isLoading && deck.isEmpty()) {
                     CircularProgressIndicator(color = theme.accent)
-                } else if (deck.isEmpty() && !isLoading) {
+                } else if (deck.isEmpty()) {
                     EmptyDiscoveryView(theme) { viewModel.resetDeck() }
                 } else {
                     deck.forEachIndexed { index, media ->
-                        DiscoveryCard(
-                            media = media,
-                            isTop = index == deck.size - 1,
-                            onSwipe = { action -> viewModel.handleSwipe(media, action) },
-                            onDismiss = { viewModel.dismissPermanently(media) },
-                            onClick = { onMediaClick(media.id) }
-                        )
+                        key(media.id) {
+                            DiscoveryCard(
+                                media = media,
+                                isTop = index == deck.size - 1,
+                                onSwipe = { action -> viewModel.handleSwipe(media, action) },
+                                onDismiss = { viewModel.dismissPermanently(media) },
+                                onClick = { onMediaClick(media.id) }
+                            )
+                        }
                     }
                 }
             }
         }
 
         // Retry UI if loading fails and deck is empty
-        if (pagingItems.loadState.refresh is androidx.paging.LoadState.Error && deck.isEmpty()) {
+        if (!isLoading && deck.isEmpty() && activeCategory != null) {
              Box(Modifier.align(Alignment.Center)) {
                  Button(
-                     onClick = { pagingItems.retry() },
+                     onClick = { viewModel.loadDiscovery() },
                      colors = ButtonDefaults.buttonColors(containerColor = theme.accent)
                  ) {
                      Text(stringResource(R.string.discovery_retry), color = Color.White)

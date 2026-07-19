@@ -2,9 +2,6 @@ package com.example.watchorderengine.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.paging.PagingData
-import androidx.paging.cachedIn
-import androidx.paging.filter
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.repository.MediaRepository
@@ -59,6 +56,9 @@ class DiscoveryViewModel @Inject constructor(
     private val repository: MediaRepository
 ) : ViewModel() {
 
+    private val _rawDeck = MutableStateFlow<List<MediaSummary>>(emptyList())
+    val discoveryDeck: StateFlow<List<MediaSummary>> = _rawDeck.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -71,26 +71,9 @@ class DiscoveryViewModel @Inject constructor(
     private val _platformFilter = MutableStateFlow(PlatformFilterState())
     val platformFilter: StateFlow<PlatformFilterState> = _platformFilter.asStateFlow()
 
-    private val _swipedIds = MutableStateFlow<Set<String>>(emptySet())
-    val swipedIds: StateFlow<Set<String>> = _swipedIds.asStateFlow()
-
-    val pagingData: Flow<PagingData<MediaSummary>> = combine(
-        _activeCategory,
-        _platformFilter,
-        _swipedIds
-    ) { category, filter, swiped ->
-        repository.getDiscoveryStream(category, filter.selectedProviderIds)
-            .map { pagingData ->
-                pagingData.filter { it.id !in swiped }
-            }
-    }.flattenMerge()
-        .cachedIn(viewModelScope)
-
-    // A small buffer for the UI to show the "top" of the deck as a list for swiping
-    // In a real tinder-like app with Paging 3, you'd usually transform the PagingData
-    // to filter out swiped items.
-    private val _currentDeck = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val discoveryDeck: StateFlow<List<MediaSummary>> = _currentDeck.asStateFlow()
+    init {
+        loadDiscovery()
+    }
 
     fun togglePlatform(platform: StreamingPlatform) {
         val current = _platformFilter.value.selectedProviderIds
@@ -103,11 +86,38 @@ class DiscoveryViewModel @Inject constructor(
         }
 
         _platformFilter.value = _platformFilter.value.copy(selectedProviderIds = updated)
+        loadDiscovery()
     }
 
     fun selectCategory(category: TmdbConfig.DiscoveryCategory?) {
         if (_activeCategory.value == category) return
         _activeCategory.value = category
+        loadDiscovery()
+    }
+
+    fun loadDiscovery() {
+        viewModelScope.launch {
+            _isLoading.value = true
+
+            val selectedProviders = _platformFilter.value.selectedProviderIds
+            val raw = _activeCategory.value?.let { repository.discoverByGenre(it, selectedProviders) }
+                ?: repository.getTrending(selectedProviders)
+
+            val trackedIds = repository.getAllTrackedMediaIds()
+            // Extract raw TMDB IDs to ensure legacy/prefixed IDs are caught
+            val trackedTmdbIds = trackedIds.mapNotNull { it.substringAfterLast("_").toIntOrNull() }.toSet()
+            
+            val skippedIds = repository.getSkippedMediaIds()
+
+            val filtered = raw.filter { 
+                it.id !in trackedIds && 
+                it.tmdbId !in trackedTmdbIds &&
+                it.id !in skippedIds 
+            }
+
+            _rawDeck.value = filtered
+            _isLoading.value = false
+        }
     }
 
     fun handleSwipe(media: MediaSummary, action: SwipeAction) {
@@ -118,25 +128,22 @@ class DiscoveryViewModel @Inject constructor(
                 SwipeAction.PAUSE -> repository.updateTrackingState(media.id, TrackingState.PAUSED)
                 SwipeAction.SKIP  -> repository.markSkipped(media.id)
             }
-            _swipedIds.value = _swipedIds.value + media.id
+            // Immediately remove from UI list
+            _rawDeck.value = _rawDeck.value.filter { it.id != media.id }
         }
     }
 
     fun dismissPermanently(media: MediaSummary) {
         viewModelScope.launch {
             repository.updateTrackingState(media.id, TrackingState.DROPPED)
-            _swipedIds.value = _swipedIds.value + media.id
+            _rawDeck.value = _rawDeck.value.filter { it.id != media.id }
         }
     }
 
     fun resetDeck() {
         viewModelScope.launch {
             repository.clearSkipped()
-            _swipedIds.value = emptySet()
-            // Triggers a refresh of the paging source by changing a state
-            val current = _activeCategory.value
-            _activeCategory.value = null
-            _activeCategory.value = current
+            loadDiscovery()
         }
     }
 }
