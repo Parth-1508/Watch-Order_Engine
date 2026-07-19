@@ -9,12 +9,6 @@ import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.google.firebase.auth.AuthCredential
 import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.PhoneAuthCredential
-import com.google.firebase.auth.PhoneAuthProvider
-import com.google.firebase.auth.PhoneAuthOptions
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -27,9 +21,6 @@ class LoginViewModel @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val userPrefs: UserPreferencesRepository
 ) : ViewModel() {
-
-    private val _phoneVerificationId = MutableStateFlow<String?>(null)
-    val phoneVerificationId: StateFlow<String?> = _phoneVerificationId.asStateFlow()
 
     fun signInWithCredential(credential: AuthCredential, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
@@ -52,49 +43,6 @@ class LoginViewModel @Inject constructor(
             } catch (e: Exception) {
                 onResult(false, e.message ?: "Authentication failed")
             }
-        }
-    }
-
-    fun sendVerificationCode(
-        phoneNumber: String,
-        activity: android.app.Activity,
-        onCodeSent: () -> Unit,
-        onError: (String) -> Unit
-    ) {
-        val options = PhoneAuthOptions.newBuilder(auth)
-            .setPhoneNumber(phoneNumber)
-            .setTimeout(60L, TimeUnit.SECONDS)
-            .setActivity(activity)
-            .setCallbacks(object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-                override fun onVerificationCompleted(credential: PhoneAuthCredential) {
-                    signInWithCredential(credential) { success, error ->
-                        if (!success) onError(error ?: "Auto-verification failed")
-                    }
-                }
-
-                override fun onVerificationFailed(e: com.google.firebase.FirebaseException) {
-                    onError(e.message ?: "Verification failed")
-                }
-
-                override fun onCodeSent(
-                    verificationId: String,
-                    token: PhoneAuthProvider.ForceResendingToken
-                ) {
-                    _phoneVerificationId.value = verificationId
-                    onCodeSent()
-                }
-            })
-            .build()
-        PhoneAuthProvider.verifyPhoneNumber(options)
-    }
-
-    fun verifyPhoneCode(code: String, onResult: (Boolean, String?) -> Unit) {
-        val verificationId = _phoneVerificationId.value
-        if (verificationId != null) {
-            val credential = PhoneAuthProvider.getCredential(verificationId, code)
-            signInWithCredential(credential, onResult)
-        } else {
-            onResult(false, "No verification ID found")
         }
     }
 

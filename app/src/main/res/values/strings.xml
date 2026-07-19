@@ -39,6 +39,7 @@
     <string name="discovery_caught_up">You\'re all caught up!</string>
     <string name="discovery_reset_deck_desc">Check back later, or reset to see skipped titles again.</string>
     <string name="discovery_reset_deck_button">Reset Deck</string>
+    <string name="discovery_caught_up_subtitle">New trending titles arrive every day.</string>
     <string name="discovery_retry">Retry Connection</string>
     <string name="discovery_all">All</string>
 
@@ -53,7 +54,6 @@
     <string name="login_create_account">CREATE ACCOUNT</string>
     <string name="login_button_login">LOGIN</string>
     <string name="login_google">Google</string>
-    <string name="login_phone">Phone</string>
     <string name="login_instead">Login instead</string>
     <string name="login_create_account_small">Create account</string>
     <string name="login_forgot_password">Forgot Password?</string>
@@ -65,12 +65,4 @@
     <string name="login_reset_link_text">We found a password reset link in your clipboard. Would you like to use it now?</string>
     <string name="login_continue">CONTINUE</string>
     <string name="login_cancel">CANCEL</string>
-    <string name="login_phone_title">PHONE LOGIN</string>
-    <string name="login_phone_desc">Enter your phone number with country code (e.g. +91 9876543210)</string>
-    <string name="login_phone_number">Phone Number</string>
-    <string name="login_send_code">SEND CODE</string>
-    <string name="login_code_sent">We sent a 6-digit code to %1$s</string>
-    <string name="login_verification_code">Verification Code</string>
-    <string name="login_verify_login">VERIFY &amp; LOGIN</string>
-    <string name="login_resend_code">Resend Code</string>
 </resources>
