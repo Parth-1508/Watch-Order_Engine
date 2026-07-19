@@ -7,7 +7,10 @@ Instead of a flat list, shows and movies are laid out as a **Directed Acyclic Gr
 ---
 
 
-https://github.com/user-attachments/assets/dc4418c1-ca6f-4336-941a-5b1207cf9652
+
+https://github.com/user-attachments/assets/b3be8164-a33b-4a25-a625-f0d063dfe635
+
+
 
 
 ##  Architectural Highlights
