@@ -6,6 +6,10 @@ Instead of a flat list, shows and movies are laid out as a **Directed Acyclic Gr
 
 ---
 
+
+https://github.com/user-attachments/assets/dc4418c1-ca6f-4336-941a-5b1207cf9652
+
+
 ##  Architectural Highlights
 
 *   **Offline-First Sync Engine:** Built around a robust **Room Database** caching layer. Users can navigate massive multi-season timelines entirely offline.
