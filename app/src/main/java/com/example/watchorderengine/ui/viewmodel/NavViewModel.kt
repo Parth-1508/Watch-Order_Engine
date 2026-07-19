@@ -1,5 +1,6 @@
 package com.example.watchorderengine.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.SyncProgress
@@ -48,6 +49,8 @@ class NavViewModel @Inject constructor(
                         _syncProgress.value = progress
                     }
                     reviewRepository.syncReviewsFromFirestore()
+                        .onSuccess { Log.d("NavViewModel", "Review restoration complete") }
+                        .onFailure { Log.e("NavViewModel", "Review restoration failed: ${it.message}") }
                 } catch (e: Exception) {
                     android.util.Log.e("NavViewModel", "Sync failed", e)
                 }

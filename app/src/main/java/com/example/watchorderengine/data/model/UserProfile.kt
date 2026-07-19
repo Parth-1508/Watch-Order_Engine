@@ -14,6 +14,7 @@ data class UserProfile(
     var userId: String = "",
 
     var displayName: String = "",
+    var username: String = "", // Added to match Firestore field
     var avatarUrl: String? = null,
 
     var isStatsPublic: Boolean = false,

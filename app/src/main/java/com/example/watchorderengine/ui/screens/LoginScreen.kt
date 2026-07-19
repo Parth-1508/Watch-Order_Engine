@@ -81,7 +81,7 @@ fun LoginScreen(
                     else errorMessage = error
                 }
             } catch (e: ApiException) {
-                errorMessage = "Google sign in failed: ${e.message}"
+                errorMessage = "Google sign in failed: ${e.message} (Status Code: ${e.statusCode})"
             }
         }
     }
@@ -105,7 +105,7 @@ fun LoginScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val engineAccent = Color(0xFFFFBF3C)
+    val engineAccent = Color(0xFFFFC300)
 
     LaunchedEffect(resendTimer) {
         if (resendTimer > 0) {
@@ -274,7 +274,14 @@ fun LoginScreen(
                                     .requestEmail()
                                     .build()
                                 val client = GoogleSignIn.getClient(context, gso)
-                                googleSignInLauncher.launch(client.signInIntent)
+                                // Force sign out and clear session to ensure the account picker always appears
+                                isLoading = true
+                                client.signOut().addOnCompleteListener {
+                                    client.revokeAccess().addOnCompleteListener {
+                                        isLoading = false
+                                        googleSignInLauncher.launch(client.signInIntent)
+                                    }
+                                }
                             },
                             modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp),

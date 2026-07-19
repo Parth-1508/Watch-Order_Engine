@@ -20,7 +20,11 @@ data class Notification(
     val title: String = "",
     val message: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val isRead: Boolean = false,
+
+    @get:com.google.firebase.firestore.PropertyName("isRead")
+    @set:com.google.firebase.firestore.PropertyName("isRead")
+    @field:com.google.firebase.firestore.PropertyName("isRead")
+    var isRead: Boolean = false,
     
     // Metadata for navigation or context
     val targetId: String? = null,   // mediaId, universeId, or postId

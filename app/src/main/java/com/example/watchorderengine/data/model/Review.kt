@@ -11,8 +11,7 @@ import java.util.*
 
 @Serializable
 data class ReviewDocument(
-    @DocumentId
-    val id: String = "",
+    var id: String = "",
 
     @get:PropertyName("media_id")
     @set:PropertyName("media_id")

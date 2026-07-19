@@ -54,7 +54,19 @@ class ReviewRepository @Inject constructor(
             .orderBy("updated_at", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot ->
-                snapshot.documents.mapNotNull { it.toObject<ReviewDocument>()?.toReviewItem() }
+                Log.d("ReviewRepo", "Observed ${snapshot.size()} global reviews for media $mediaId")
+                snapshot.documents.mapNotNull { doc ->
+                    try {
+                        val review = doc.toObject<ReviewDocument>()
+                        if (review == null) {
+                            Log.w("ReviewRepo", "Parsed review is null for doc ${doc.id}")
+                        }
+                        review?.toReviewItem()
+                    } catch (e: Exception) {
+                        Log.e("ReviewRepo", "Error parsing global review ${doc.id}: ${e.message}")
+                        null
+                    }
+                }
             }
 
     fun observeReviewsByUser(userId: String): Flow<List<ReviewEntity>> =
@@ -106,18 +118,20 @@ class ReviewRepository @Inject constructor(
         // 3. Online: sync to GLOBAL feed AND User backup
         if (watchOrderRepository.isNetworkAvailable(context)) {
             try {
+                Log.d("ReviewRepo", "Submitting review $reviewId for media $mediaId by user $uid")
                 val batch = firestore.batch()
                 
                 // Public Global Feed
                 val globalRef = firestore.collection("reviews").document(reviewId)
-                batch.set(globalRef, doc, SetOptions.merge())
+                batch.set(globalRef, doc)
                 
                 // User's private backup for sync-on-login
                 val userRef = firestore.collection("users").document(uid)
                     .collection("reviews").document(reviewId)
-                batch.set(userRef, doc, SetOptions.merge())
+                batch.set(userRef, doc)
                 
                 batch.commit().await()
+                Log.d("ReviewRepo", "Review $reviewId successfully committed to global and user collections")
                 
                 reviewDao.markSynced(reviewId)
                 Result.success(Unit)
@@ -154,13 +168,12 @@ class ReviewRepository @Inject constructor(
         val batch = firestore.batch()
         
         // Global Feed
-        batch.set(firestore.collection("reviews").document(reviewId), doc, SetOptions.merge())
+        batch.set(firestore.collection("reviews").document(reviewId), doc)
         
         // User Backup
         batch.set(
             firestore.collection("users").document(uid).collection("reviews").document(reviewId),
-            doc,
-            SetOptions.merge()
+            doc
         )
         
         batch.commit().await()
@@ -190,10 +203,13 @@ class ReviewRepository @Inject constructor(
             val snapshot = firestore.collection("users").document(uid)
                 .collection("reviews").get().await()
             
+            Log.d("ReviewRepo", "Syncing ${snapshot.size()} reviews from cloud for user $uid")
+            
             val reviews = snapshot.documents.mapNotNull { it.toObject<ReviewDocument>()?.toRoomEntity() }
             reviews.forEach { reviewDao.upsert(it) }
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e("ReviewRepo", "Review sync failed for user $uid: ${e.message}")
             Result.failure(e)
         }
     }
@@ -381,8 +397,8 @@ class ReviewRepository @Inject constructor(
             try {
                 // Fetch public reviews for this media from the global WOE collection
                 val snapshot = firestore.collection("reviews")
-                    .whereEqualTo("mediaId", mediaId)
-                    .orderBy("updatedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                    .whereEqualTo("media_id", mediaId)
+                    .orderBy("updated_at", com.google.firebase.firestore.Query.Direction.DESCENDING)
                     .limit(20)
                     .get().await()
 

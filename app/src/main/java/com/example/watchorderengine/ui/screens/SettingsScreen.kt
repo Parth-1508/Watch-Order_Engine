@@ -36,6 +36,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scrollState = rememberScrollState()
     val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val hideFiller by viewModel.hideFiller.collectAsStateWithLifecycle()
@@ -56,7 +57,7 @@ fun SettingsScreen(
     var showWipeAccountDialog by remember { mutableStateOf(false) }
 
     // Lock to default "Engine" colors for critical account actions
-    val engineAccent = Color(0xFFFFBF3C)
+    val engineAccent = Color(0xFFFFC300)
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -65,9 +66,18 @@ fun SettingsScreen(
             text = { Text("You will be signed out and redirected to the opening screen. Your local cache will be cleared.") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.signOut()
-                    showLogoutDialog = false
-                    onLogout()
+                    // Sign out of Google to ensure the account picker shows next time
+                    val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN)
+                        .requestIdToken("103547777861-dnhefnhft99dnhugodfbtcbtis13jd3b.apps.googleusercontent.com")
+                        .requestEmail()
+                        .build()
+                    val client = com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(context, gso)
+                    
+                    client.signOut().addOnCompleteListener {
+                        viewModel.signOut()
+                        showLogoutDialog = false
+                        onLogout()
+                    }
                 }) { Text("Log Out", fontWeight = FontWeight.Bold, color = Color(0xFFFF4500)) }
             },
             dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancel") } }
@@ -222,7 +232,17 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showWipeAccountDialog = false
-                    viewModel.wipeAllAccountData()
+                    // Sign out of Google as part of the wipe process
+                    val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN)
+                        .requestIdToken("103547777861-dnhefnhft99dnhugodfbtcbtis13jd3b.apps.googleusercontent.com")
+                        .requestEmail()
+                        .build()
+                    val client = com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(context, gso)
+                    client.revokeAccess().addOnCompleteListener {
+                        client.signOut().addOnCompleteListener {
+                            viewModel.wipeAllAccountData()
+                        }
+                    }
                 }) { Text("Clear Everything", fontWeight = FontWeight.Bold, color = Color(0xFFFF4500)) }
             },
             dismissButton = { TextButton(onClick = { showWipeAccountDialog = false }) { Text("Cancel") } }
