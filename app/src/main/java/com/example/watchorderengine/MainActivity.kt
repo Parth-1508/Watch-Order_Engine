@@ -1,10 +1,15 @@
 package com.example.watchorderengine
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.watchorderengine.data.prefs.ThemeMode
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -21,8 +26,14 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var auth: FirebaseAuth
 
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        checkAndRequestNotificationPermission()
         
         // Ensure user is signed in (anonymously) so repository calls don't fail
         if (auth.currentUser == null) {
@@ -48,6 +59,16 @@ class MainActivity : ComponentActivity() {
 
             WatchOrderEngineTheme(mode = appThemeMode) {
                 AppNavigation()
+            }
+        }
+    }
+
+    private fun checkAndRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }

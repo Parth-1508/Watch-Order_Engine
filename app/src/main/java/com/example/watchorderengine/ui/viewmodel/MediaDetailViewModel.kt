@@ -316,9 +316,6 @@ class MediaDetailViewModel @Inject constructor(
                     repository.removeFromWatchlist(mediaId)
                 } else {
                     repository.updateTrackingState(mediaId, state)
-                    if (state == TrackingState.COMPLETED) {
-                        repository.markAllAsWatched(mediaId)
-                    }
                 }
                 // Reload to reflect changes
                 loadMediaDetail(mediaId, forceRefresh = true)
@@ -333,15 +330,18 @@ class MediaDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val wasWatched = episode.isWatched
             
-            repository.toggleEpisodeWatched(episode.id, sanitizedId, context)
-            
-            // If we just marked it as watched, check if there are previous unwatched episodes
+            // Eagerly check for previous unwatched episodes in parallel to repository update
+            // This ensures the bulk-mark prompt appears instantly even if network sync is slow.
             if (!wasWatched) {
-                val hasUnwatched = repository.hasUnwatchedEpisodesBefore(sanitizedId, episode.seasonNumber, episode.episodeNumber)
-                if (hasUnwatched) {
-                    _bulkMarkPrompt.value = episode
+                launch {
+                    val hasUnwatched = repository.hasUnwatchedEpisodesBefore(sanitizedId, episode.seasonNumber, episode.episodeNumber)
+                    if (hasUnwatched) {
+                        _bulkMarkPrompt.value = episode
+                    }
                 }
             }
+
+            repository.toggleEpisodeWatched(episode.id, sanitizedId, context)
 
             // Refresh detail and check for auto-completion
             loadMediaDetail(sanitizedId, forceRefresh = true)

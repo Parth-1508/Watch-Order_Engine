@@ -1,5 +1,9 @@
 package com.example.watchorderengine.ui.screens.home
 
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -59,13 +63,14 @@ fun HomeScreen(
     onSettingsClick: () -> Unit,
     onProfileClick: () -> Unit = {},
     getAvatarModel: (String?) -> Any? = { it },
-    nextUpItem: NextUpItem? = null,
-    onResumeClick: (internalId: String) -> Unit = {},
+    nextUpItems: List<NextUpItem> = emptyList(),
+    onResumeClick: (NextUpItem) -> Unit = {},
     recommendations: List<Recommendation> = emptyList(),
     trendingList: List<MediaSummary> = emptyList(),
     recentlyReleased: List<MediaSummary> = emptyList()
 ) {
     val theme = LocalAppTheme.current
+    val scope = rememberCoroutineScope()
 
     Box(
         modifier = Modifier
@@ -95,19 +100,92 @@ fun HomeScreen(
                     )
                 }
 
-                // "Next Up" Quick Resume Card
-                item {
-                    AnimatedVisibility(
-                        visible = nextUpItem != null,
-                        enter   = fadeIn() + expandVertically(),
-                        exit    = fadeOut() + shrinkVertically()
-                    ) {
-                        nextUpItem?.let { item ->
-                            NextUpCard(
-                                item     = item,
-                                onResume = { onResumeClick(item.internalId) },
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
+                // "Continue Watching" Carousel
+                if (nextUpItems.isNotEmpty()) {
+                    item {
+                        val pagerState = rememberPagerState(pageCount = { nextUpItems.size })
+
+                        // Auto-scroll logic
+                        LaunchedEffect(pagerState.currentPage) {
+                            if (nextUpItems.size > 1) {
+                                delay(5000) // 5 seconds gap
+                                scope.launch {
+                                    val nextAutoPage = (pagerState.currentPage + 1) % nextUpItems.size
+                                    pagerState.animateScrollToPage(nextAutoPage)
+                                }
+                            }
+                        }
+
+                        Box(modifier = Modifier.padding(vertical = 8.dp)) {
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.fillMaxWidth()
+                            ) { page ->
+                                val item = nextUpItems[page]
+                                NextUpCard(
+                                    item     = item,
+                                    onResume = { onResumeClick(item) },
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                            }
+
+                            // Navigation Arrows
+                            if (nextUpItems.size > 1) {
+                                // Left Arrow
+                                IconButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val prevPage = if (pagerState.currentPage > 0) pagerState.currentPage - 1 else nextUpItems.size - 1
+                                            pagerState.animateScrollToPage(prevPage)
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.CenterStart)
+                                        .padding(start = 20.dp)
+                                        .size(32.dp)
+                                        .background(Color.Black.copy(alpha = 0.3f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.ChevronLeft, null, tint = Color.White)
+                                }
+
+                                // Right Arrow
+                                IconButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val nextPage = (pagerState.currentPage + 1) % nextUpItems.size
+                                            pagerState.animateScrollToPage(nextPage)
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .padding(end = 20.dp)
+                                        .size(32.dp)
+                                        .background(Color.Black.copy(alpha = 0.3f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.ChevronRight, null, tint = Color.White)
+                                }
+
+                                // Pager Indicators (Dots)
+                                Row(
+                                    Modifier
+                                        .height(16.dp)
+                                        .fillMaxWidth()
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = 8.dp),
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    repeat(nextUpItems.size) { iteration ->
+                                        val color = if (pagerState.currentPage == iteration) theme.accent else Color.White.copy(alpha = 0.5f)
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(2.dp)
+                                                .clip(CircleShape)
+                                                .background(color)
+                                                .size(6.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -595,19 +673,19 @@ fun Header(
                     leadingIcon = { Icon(Icons.Default.Search, null, tint = theme.textSecondary) }
                 )
             } else {
-                Text(
-                    text = "WATCH ORDER",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Black,
-                        fontStyle = FontStyle.Italic,
-                        letterSpacing = (-1).sp
-                    ),
-                    color = theme.textPrimary,
-                    textAlign = TextAlign.Center,
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                )
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.watchorderengine.R.drawable.ic_launcher_foreground),
+                        contentDescription = "Watch Order Logo",
+                        tint = Color.Unspecified,
+                        modifier = Modifier.size(64.dp)
+                    )
+                }
             }
         }
 

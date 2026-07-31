@@ -50,6 +50,13 @@ fun DiscoveryScreen(
     val activeCategory by viewModel.activeCategory.collectAsStateWithLifecycle()
     val platformFilter by viewModel.platformFilter.collectAsStateWithLifecycle()
 
+    LaunchedEffect(Unit) {
+        // Refresh deck if empty to ensure the user doesn't see a stuck empty screen
+        if (deck.isEmpty()) {
+            viewModel.loadDiscovery()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -132,7 +139,7 @@ fun DiscoveryScreen(
                         key(media.id) {
                             DiscoveryCard(
                                 media = media,
-                                isTop = index == deck.size - 1,
+                                isTop = (index == deck.size - 1),
                                 onSwipe = { action -> viewModel.handleSwipe(media, action) },
                                 onDismiss = { viewModel.dismissPermanently(media) },
                                 onClick = { onMediaClick(media.id) }
@@ -234,9 +241,13 @@ fun DiscoveryCard(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .scale(animatedScale)
-            .offset { IntOffset(offsetX.toInt(), offsetY.toInt()) }
-            .rotate(rotation)
+            .graphicsLayer {
+                scaleX = animatedScale
+                scaleY = animatedScale
+                translationX = offsetX
+                translationY = offsetY
+                rotationZ = rotation
+            }
             .then(
                 if (isTop) {
                     Modifier.pointerInput(Unit) {
@@ -252,7 +263,7 @@ fun DiscoveryCard(
                                 } else if (offsetY < -300) {
                                     onSwipe(SwipeAction.PLAN)
                                 } else if (offsetY > 300) {
-                                    onSwipe(SwipeAction.PAUSE)
+                                    onSwipe(SwipeAction.COMPLETED)
                                 } else {
                                     offsetX = 0f
                                     offsetY = 0f
@@ -328,14 +339,14 @@ fun DiscoveryCard(
                 offsetX > 100 -> stringResource(R.string.discovery_watching)
                 offsetX < -100 -> stringResource(R.string.discovery_skip)
                 offsetY < -100 -> stringResource(R.string.discovery_planning)
-                offsetY > 100 -> stringResource(R.string.discovery_pause)
+                offsetY > 100 -> "COMPLETED"
                 else -> ""
             }
             val color = when {
                 offsetX > 100 -> Color.Green
                 offsetX < -100 -> Color.Red
                 offsetY < -100 -> theme.accent
-                offsetY > 100 -> Color.Yellow
+                offsetY > 100 -> theme.statusCanon
                 else -> theme.textPrimary
             }
 
@@ -366,7 +377,7 @@ fun MediaInfoPanel(media: MediaSummary, modifier: Modifier = Modifier) {
             Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                String.format("%.1f", media.voteAverage),
+                String.format(java.util.Locale.US, "%.1f", media.voteAverage),
                 color = Color(0xFFFFD700),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold

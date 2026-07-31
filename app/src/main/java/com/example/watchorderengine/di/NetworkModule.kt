@@ -9,7 +9,6 @@ import com.example.watchorderengine.network.JikanApiService
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbAuthInterceptor
 import com.example.watchorderengine.network.TmdbConfig
-import com.example.watchorderengine.network.WikipediaApiService
 import com.example.watchorderengine.network.gemini.GeminiService
 import dagger.Module
 import dagger.Provides
@@ -34,10 +33,6 @@ annotation class TmdbClient
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class AnilistClient
-
-@Qualifier
-@Retention(AnnotationRetention.BINARY)
-annotation class WikipediaClient
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -155,39 +150,6 @@ object NetworkModule {
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(AnilistApiService::class.java)
-    }
-
-    @Provides
-    @Singleton
-    @WikipediaClient
-    fun provideWikipediaOkHttpClient(): OkHttpClient {
-        val userAgentInterceptor = Interceptor { chain ->
-            val requestWithUserAgent = chain.request().newBuilder()
-                .header("User-Agent", "WatchOrderEngine/1.0 (https://github.com/Parth-1508/Watch-Order_Engine; contact: parth.p.pate07@gmail.com)")
-                .build()
-            chain.proceed(requestWithUserAgent)
-        }
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
-            else HttpLoggingInterceptor.Level.NONE
-        }
-        return OkHttpClient.Builder()
-            .addInterceptor(userAgentInterceptor)
-            .addInterceptor(loggingInterceptor)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideWikipediaApiService(@WikipediaClient client: OkHttpClient, moshi: Moshi): WikipediaApiService {
-        return Retrofit.Builder()
-            .baseUrl("https://en.wikipedia.org/api/rest_v1/")
-            .client(client)
-            .addConverterFactory(MoshiConverterFactory.create(moshi))
-            .build()
-            .create(WikipediaApiService::class.java)
     }
 
     @Provides

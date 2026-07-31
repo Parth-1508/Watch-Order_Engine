@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".WatchOrderApplication"
@@ -40,6 +41,14 @@
                 <data android:scheme="https" android:host="watch-order-engine.web.app" android:pathPrefix="/__/auth/action" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".util.FcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name="androidx.startup.InitializationProvider"
