@@ -89,6 +89,9 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE mediaId = :mediaId ORDER BY absoluteEpisodeNumber ASC")
     suspend fun getAllEpisodesByMedia(mediaId: String): List<EpisodeEntity>
 
+    @Query("SELECT COUNT(*) FROM episodes WHERE mediaId = :mediaId AND seasonNumber > 0")
+    suspend fun getCountByMedia(mediaId: String): Int
+
     @Query("""
         SELECT EXISTS(
             SELECT 1 FROM episodes e

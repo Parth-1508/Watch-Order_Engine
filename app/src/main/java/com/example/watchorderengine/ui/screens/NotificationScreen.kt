@@ -52,11 +52,14 @@ fun NotificationScreen(
         topBar = {
             TopAppBar(
                 title = { 
-                    Text(
-                        "NOTIFICATIONS", 
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    ) 
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.watchorderengine.R.drawable.ic_launcher_foreground),
+                            contentDescription = "Watch Order Logo",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(52.dp)
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

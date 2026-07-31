@@ -50,7 +50,8 @@ data class TmdbPersonCastCredit(
     @Json(name = "first_air_date") val firstAirDate: String?,  // tv
     @Json(name = "vote_average")  val voteAverage: Double?,
     @Json(name = "episode_count") val episodeCount: Int?,      // tv only
-    @Json(name = "popularity")    val popularity: Double?
+    @Json(name = "popularity")    val popularity: Double?,
+    @Json(name = "genre_ids")     val genreIds: List<Int>?
 )
 
 @JsonClass(generateAdapter = true)

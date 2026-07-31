@@ -20,7 +20,7 @@ fun HomeScreenWrapper(
     val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
     val trendingList by viewModel.trendingList.collectAsStateWithLifecycle()
     val recentlyReleased by viewModel.recentlyReleased.collectAsStateWithLifecycle()
-    val nextUpItem by viewModel.nextUp.collectAsStateWithLifecycle()
+    val nextUpList by viewModel.nextUpList.collectAsStateWithLifecycle()
     val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
@@ -59,9 +59,10 @@ fun HomeScreenWrapper(
         onSettingsClick = onSettingsClick,
         onProfileClick = onProfileClick,
         getAvatarModel = { viewModel.getAvatarModel(it) },
-        nextUpItem = nextUpItem,
-        onResumeClick = { internalId -> 
-            val season = nextUpItem?.targetSeason
+        nextUpItems = nextUpList,
+        onResumeClick = { item -> 
+            val season = item.targetSeason
+            val internalId = item.internalId
             if (season != null) {
                 onMediaClick(internalId + "?initialSeason=$season")
             } else {

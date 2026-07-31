@@ -457,12 +457,11 @@ fun CommunityHeader(
                 }
             }
             Spacer(Modifier.width(16.dp))
-            Text(
-                "COMMUNITY",
-                fontSize   = 28.sp,
-                fontWeight = FontWeight.Black,
-                color      = theme.textPrimary,
-                letterSpacing = 2.sp
+            Icon(
+                painter = androidx.compose.ui.res.painterResource(id = com.example.watchorderengine.R.drawable.ic_launcher_foreground),
+                contentDescription = "Watch Order Logo",
+                tint = Color.Unspecified,
+                modifier = Modifier.size(52.dp)
             )
             Spacer(Modifier.weight(1f))
             Box {
