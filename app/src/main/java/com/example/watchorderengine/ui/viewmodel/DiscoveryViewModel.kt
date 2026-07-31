@@ -49,7 +49,7 @@ data class PlatformFilterState(
 }
 
 /** What the user did to a card — distinct from the swipe gesture itself, see [SwipeAction]. */
-enum class SwipeAction { WATCH, SKIP, PLAN, PAUSE }
+enum class SwipeAction { WATCH, SKIP, PLAN, COMPLETED }
 
 @HiltViewModel
 class DiscoveryViewModel @Inject constructor(
@@ -125,7 +125,7 @@ class DiscoveryViewModel @Inject constructor(
             when (action) {
                 SwipeAction.WATCH -> repository.updateTrackingState(media.id, TrackingState.WATCHING)
                 SwipeAction.PLAN  -> repository.updateTrackingState(media.id, TrackingState.PLANNED)
-                SwipeAction.PAUSE -> repository.updateTrackingState(media.id, TrackingState.PAUSED)
+                SwipeAction.COMPLETED -> repository.updateTrackingState(media.id, TrackingState.COMPLETED)
                 SwipeAction.SKIP  -> repository.markSkipped(media.id)
             }
             // Immediately remove from UI list

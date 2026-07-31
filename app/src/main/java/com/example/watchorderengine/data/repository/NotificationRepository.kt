@@ -3,6 +3,7 @@ package com.example.watchorderengine.data.repository
 import android.util.Log
 import com.example.watchorderengine.data.model.Notification
 import com.example.watchorderengine.data.model.NotificationType
+import com.example.watchorderengine.util.NotificationHelper
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -23,8 +24,11 @@ private const val COLLECTION_NOTIFICATIONS = "notifications"
 @Singleton
 class NotificationRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    private val notificationHelper: NotificationHelper
 ) {
+
+    private val notifiedIds = mutableSetOf<String>()
 
     fun observeNotifications(): Flow<Result<List<Notification>>> = callbackFlow {
         val uid = auth.currentUser?.uid
@@ -47,7 +51,19 @@ class NotificationRepository @Inject constructor(
             }
 
             val list = snapshot?.documents?.mapNotNull { doc ->
-                doc.toObject<Notification>()?.apply { id = doc.id }
+                doc.toObject<Notification>()?.apply { 
+                    id = doc.id 
+                    // Trigger system notification for NEW unread notifications
+                    if (!isRead && id !in notifiedIds) {
+                        notifiedIds.add(id)
+                        notificationHelper.showNotification(
+                            id = id.hashCode(),
+                            title = title,
+                            message = message,
+                            targetId = targetId
+                        )
+                    }
+                }
             } ?: emptyList()
 
             trySend(Result.success(list))

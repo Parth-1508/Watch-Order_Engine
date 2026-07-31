@@ -229,35 +229,33 @@ private fun DetailContent(
     Scaffold(
         containerColor = theme.background
     ) { padding ->
+        // Bulk Mark Prompt Dialog (Moved outside LazyColumn so it appears instantly)
+        if (bulkMarkPrompt != null) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissBulkMark() },
+                containerColor = theme.surface,
+                titleContentColor = theme.textPrimary,
+                textContentColor = theme.textSecondary,
+                title = { Text(stringResource(R.string.detail_mark_previous_title)) },
+                text = { Text(stringResource(R.string.detail_mark_previous_text, bulkMarkPrompt.episodeNumber)) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.confirmBulkMark(detail.id) }) {
+                        Text(stringResource(R.string.detail_mark_episodes), color = theme.accent)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissBulkMark() }) {
+                        Text(stringResource(R.string.detail_cancel), color = theme.textSecondary)
+                    }
+                }
+            )
+        }
+
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().padding(padding)
         ) {
-            // Bulk Mark Prompt Dialog
-            item {
-                if (bulkMarkPrompt != null) {
-                    AlertDialog(
-                        onDismissRequest = { viewModel.dismissBulkMark() },
-                        containerColor = theme.surface,
-                        titleContentColor = theme.textPrimary,
-                        textContentColor = theme.textSecondary,
-                        title = { Text(stringResource(R.string.detail_mark_previous_title)) },
-                        text = { Text(stringResource(R.string.detail_mark_previous_text, bulkMarkPrompt.episodeNumber)) },
-                        confirmButton = {
-                            TextButton(onClick = { viewModel.confirmBulkMark(detail.id) }) {
-                                Text(stringResource(R.string.detail_mark_episodes), color = theme.accent)
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { viewModel.dismissBulkMark() }) {
-                                Text(stringResource(R.string.detail_cancel), color = theme.textSecondary)
-                            }
-                        }
-                    )
-                }
-            }
-
-            // Backdrop & Hero Section
+            // Backdrop & Hero Section (Removed the item block that previously contained the dialog)
             item {
                 Box(modifier = Modifier.height(350.dp).fillMaxWidth()) {
                     AsyncImage(
@@ -884,6 +882,7 @@ private fun ReviewSubmissionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         containerColor = theme.surface,
         title = { Text("Write a Review", fontWeight = FontWeight.Black, color = theme.textPrimary) },
         text = {

@@ -446,7 +446,6 @@ private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
                 InfoCard {
                     Text(detail.characterDescription, color = theme.textSecondary, fontSize = 13.sp, lineHeight = 19.sp)
                     when (detail.loreSource) {
-                        "wikipedia" -> LoreAttributionFooter("Source: Wikipedia (CC BY-SA 4.0)")
                         "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
                         "anilist" -> LoreAttributionFooter("Source: AniList")
                     }
@@ -459,15 +458,6 @@ private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
                     color = theme.textSecondary, fontSize = 13.sp, lineHeight = 19.sp
                 )
             }
-        }
-
-        val showWikiSupplementBlock = !detail.wikiLore.isNullOrBlank() &&
-            detail.characterDescription != detail.wikiLore &&
-            detail.characterDescription.length > 150
-
-        if (showWikiSupplementBlock) {
-            SectionHeader("Lore — Wikipedia")
-            ExpandableLoreCard(lore = detail.wikiLore!!, source = "wikipedia")
         }
 
         if (detail.voiceActorName != null) {
@@ -806,7 +796,6 @@ private fun ExpandableLoreCard(lore: String, source: String? = null) {
                 }
 
                 when (source) {
-                    "wikipedia" -> LoreAttributionFooter("Source: Wikipedia (CC BY-SA 4.0)")
                     "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
                     "anilist" -> LoreAttributionFooter("Source: AniList")
                 }

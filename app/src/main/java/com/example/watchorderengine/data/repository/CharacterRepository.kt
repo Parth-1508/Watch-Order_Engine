@@ -11,7 +11,6 @@ import com.example.watchorderengine.network.AnilistRelations
 import com.example.watchorderengine.network.AnilistRequest
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbConfig
-import com.example.watchorderengine.network.WikipediaApiService
 import com.example.watchorderengine.network.gemini.GeminiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -24,7 +23,6 @@ import javax.inject.Singleton
 class CharacterRepository @Inject constructor(
     private val tmdbApi: TmdbApiService,
     private val anilistApi: AnilistApiService,
-    private val wikipediaApi: WikipediaApiService,
     private val geminiService: GeminiService
 ) {
     companion object { private const val TAG = "CharacterRepository" }
@@ -52,21 +50,24 @@ class CharacterRepository @Inject constructor(
 
             Log.d(TAG, "getCharacterDetail: id=$tmdbPersonId, name='$cleanCharName', show='$cleanShowTitle'")
 
-            // 1. Fetch TMDB Person first to get their real name for high-context Wiki search
-            val tmdbResp = tmdbApi.getPersonDetail(tmdbPersonId)
+            // 1. Parallel Fetch: TMDB Person metadata + AniList Media (if anime)
+            val tmdbDeferred = async { tmdbApi.getPersonDetail(tmdbPersonId) }
+            val aniListDeferred = async {
+                if (isAnime) fetchAniListMedia(anilistId, cleanShowTitle) else null
+            }
+            
+            val tmdbResp = tmdbDeferred.await()
             if (!tmdbResp.isSuccessful) {
                 error("TMDB person fetch failed: HTTP ${tmdbResp.code()}")
             }
             val person = tmdbResp.body() ?: error("Empty TMDB person response")
-
-            // 2. Fetch others in parallel
-            val aniListDeferred = async {
-                if (isAnime) fetchAniListMedia(anilistId, cleanShowTitle) else null
-            }
-            val wikiDeferred = async { getCharacterLore(cleanCharName, cleanShowTitle, person.name) }
-
             val media = aniListDeferred.await()
-            val (wikiLore, wikiImageUrl, wikiSource) = wikiDeferred.await()
+
+            // 2. Fetch Gemini Lore (needs person.name from step 1)
+            val geminiLore = geminiService.fetchCharacterLore(cleanCharName, cleanShowTitle, person.name)
+
+            val wikiLore: String? = null
+            val wikiImageUrl: String? = null
 
             val aniListEdges = media?.characters?.edges ?: emptyList()
             
@@ -138,6 +139,13 @@ class CharacterRepository @Inject constructor(
 
             val castCredits = person.combinedCredits?.cast
                 ?.filter { it.mediaType == "movie" || it.mediaType == "tv" }
+                ?.filter { credit ->
+                    val isReality = credit.genreIds?.any { it == 10764 || it == 10767 } ?: false
+                    val isSelf = credit.character?.lowercase()?.let { 
+                        it.contains("self") || it.contains("himself") || it.contains("herself") 
+                    } ?: false
+                    !isReality && !isSelf
+                }
                 ?.filter { (it.title ?: it.name)?.lowercase() != cleanShowTitle.lowercase() }
                 ?.sortedByDescending { it.popularity ?: 0.0 }
                 ?: emptyList()
@@ -159,8 +167,8 @@ class CharacterRepository @Inject constructor(
             }
 
             val aniListDescription = cleanAniListText(aniChar?.description)
-            val characterLore = aniListDescription ?: wikiLore ?: ""
-            val finalLoreSource = if (aniListDescription != null) "anilist" else wikiSource
+            val characterLore = aniListDescription ?: geminiLore ?: ""
+            val finalLoreSource = if (aniListDescription != null) "anilist" else if (geminiLore != null) "gemini" else null
 
             val primaryCharImg = aniImg
                 ?: validWikiImg
@@ -261,124 +269,6 @@ class CharacterRepository @Inject constructor(
         val a = candidate.lowercase()
         val b = characterName.lowercase()
         return a.contains(b) || b.contains(a)
-    }
-
-    suspend fun getCharacterLore(characterName: String, mediaTitle: String, actorName: String? = null): Triple<String?, String?, String?> {
-        val cleanMedia = mediaTitle.replace(Regex("\\(\\d{4}\\)"), "").trim()
-        val nameParts = characterName.split("/").map { it.trim() }.filter { it.isNotBlank() }
-        
-        for (part in nameParts) {
-            // 1. High-precision context queries - we trust these if they return a hit
-            val contextQueries = mutableListOf(
-                "$part ($cleanMedia character)",
-                "$part ($cleanMedia)",
-                "$part $cleanMedia character"
-            )
-            
-            if (!actorName.isNullOrBlank()) {
-                contextQueries.add(0, "$part played by $actorName")
-                contextQueries.add(1, "$part ($actorName)")
-            }
-
-            for (q in contextQueries) {
-                val result = fetchWikipediaSummary(q)
-                if (result != null) return Triple(result.first, result.second, "wikipedia")
-            }
-
-            // 2. Generic context suffixes - need relevance check to avoid random results (e.g. "Ally (film)" vs our Ally)
-            val contexts = listOf("film", "character", "television character", "comics", "video game")
-            for (ctx in contexts) {
-                val result = fetchWikipediaSummary("$part ($ctx)")
-                if (result != null && isLoreRelevant(result.first ?: "", part, cleanMedia, actorName)) {
-                    return Triple(result.first, result.second, "wikipedia")
-                }
-            }
-
-            // 3. Bare name - MUST be relevant
-            val plainResult = fetchWikipediaSummary(part)
-            if (plainResult != null && isLoreRelevant(plainResult.first ?: "", part, cleanMedia, actorName)) {
-                return Triple(plainResult.first, plainResult.second, "wikipedia")
-            }
-        }
-
-        // 4. Gemini Fallback if Wikipedia failed or was irrelevant
-        val geminiLore = geminiService.fetchCharacterLore(characterName, mediaTitle, actorName)
-        if (geminiLore != null) {
-            return Triple(geminiLore, null, "gemini")
-        }
-        
-        return Triple(null, null, null)
-    }
-
-    /**
-     * Checks if a Wikipedia extract actually pertains to our character/movie.
-     * Prevents the "random results" issue reported for common names like "Ally".
-     */
-    internal fun isLoreRelevant(
-        extract: String,
-        characterName: String,
-        mediaTitle: String,
-        actorName: String?
-    ): Boolean {
-        val text = extract.lowercase()
-        val media = mediaTitle.lowercase()
-        val actor = actorName?.lowercase()
-
-        // Signal 1: Mentions the movie or the actor
-        if (text.contains(media)) return true
-        if (actor != null && text.contains(actor)) return true
-
-        // Signal 2: Mentions significant parts of the media title (e.g. "Cocktail" in "Cocktail 2")
-        val cleanMedia = media.replace(Regex("(?i)(movie|series|the |volume|part|season|special|ova|ona)"), "").trim()
-        val mediaParts = cleanMedia.split(" ", ":", "-").filter { it.length > 3 }
-        if (mediaParts.any { text.contains(it) }) return true
-
-        // Signal 3: If the character name is very common, be extra strict
-        val commonNames = setOf("ally", "john", "mary", "jack", "alex", "sarah")
-        if (characterName.lowercase() in commonNames) {
-            // Must mention media or actor for these
-            return text.contains(media) || (actor != null && text.contains(actor))
-        }
-
-        return false
-    }
-
-    private suspend fun fetchWikipediaSummary(query: String): Pair<String?, String?>? {
-        return try {
-            val pathTitle = query.trim().replace(" ", "_")
-            if (pathTitle.isBlank()) return null
-            val response = wikipediaApi.getPageSummary(pathTitle)
-            if (!response.isSuccessful) {
-                if (response.code() != 404) {
-                    Log.d(TAG, "Wikipedia HTTP ${response.code()} for '$query'")
-                }
-                return null
-            }
-            val body = response.body() ?: return null
-
-            if (body.type != null && body.type != "standard") {
-                Log.d(TAG, "Wikipedia type='${body.type}' for '$query' — skipping (not a standard article)")
-                return null
-            }
-
-            val extract = body.extract?.trim()?.takeIf { it.isNotBlank() }
-            var imageUrl = body.thumbnail?.source ?: body.originalImage?.source
-
-            if (imageUrl?.startsWith("//") == true) {
-                imageUrl = "https:$imageUrl"
-            }
-
-            if (extract == null && imageUrl == null) {
-                Log.d(TAG, "Wikipedia page found for '$query' but it has neither extract nor image")
-                null
-            } else {
-                if (imageUrl == null) Log.d(TAG, "Wikipedia page found for '$query' with text but NO image (article has no infobox/lead image)")
-                extract to imageUrl
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Wikipedia fetch threw for '$query': ${e.message}")
-            null
-        }
     }
 
     private suspend fun fetchAniListMedia(anilistId: Int?, showTitle: String): AnilistMedia? {

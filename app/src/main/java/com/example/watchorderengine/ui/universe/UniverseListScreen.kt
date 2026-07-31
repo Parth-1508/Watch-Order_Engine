@@ -55,13 +55,16 @@ fun UniverseListScreen(
         topBar = {
             TopAppBar(
                 title = { 
-                    Text(
-                        "MY GRAPHS", 
-                        fontWeight = FontWeight.Black, 
-                        modifier = Modifier.graphicsLayer {
-                            if (theme.isComic) rotationZ = -1f
-                        }
-                    ) 
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.watchorderengine.R.drawable.ic_launcher_foreground),
+                            contentDescription = "Watch Order Logo",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(52.dp).graphicsLayer {
+                                if (theme.isComic) rotationZ = -1f
+                            }
+                        )
+                    }
                 },
                 modifier = Modifier.statusBarsPadding(),
                 colors = TopAppBarDefaults.topAppBarColors(
