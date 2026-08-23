@@ -11,7 +11,8 @@ fun HomeScreenWrapper(
     onMediaClick: (String) -> Unit,
     onSearchClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onProfileClick: () -> Unit
+    onProfileClick: () -> Unit,
+    onDiscoverClick: () -> Unit = {}
 ) {
     val viewModel: HomeViewModel = hiltViewModel()
     
@@ -58,6 +59,7 @@ fun HomeScreenWrapper(
         onShowClick = { onMediaClick(it) },
         onSettingsClick = onSettingsClick,
         onProfileClick = onProfileClick,
+        onDiscoverClick = onDiscoverClick,
         getAvatarModel = { viewModel.getAvatarModel(it) },
         nextUpItems = nextUpList,
         onResumeClick = { item -> 

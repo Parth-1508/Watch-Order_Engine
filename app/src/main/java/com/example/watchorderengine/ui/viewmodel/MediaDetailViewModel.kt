@@ -79,6 +79,10 @@ class MediaDetailViewModel @Inject constructor(
     private val _showWelcomeTip = MutableStateFlow(true)
     val showWelcomeTip: StateFlow<Boolean> = _showWelcomeTip.asStateFlow()
 
+    /** Whether this screen should tint itself from the show's poster/backdrop art (Settings toggle). */
+    val dynamicShowTheming: StateFlow<Boolean> = userPrefs.dynamicShowTheming
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     private var loadJob: Job? = null
     private var episodesJob: Job? = null
     private var reviewsJob: Job? = null

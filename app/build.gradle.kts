@@ -105,6 +105,9 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
 
+    // Palette (dynamic show-based theming)
+    implementation(libs.androidx.palette.ktx)
+
     // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

@@ -32,6 +32,7 @@ class UserPreferencesRepository(private val context: Context) {
         val USERNAME = stringPreferencesKey("username")
         val AVATAR_URL = stringPreferencesKey("avatar_url")
         val CLOUD_SYNC_ENABLED = booleanPreferencesKey("cloud_sync_enabled")
+        val DYNAMIC_SHOW_THEMING = booleanPreferencesKey("dynamic_show_theming")
         val SELECTED_GENRES = stringSetPreferencesKey("selected_genres")
         val IS_TASTE_PROFILE_COMPLETED = booleanPreferencesKey("is_taste_profile_completed")
         val LAST_ACTIVE_DATE = longPreferencesKey("last_active_date")
@@ -99,6 +100,11 @@ class UserPreferencesRepository(private val context: Context) {
         preferences[PreferencesKeys.CLOUD_SYNC_ENABLED] ?: true
     }
 
+    /** Whether the Media Detail screen should tint itself from the show's poster/backdrop art. */
+    val dynamicShowTheming: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.DYNAMIC_SHOW_THEMING] ?: true
+    }
+
     val selectedGenres: Flow<Set<String>> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.SELECTED_GENRES] ?: emptySet()
     }
@@ -121,6 +127,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setCloudSyncEnabled(enabled: Boolean) {
         context.dataStore.edit { it[PreferencesKeys.CLOUD_SYNC_ENABLED] = enabled }
+    }
+
+    suspend fun setDynamicShowTheming(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.DYNAMIC_SHOW_THEMING] = enabled }
     }
 
     suspend fun setSelectedGenres(genres: Set<String>) {

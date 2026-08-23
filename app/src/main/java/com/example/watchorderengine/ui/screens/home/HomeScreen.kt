@@ -27,6 +27,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -62,6 +65,7 @@ fun HomeScreen(
     onShowClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
     onProfileClick: () -> Unit = {},
+    onDiscoverClick: () -> Unit = {},
     getAvatarModel: (String?) -> Any? = { it },
     nextUpItems: List<NextUpItem> = emptyList(),
     onResumeClick: (NextUpItem) -> Unit = {},
@@ -142,10 +146,10 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .align(Alignment.CenterStart)
                                         .padding(start = 20.dp)
-                                        .size(32.dp)
+                                        .size(48.dp)
                                         .background(Color.Black.copy(alpha = 0.3f), CircleShape)
                                 ) {
-                                    Icon(Icons.Default.ChevronLeft, null, tint = Color.White)
+                                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous show", tint = Color.White)
                                 }
 
                                 // Right Arrow
@@ -159,19 +163,23 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .align(Alignment.CenterEnd)
                                         .padding(end = 20.dp)
-                                        .size(32.dp)
+                                        .size(48.dp)
                                         .background(Color.Black.copy(alpha = 0.3f), CircleShape)
                                 ) {
-                                    Icon(Icons.Default.ChevronRight, null, tint = Color.White)
+                                    Icon(Icons.Default.ChevronRight, contentDescription = "Next show", tint = Color.White)
                                 }
 
-                                // Pager Indicators (Dots)
+                                // Pager Indicators (Dots) — decorative; the page change is
+                                // already announced via the arrow buttons and swipe, so
+                                // these stay out of the accessibility tree entirely rather
+                                // than adding 1-per-dot noise.
                                 Row(
                                     Modifier
                                         .height(16.dp)
                                         .fillMaxWidth()
                                         .align(Alignment.BottomCenter)
-                                        .padding(bottom = 8.dp),
+                                        .padding(bottom = 8.dp)
+                                        .clearAndSetSemantics {},
                                     horizontalArrangement = Arrangement.Center
                                 ) {
                                     repeat(nextUpItems.size) { iteration ->
@@ -240,26 +248,10 @@ fun HomeScreen(
 
                 if (watchlist.itemCount == 0 && watchlist.loadState.refresh is androidx.paging.LoadState.NotLoading) {
                     item {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 60.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Box(modifier = Modifier.size(80.dp).background(Color.White.copy(alpha = 0.05f), CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Tv, 
-                                    contentDescription = null, 
-                                    tint = Color.Gray, 
-                                    modifier = Modifier.size(40.dp)
-                                )
-                            }
-                            Text("NO SHOWS HERE YET", color = Color.Gray, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 16.dp))
-                            Text(
-                                text = "Open a show and set it to ${state.activeCategory}",
-                                color = Color.Gray,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(top = 8.dp)
-                            )
-                        }
+                        HomeEmptyState(
+                            category = state.activeCategory,
+                            onFindShowClick = onDiscoverClick
+                        )
                     }
                 } else {
                     // Grid mapping for Paging items
@@ -392,7 +384,10 @@ fun MediaCardPaged(
         ) {
             AsyncImage(
                 model = show.posterUrl,
-                contentDescription = show.title,
+                // Decorative — the Title/genre Text below already gives this card its
+                // accessible name via the clickable Column's merge; naming the poster too
+                // would repeat the title within the same announcement.
+                contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
                 alpha = 0.9f
@@ -471,7 +466,10 @@ fun NextUpCard(
             ) {
                 AsyncImage(
                     model              = item.backdropUrl ?: item.posterUrl,
-                    contentDescription = item.showTitle,
+                    // Decorative backdrop — the visible title/episode Text below already
+                    // conveys this, so a contentDescription here would just announce the
+                    // same title twice back-to-back on the way to the Resume button.
+                    contentDescription = null,
                     modifier           = Modifier.fillMaxSize(),
                     contentScale       = ContentScale.Crop
                 )
@@ -619,7 +617,7 @@ fun Header(
         // Avatar (Left) — tapping navigates to Profile
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .border(2.dp, theme.textPrimary, CircleShape)
                 .clickable(onClickLabel = "Open profile") { onProfileClick() }
@@ -631,7 +629,7 @@ fun Header(
                 ) {
                     Icon(
                         imageVector = Icons.Default.AccountCircle,
-                        contentDescription = "Avatar",
+                        contentDescription = "Profile picture",
                         tint = theme.textSecondary,
                         modifier = Modifier.size(28.dp)
                     )
@@ -639,7 +637,7 @@ fun Header(
             } else {
                 AsyncImage(
                     model = getAvatarModel(profilePictureUrl),
-                    contentDescription = "Avatar",
+                    contentDescription = "Profile picture",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                     error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
@@ -660,7 +658,11 @@ fun Header(
                     placeholder = { Text("Search title...", fontSize = 14.sp) },
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
-                        .height(48.dp),
+                        .height(48.dp)
+                        // Belt-and-suspenders: TextField `placeholder` text isn't always
+                        // reliably exposed to TalkBack as the field's accessible name, so
+                        // give it an explicit one rather than risk a silent input field.
+                        .semantics { contentDescription = "Search shows" },
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = theme.surface,
                         unfocusedContainerColor = theme.surface,
@@ -670,7 +672,7 @@ fun Header(
                         unfocusedTextColor = theme.textPrimary
                     ),
                     shape = RoundedCornerShape(24.dp),
-                    leadingIcon = { Icon(Icons.Default.Search, null, tint = theme.textSecondary) }
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = theme.textSecondary) }
                 )
             } else {
                 Box(
@@ -693,17 +695,21 @@ fun Header(
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = { onToggleSearch(!isSearchOpen) },
-                modifier = Modifier.size(40.dp).border(2.dp, theme.textPrimary, CircleShape)
+                modifier = Modifier.size(48.dp).border(2.dp, theme.textPrimary, CircleShape)
             ) {
-                Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, null, tint = theme.textPrimary)
+                Icon(
+                    imageVector = if (isSearchOpen) Icons.Default.Close else Icons.Default.Search,
+                    contentDescription = if (isSearchOpen) "Close search" else "Open search",
+                    tint = theme.textPrimary
+                )
             }
             if (!isSearchOpen) {
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = onSettingsClick,
-                    modifier = Modifier.size(40.dp).border(2.dp, theme.textPrimary, CircleShape)
+                    modifier = Modifier.size(48.dp).border(2.dp, theme.textPrimary, CircleShape)
                 ) {
-                    Icon(Icons.Default.Settings, null, tint = theme.textPrimary)
+                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = theme.textPrimary)
                 }
             }
         }

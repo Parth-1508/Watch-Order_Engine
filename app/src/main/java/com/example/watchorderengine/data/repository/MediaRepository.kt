@@ -1,7 +1,6 @@
 package com.example.watchorderengine.data.repository
 
 import android.content.Context
-import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.watchorderengine.data.WatchOrderRepository
@@ -23,6 +22,7 @@ import com.example.watchorderengine.network.model.TmdbWatchProvider
 import com.example.watchorderengine.network.model.TmdbWatchProviderCountry
 import androidx.paging.map
 import com.example.watchorderengine.util.retry
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -47,6 +47,7 @@ private const val TAG = "MediaRepository"
 
 @Singleton
 class MediaRepository @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val db: WatchOrderDatabase,
     private val moshi: Moshi,
     private val apiService: TmdbApiService,
@@ -1235,7 +1236,7 @@ class MediaRepository @Inject constructor(
             if (isMovieId(mediaId)) {
                 fetchAndCacheMovie(tmdbId, mediaId)
             } else {
-                val response = com.example.watchorderengine.util.retry { apiService.getTvShow(tmdbId) }
+                val response = retry { apiService.getTvShow(tmdbId) }
                 if (!response.isSuccessful || response.body() == null) return false
                 val body = response.body()!!
                 val entity = body.toMediaEntity(mediaId)
@@ -1998,8 +1999,15 @@ class MediaRepository @Inject constructor(
         results: Map<String, TmdbWatchProviderCountry>?
     ): List<WatchProviderItem> {
         if (results.isNullOrEmpty()) return emptyList()
-        val countryCode = TmdbConfig.PROVIDER_COUNTRY_PRIORITY
-            .firstOrNull { results.containsKey(it) }
+        // Prefer the device's actual configured region (Settings > System >
+        // Languages & region) — this is "the user's region" the /watch/providers
+        // response should be read for. Only fall back to the static priority
+        // list, then to whatever's available, when TMDB has no data for it
+        // (e.g. a region with no reported streaming availability yet).
+        val deviceRegion = appContext.resources.configuration.locales.get(0)?.country
+            ?.takeIf { it.isNotBlank() }
+        val countryCode = deviceRegion?.takeIf { results.containsKey(it) }
+            ?: TmdbConfig.PROVIDER_COUNTRY_PRIORITY.firstOrNull { results.containsKey(it) }
             ?: results.keys.firstOrNull() ?: return emptyList()
         val country      = results[countryCode] ?: return emptyList()
         val justWatchUrl = country.link

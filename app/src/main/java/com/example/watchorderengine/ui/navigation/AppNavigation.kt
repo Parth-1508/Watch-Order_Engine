@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -292,7 +294,8 @@ fun AppNavigation() {
                         onMediaClick    = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
                         onSearchClick   = { navigateTopLevel(Screen.Search.route) },
                         onSettingsClick = { navigateTopLevel(Screen.Settings.route) },
-                        onProfileClick  = { navigateTopLevel(Screen.Profile.route) }
+                        onProfileClick  = { navigateTopLevel(Screen.Profile.route) },
+                        onDiscoverClick = { navigateTopLevel(Screen.Discovery.route) }
                     )
                 }
 
@@ -598,14 +601,26 @@ fun BottomNavItem(label: String, icon: ImageVector, isSelected: Boolean, onClick
     val theme = LocalAppTheme.current
     Column(
         modifier = Modifier
-            .clickable { onClick() }
+            .heightIn(min = 48.dp)
+            // `selectable` (not plain `clickable`) is the correct primitive for "one of
+            // several tabs, currently selected" — it sets Role.Tab and the `selected`
+            // state on the merged accessibility node automatically, so TalkBack announces
+            // e.g. "Home, Tab, selected" instead of just "Home, Button".
+            .selectable(
+                selected = isSelected,
+                onClick = onClick,
+                role = Role.Tab
+            )
             .padding(vertical = 8.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
             imageVector    = icon,
-            contentDescription = label,
+            // Decorative here: `selectable` merges this Column into a single
+            // accessibility node, and the Text label below already supplies the name.
+            // Leaving this non-null would make TalkBack announce the label twice.
+            contentDescription = null,
             tint     = if (isSelected) theme.accent else Color.Gray,
             modifier = Modifier.size(22.dp)
         )

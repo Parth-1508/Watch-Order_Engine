@@ -3,6 +3,7 @@ package com.example.watchorderengine.data.repository
 import com.example.watchorderengine.data.WatchOrderRepository
 import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
+import android.content.Context
 import com.example.watchorderengine.network.JikanApiService
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.gemini.GeminiService
@@ -16,6 +17,7 @@ import org.junit.Test
 import org.mockito.kotlin.mock
 
 class MediaRepositoryTest {
+    private val appContext: Context = mock()
     private val db: WatchOrderDatabase = mock()
     private val moshi: Moshi = Moshi.Builder().build()
     private val tmdbApi: TmdbApiService = mock()
@@ -30,7 +32,7 @@ class MediaRepositoryTest {
 
     @Before
     fun setup() {
-        repository = MediaRepository(db, moshi, tmdbApi, jikanApi, gemini, watchOrderRepo, userPrefs, firestore, auth)
+        repository = MediaRepository(appContext, db, moshi, tmdbApi, jikanApi, gemini, watchOrderRepo, userPrefs, firestore, auth)
     }
 
     @Test

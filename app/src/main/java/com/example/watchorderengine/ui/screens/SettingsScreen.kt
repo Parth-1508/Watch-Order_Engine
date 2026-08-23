@@ -2,6 +2,8 @@ package com.example.watchorderengine.ui.screens
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -15,6 +17,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +48,7 @@ fun SettingsScreen(
     val hideFiller by viewModel.hideFiller.collectAsStateWithLifecycle()
     val hideUnwatchedSpoilers by viewModel.hideUnwatchedSpoilers.collectAsStateWithLifecycle()
     val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsStateWithLifecycle()
+    val dynamicShowTheming by viewModel.dynamicShowTheming.collectAsStateWithLifecycle()
     val wipeAccountState by viewModel.wipeAccountState.collectAsStateWithLifecycle()
     val changePasswordState by viewModel.changePasswordState.collectAsStateWithLifecycle()
 
@@ -263,7 +270,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = theme.textPrimary)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = theme.textPrimary)
             }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
@@ -299,6 +306,17 @@ fun SettingsScreen(
                         )
                     }
                 }
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = theme.textPrimary.copy(alpha = 0.05f)
+                )
+                PreferenceToggleRow(
+                    icon = Icons.Default.Palette,
+                    title = "DYNAMIC SHOW COLORS",
+                    subtitle = if (dynamicShowTheming) "DETAIL SCREEN TINTED FROM POSTER ART" else "USING FIXED THEME ACCENT",
+                    checked = dynamicShowTheming,
+                    onCheckedChange = { viewModel.setDynamicShowTheming(it) }
+                )
             }
         }
 
@@ -532,7 +550,11 @@ fun ThemeOptionRow(mode: ThemeMode, isSelected: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            // `selectable` (not plain `clickable`) is correct for a radio-style, single-
+            // selection list — it sets Role.RadioButton and folds `isSelected` into the
+            // merged node. The RadioButton below has onClick = null (decoration only) so
+            // it doesn't create a second, competing focus stop.
+            .selectable(selected = isSelected, onClick = onClick, role = Role.RadioButton)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -583,12 +605,22 @@ fun PreferenceToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // Without this, TalkBack hits the Switch as its own silent stop — "On,
+            // Switch" with no label — because nothing connects it to the Title text next
+            // to it. Making the whole row toggleable merges title+subtitle+state into one
+            // announcement ("Cloud Sync, Sync..., Switch, On") and, as a bonus, gives a
+            // much bigger tap target than the bare Switch alone.
+            .toggleable(
+                value = checked,
+                onValueChange = onCheckedChange,
+                role = Role.Switch
+            )
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = theme.textPrimary)
+            Icon(icon, contentDescription = null, tint = theme.textPrimary)
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(title, fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
@@ -598,6 +630,10 @@ fun PreferenceToggleRow(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            // Semantics already come from the row's own `toggleable` above; left alone,
+            // the Switch would set up its own separate merge boundary and split one
+            // setting into two confusing TalkBack stops (see the row modifier above).
+            modifier = Modifier.clearAndSetSemantics {},
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.Green,
                 checkedTrackColor = Color.Green.copy(alpha = 0.3f)
