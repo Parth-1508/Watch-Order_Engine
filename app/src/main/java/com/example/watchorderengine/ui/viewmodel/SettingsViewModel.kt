@@ -61,6 +61,9 @@ class SettingsViewModel @Inject constructor(
     val cloudSyncEnabled: StateFlow<Boolean> = prefsRepository.cloudSyncEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    val dynamicShowTheming: StateFlow<Boolean> = prefsRepository.dynamicShowTheming
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     private val _wipeAccountState = MutableStateFlow<WipeAccountState>(WipeAccountState.Idle)
     val wipeAccountState: StateFlow<WipeAccountState> = _wipeAccountState.asStateFlow()
 
@@ -85,6 +88,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setCloudSyncEnabled(enabled: Boolean) {
         viewModelScope.launch { prefsRepository.setCloudSyncEnabled(enabled) }
+    }
+
+    fun setDynamicShowTheming(enabled: Boolean) {
+        viewModelScope.launch { prefsRepository.setDynamicShowTheming(enabled) }
     }
 
     fun signOut() {

@@ -27,6 +27,7 @@ retrofit = "2.11.0"
 moshi = "1.15.1"
 okhttp = "4.12.0"
 coil = "2.6.0"
+palette = "1.0.0"
 generativeai = "0.7.0"
 work = "2.10.0"
 hiltWork = "1.2.0"
@@ -78,6 +79,9 @@ okhttp-loggingInterceptor = { group = "com.squareup.okhttp3", name = "logging-in
 
 # Coil
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# Palette (dynamic show-based theming — extracts dominant/accent colors from poster art)
+androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 
 # Room
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }

@@ -52,9 +52,11 @@ enum class MediaCategory { MOVIE, TV_SHOW, ANIME, EPISODE, SHORT, SPECIAL, COMIC
  * One streaming / rental / purchase option shown in the "Where to Watch" card.
  *
  * Built by [MediaRepository.resolveWatchProviders] from the TMDB
- * `watch/providers` append module.  The repository resolves the best available
- * country (IN → US → GB → …) and flattens all offer types into a single list,
- * so the UI can group by [offerType] without knowing the country.
+ * `watch/providers` append module.  The repository resolves the device's own
+ * region first, falling back to a static priority list (IN → US → GB → …)
+ * only when TMDB has no data for that region, then flattens all offer types
+ * into a single list so the UI can group by [offerType] without knowing the
+ * country.
  */
 @Serializable
 data class WatchProviderItem(

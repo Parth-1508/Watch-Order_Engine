@@ -6,6 +6,30 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      Package visibility (Android 11 / API 30+): without declaring each
+      streaming app's package here, PackageManager.getPackageInfo() and
+      getLaunchIntentForPackage() silently fail for apps NOT listed below —
+      even when they ARE installed — which would make the 1-tap streaming
+      launcher (see util/StreamingLauncher.kt) always fall back to the Play
+      Store instead of actually detecting and opening the installed app.
+      See: https://developer.android.com/training/package-visibility
+    -->
+    <queries>
+        <package android:name="com.netflix.mediaclient" />
+        <package android:name="com.amazon.avod.thirdpartyclient" />
+        <package android:name="com.disney.disneyplus" />
+        <package android:name="com.crunchyroll.crunchyroid" />
+        <package android:name="com.apple.atve.androidtv.appletv" />
+        <package android:name="com.wbd.stream" />
+        <package android:name="in.startv.hotstar" />
+        <package android:name="com.hulu.plus" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.videos" />
+        <!-- Google Play Store itself, for the "app not installed" fallback -->
+        <package android:name="com.android.vending" />
+    </queries>
+
     <application
         android:name=".WatchOrderApplication"
         android:allowBackup="true"

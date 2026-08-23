@@ -9,11 +9,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,8 +37,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.watchorderengine.data.model.WatchProviderItem
@@ -52,6 +55,10 @@ import com.example.watchorderengine.ui.components.FactLoadingView
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.MediaDetailViewModel
+import com.example.watchorderengine.util.minTouchTarget
+import com.example.watchorderengine.util.launchStreamingProvider
+import com.example.watchorderengine.util.rememberShowPalette
+import java.util.Locale
 
 @Composable
 fun MediaDetailScreen(
@@ -72,7 +79,7 @@ fun MediaDetailScreen(
     val isBulkSyncing by viewModel.isBulkSyncing.collectAsStateWithLifecycle()
     val generationError by viewModel.generationError.collectAsStateWithLifecycle()
     val generationSuccess by viewModel.generationSuccess.collectAsStateWithLifecycle()
-    val aggregatedReviews by viewModel.aggregatedReviews.collectAsStateWithLifecycle()
+    val dynamicShowTheming by viewModel.dynamicShowTheming.collectAsStateWithLifecycle()
 
     LaunchedEffect(mediaId) {
         viewModel.loadMediaDetail(mediaId, initialSeason = initialSeason)
@@ -84,7 +91,7 @@ fun MediaDetailScreen(
 
     LaunchedEffect(showWelcomeTip) {
         if (showWelcomeTip) {
-            kotlinx.coroutines.delay(4000)
+            kotlinx.coroutines.delay(4000.milliseconds)
             viewModel.dismissWelcomeTip()
         }
     }
@@ -96,29 +103,57 @@ fun MediaDetailScreen(
     ) {
         media?.let { detail ->
             key(detail.id) {
-                DetailContent(
-                    detail = detail,
-                    episodes = episodesBySeason,
-                    isAnalyzing = isAnalyzing,
-                    isEpisodesLoading = isEpisodesLoading,
-                    universe = universes,
-                    generationError = generationError,
-                    generationSuccess = generationSuccess,
-                    bulkMarkPrompt = bulkMarkPrompt,
-                    showWelcomeTip = showWelcomeTip,
-                    onDismissGenerationError = { viewModel.dismissGenerationError() },
-                    onDismissGenerationSuccess = { viewModel.dismissGenerationSuccess() },
-                    onBack = onBack,
-                    onUpdateTracking = { viewModel.updateTrackingState(detail.id, it) },
-                    onToggleEpisode = { viewModel.toggleEpisodeWatched(it, detail.id) },
-                    onSeasonChange = { viewModel.loadEpisodes(detail.id, it) },
-                    onGenerateOrder = { viewModel.generateWatchOrder(detail.id) },
-                    onUniverseClick = onUniverseClick,
-                    onCharacterClick = onCharacterClick,
-                    onAuthorClick = onAuthorClick,
-                    viewModel = viewModel,
-                    initialSeason = initialSeason
+                // Dynamic Theme Engine: pull a per-show accent out of the backdrop/poster
+                // via the Palette API, and animate the app's accent color to it so this
+                // screen feels tinted by the art on screen (Settings > Appearance can turn
+                // this off, which just keeps `showPalette` null and falls back below).
+                val showPalette by rememberShowPalette(
+                    imageUrl = detail.backdropUrl ?: detail.posterUrl,
+                    enabled = dynamicShowTheming
                 )
+                val animatedAccent by animateColorAsState(
+                    targetValue = showPalette?.accent ?: theme.accent,
+                    animationSpec = tween(durationMillis = 600),
+                    label = "dynamicShowAccent"
+                )
+                val animatedOnAccent by animateColorAsState(
+                    targetValue = showPalette?.onAccent ?: MaterialTheme.colorScheme.onPrimary,
+                    animationSpec = tween(durationMillis = 600),
+                    label = "dynamicShowOnAccent"
+                )
+
+                CompositionLocalProvider(LocalAppTheme provides theme.copy(accent = animatedAccent)) {
+                    MaterialTheme(
+                        colorScheme = MaterialTheme.colorScheme.copy(
+                            primary = animatedAccent,
+                            onPrimary = animatedOnAccent
+                        )
+                    ) {
+                        DetailContent(
+                            detail = detail,
+                            episodes = episodesBySeason,
+                            isAnalyzing = isAnalyzing,
+                            isEpisodesLoading = isEpisodesLoading,
+                            universe = universes,
+                            generationError = generationError,
+                            generationSuccess = generationSuccess,
+                            bulkMarkPrompt = bulkMarkPrompt,
+                            showWelcomeTip = showWelcomeTip,
+                            onDismissGenerationError = { viewModel.dismissGenerationError() },
+                            onDismissGenerationSuccess = { viewModel.dismissGenerationSuccess() },
+                            onBack = onBack,
+                            onUpdateTracking = { viewModel.updateTrackingState(detail.id, it) },
+                            onToggleEpisode = { viewModel.toggleEpisodeWatched(it, detail.id) },
+                            onSeasonChange = { viewModel.loadEpisodes(detail.id, it) },
+                            onGenerateOrder = { viewModel.generateWatchOrder(detail.id) },
+                            onUniverseClick = onUniverseClick,
+                            onCharacterClick = onCharacterClick,
+                            onAuthorClick = onAuthorClick,
+                            viewModel = viewModel,
+                            initialSeason = initialSeason
+                        )
+                    }
+                }
             }
         }
 
@@ -285,25 +320,26 @@ private fun DetailContent(
                         IconButton(
                             onClick = onBack,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .background(theme.background.copy(alpha = 0.6f))
                         ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Go back", tint = theme.textPrimary)
                         }
                         val context = androidx.compose.ui.platform.LocalContext.current
+                        val shareText = stringResource(R.string.detail_share_text, detail.title)
                         IconButton(
                             onClick = {
                                 val sendIntent = android.content.Intent().apply {
                                     action = android.content.Intent.ACTION_SEND
-                                    putExtra(android.content.Intent.EXTRA_TEXT, context.getString(R.string.detail_share_text, detail.title))
+                                    putExtra(android.content.Intent.EXTRA_TEXT, shareText)
                                     type = "text/plain"
                                 }
                                 val shareIntent = android.content.Intent.createChooser(sendIntent, null)
                                 context.startActivity(shareIntent)
                             },
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .background(theme.background.copy(alpha = 0.6f))
                         ) {
@@ -358,7 +394,7 @@ private fun DetailContent(
                         Text(detail.releaseYear, color = theme.textSecondary, fontSize = 14.sp)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             Icon(Icons.Default.Star, "Rating", tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp))
-                            Text(String.format("%.1f", detail.voteAverage), color = Color(0xFFFFD700), fontSize = 14.sp)
+                            Text(String.format(Locale.US, "%.1f", detail.voteAverage), color = Color(0xFFFFD700), fontSize = 14.sp)
                         }
                         Box(modifier = Modifier.border(1.dp, theme.textSecondary.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
                             Text(detail.ageRating, color = theme.textPrimary, fontSize = 10.sp)
@@ -388,7 +424,7 @@ private fun DetailContent(
 
                     // Watch Providers
                     if (detail.watchProviders.isNotEmpty()) {
-                        WatchProvidersCard(detail.watchProviders)
+                        WatchProvidersCard(detail.watchProviders, detail.title)
                     }
 
                     // Trailer
@@ -526,8 +562,11 @@ private fun DetailContent(
                                         modifier = Modifier.weight(1f),
                                         lineHeight = 16.sp
                                     )
-                                    IconButton(onClick = { viewModel.dismissWelcomeTip() }, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Close, null, tint = theme.textSecondary)
+                                    IconButton(
+                                        onClick = { viewModel.dismissWelcomeTip() },
+                                        modifier = Modifier.minTouchTarget().size(24.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Dismiss tip", tint = theme.textSecondary)
                                     }
                                 }
                             }
@@ -549,10 +588,16 @@ private fun DetailContent(
                                     val isSelected = season.seasonNumber == selectedSeason
                                     val label = if (season.seasonNumber == 0) "Specials" else "S${season.seasonNumber}"
                                     Surface(
-                                        modifier = Modifier.clickable { 
-                                            selectedSeason = season.seasonNumber
-                                            onSeasonChange(season.seasonNumber) 
-                                        },
+                                        modifier = Modifier
+                                            .selectable(
+                                                selected = isSelected,
+                                                onClick = {
+                                                    selectedSeason = season.seasonNumber
+                                                    onSeasonChange(season.seasonNumber)
+                                                },
+                                                role = Role.Tab
+                                            )
+                                            .minTouchTarget(),
                                         shape = CircleShape,
                                         color = if (isSelected) theme.textPrimary else theme.surface,
                                         border = if (isSelected) null else BorderStroke(1.dp, theme.textSecondary.copy(alpha = 0.1f))
@@ -569,10 +614,16 @@ private fun DetailContent(
                             }
                             
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                IconButton(onClick = { viewModel.markSeasonAsWatched(detail.id, selectedSeason) }, modifier = Modifier.size(32.dp)) {
+                                IconButton(
+                                    onClick = { viewModel.markSeasonAsWatched(detail.id, selectedSeason) },
+                                    modifier = Modifier.minTouchTarget().size(32.dp)
+                                ) {
                                     Icon(Icons.Default.Checklist, "Mark Season", tint = theme.accent, modifier = Modifier.size(20.dp))
                                 }
-                                IconButton(onClick = { viewModel.unmarkSeasonAsWatched(detail.id, selectedSeason) }, modifier = Modifier.size(32.dp)) {
+                                IconButton(
+                                    onClick = { viewModel.unmarkSeasonAsWatched(detail.id, selectedSeason) },
+                                    modifier = Modifier.minTouchTarget().size(32.dp)
+                                ) {
                                     Icon(Icons.Default.RemoveDone, "Unmark Season", tint = theme.textSecondary, modifier = Modifier.size(20.dp))
                                 }
                             }
@@ -676,7 +727,7 @@ private fun ReviewsTab(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
-                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                val uriHandler = LocalUriHandler.current
                 OutlinedButton(
                     onClick = { uriHandler.openUri("https://www.google.com/search?q=${mediaTitle}+movie+reviews") },
                     modifier = Modifier.padding(bottom = 32.dp)
@@ -736,14 +787,19 @@ private fun ReviewItem(
                     val fallbackAvatar = "https://ui-avatars.com/api/?name=${review.authorName.ifBlank { "User" }}&background=random&color=fff"
                     AsyncImage(
                         model = getAvatarModel(review.authorAvatarUrl) ?: fallbackAvatar,
-                        contentDescription = null,
+                        // Only meaningfully clickable when there's a profile to open — give
+                        // it a real name in that case instead of leaving a silent, unlabeled
+                        // tap target (the author name Text next to it is a sibling, not a
+                        // child, so it wouldn't otherwise be picked up by TalkBack here).
+                        contentDescription = if (review.userId != null) "View ${review.authorName}'s profile" else null,
                         modifier = Modifier
+                            .clickable(enabled = review.userId != null) {
+                                review.userId?.let { onAuthorClick(it) }
+                            }
+                            .minTouchTarget()
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(theme.textSecondary.copy(alpha = 0.3f))
-                            .clickable(enabled = review.userId != null) { 
-                                review.userId?.let { onAuthorClick(it) } 
-                            },
+                            .background(theme.textSecondary.copy(alpha = 0.3f)),
                         contentScale = ContentScale.Crop
                     )
                     Spacer(Modifier.width(12.dp))
@@ -778,13 +834,19 @@ private fun ReviewItem(
                 
                 Row {
                     if (review.externalUrl != null) {
-                        IconButton(onClick = { uriHandler.openUri(review.externalUrl) }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.OpenInNew, null, tint = theme.textSecondary, modifier = Modifier.size(16.dp))
+                        IconButton(
+                            onClick = { uriHandler.openUri(review.externalUrl) },
+                            modifier = Modifier.minTouchTarget().size(24.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open original review", tint = theme.textSecondary, modifier = Modifier.size(16.dp))
                         }
                     }
                     if (review.source == com.example.watchorderengine.data.model.ReviewSource.LOCAL) {
-                        IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Delete, null, tint = theme.textSecondary.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.minTouchTarget().size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete review", tint = theme.textSecondary.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -1069,7 +1131,10 @@ private fun EpisodeRow(episode: EpisodeItem, onToggleEpisode: (EpisodeItem) -> U
                     IconButton(onClick = { onToggleEpisode(episode) }) {
                         Icon(
                             if (episode.isWatched) Icons.Default.CheckCircle else Icons.Default.AddCircle,
-                            null,
+                            contentDescription = if (episode.isWatched)
+                                "Mark episode ${episode.episodeNumber} as unwatched"
+                            else
+                                "Mark episode ${episode.episodeNumber} as watched",
                             tint = if (episode.isWatched) theme.statusCanon else theme.textSecondary,
                             modifier = Modifier.size(28.dp)
                         )
@@ -1146,9 +1211,10 @@ private fun EpisodeRowPlaceholder() {
 }
 
 @Composable
-private fun WatchProvidersCard(providers: List<WatchProviderItem>) {
+private fun WatchProvidersCard(providers: List<WatchProviderItem>, title: String) {
     val theme = LocalAppTheme.current
     val uriHandler = LocalUriHandler.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Surface(
         modifier = Modifier
@@ -1217,11 +1283,14 @@ private fun WatchProvidersCard(providers: List<WatchProviderItem>) {
                                 items(list) { provider ->
                                     AsyncImage(
                                         model = provider.logoUrl,
-                                        contentDescription = provider.providerName,
+                                        contentDescription = "Watch on ${provider.providerName}",
                                         modifier = Modifier
+                                            .clickable {
+                                                launchStreamingProvider(context, provider, title, provider.justWatchUrl)
+                                            }
+                                            .minTouchTarget()
                                             .size(32.dp)
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .clickable { provider.justWatchUrl?.let { uriHandler.openUri(it) } },
+                                            .clip(RoundedCornerShape(6.dp)),
                                         contentScale = ContentScale.Crop
                                     )
                                 }
@@ -1438,8 +1507,11 @@ private fun ChronologyTab(
                     Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFF87171), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(generationError, color = Color(0xFFF87171), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismissError, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Close, null, tint = Color(0xFFF87171))
+                    IconButton(
+                        onClick = onDismissError,
+                        modifier = Modifier.minTouchTarget().size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Dismiss error", tint = Color(0xFFF87171))
                     }
                 }
             }
@@ -1456,8 +1528,11 @@ private fun ChronologyTab(
                     Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4ADE80), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Watch order generated successfully!", color = Color(0xFF4ADE80), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismissSuccess, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Close, null, tint = Color(0xFF4ADE80))
+                    IconButton(
+                        onClick = onDismissSuccess,
+                        modifier = Modifier.minTouchTarget().size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Dismiss success message", tint = Color(0xFF4ADE80))
                     }
                 }
             }

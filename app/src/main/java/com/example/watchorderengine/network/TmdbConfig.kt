@@ -90,8 +90,11 @@ object TmdbConfig {
     const val APPEND_TO_RESPONSE_TV    = "content_ratings,aggregate_credits,videos,recommendations,external_ids,watch/providers"
 
     /**
-     * Country priority for watch providers.
-     * We try to show Indian providers first, falling back to US/GB if unavailable.
+     * Fallback country priority for watch providers, used only when the
+     * device's own region (Settings > System > Languages & region) has no
+     * data in TMDB's response — e.g. a region TMDB doesn't track providers
+     * for yet. The primary lookup uses the device region; see
+     * [com.example.watchorderengine.data.repository.MediaRepository.resolveWatchProviders].
      */
     val PROVIDER_COUNTRY_PRIORITY = listOf("IN", "US", "GB", "AU", "CA")
 
@@ -103,14 +106,14 @@ object TmdbConfig {
         119 to "Prime Video",
         337 to "Disney+",
         350 to "Apple TV+",
-        122 to "Hotstar",
+        122 to "JioHotstar", // rebranded from "Hotstar" — same TMDB provider ID, same Android package
         232 to "Zee5",
         121 to "Voot",
-        1899 to "HBO Max",
+        1899 to "Max", // rebranded from "HBO Max"
         15 to "Hulu",
         384 to "HBO",
         2 to "Apple TV",
-        3 to "Google Play",
+        3 to "Google TV", // rebranded from "Google Play Movies & TV"
         10 to "Amazon Video",
         192 to "YouTube"
     )
