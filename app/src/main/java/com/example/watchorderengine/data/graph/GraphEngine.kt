@@ -39,7 +39,9 @@ object GraphEngine {
     data class OutgoingConnection(
         val fromColumn: Int,
         val toColumn: Int,
-        val isFromNodeCompleted: Boolean
+        val isFromNodeCompleted: Boolean,
+        val fromNodeId: String,
+        val toNodeId: String
     )
 
     // ─── Algorithm 1: Kahn's BFS Topological Sort + Level Assignment ─────────
@@ -323,10 +325,67 @@ object GraphEngine {
             val fromLevel = levelMap[edge.from_node_id] ?: continue
 
             result.getOrPut(fromLevel) { mutableListOf() }.add(
-                OutgoingConnection(fromCol, toCol, fromCompleted)
+                OutgoingConnection(fromCol, toCol, fromCompleted, edge.from_node_id, edge.to_node_id)
             )
         }
         return result
+    }
+
+    // ─── Algorithm 4: Path Highlight (Focus Mode) ────────────────────────────
+
+    /**
+     * The result of tracing a node's direct prerequisite chain backward
+     * through the DAG — used by the timeline's "Path Highlight" tap
+     * interaction (see [com.example.watchorderengine.ui.timeline.components.BranchingTimelineView]).
+     *
+     * @param nodeIds The tapped node itself plus every ancestor required to
+     *                reach it (transitively, following edges backward).
+     * @param edgeIds The specific (from, to) edges that lie on that path, so
+     *                the UI can tell "this connector leads to the focused
+     *                node" apart from "this connector belongs to an
+     *                unrelated branch" even when two different branches
+     *                happen to render through the same columns.
+     */
+    data class PathHighlight(
+        val nodeIds: Set<String>,
+        val edgeIds: Set<Pair<String, String>>
+    )
+
+    /**
+     * Traces every direct prerequisite required to reach [targetNodeId],
+     * walking backward through [edges] (to_node_id → from_node_id) starting
+     * from the tapped node. Everything in the result stays fully lit in
+     * Path Highlight mode; everything else in the timeline dims.
+     *
+     * Diamond merges (two branches converging on one node) are handled
+     * correctly — both incoming branches are included, since a node's edge
+     * into an already-visited successor is still recorded before the
+     * "already visited" check short-circuits further expansion of that
+     * predecessor. Cycles (should never occur in a valid DAG, but the layout
+     * engine above has its own recovery path for malformed AI-generated
+     * timelines) can't cause an infinite loop — a node is only ever expanded
+     * once.
+     *
+     * TIME COMPLEXITY: O(V + E)
+     */
+    fun computeAncestorPath(targetNodeId: String, edges: List<Edge>): PathHighlight {
+        val predecessorsOf = edges.groupBy({ it.to_node_id }, { it.from_node_id })
+
+        val visitedNodes = mutableSetOf(targetNodeId)
+        val pathEdges = mutableSetOf<Pair<String, String>>()
+        val queue = ArrayDeque<String>().apply { add(targetNodeId) }
+
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            for (predecessor in predecessorsOf[current].orEmpty()) {
+                pathEdges += predecessor to current
+                if (visitedNodes.add(predecessor)) {
+                    queue.add(predecessor)
+                }
+            }
+        }
+
+        return PathHighlight(nodeIds = visitedNodes, edgeIds = pathEdges)
     }
 
     // ─── Constants ────────────────────────────────────────────────────────────

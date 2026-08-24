@@ -14,7 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,10 +40,10 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
-import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.watchorderengine.data.model.WatchProviderItem
+import com.example.watchorderengine.util.CatchUpResult
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.EpisodeItem
@@ -52,13 +52,13 @@ import com.example.watchorderengine.R
 import com.example.watchorderengine.data.model.MediaDetail
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.ui.components.FactLoadingView
+import com.example.watchorderengine.ui.components.SpoilerShield
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.MediaDetailViewModel
 import com.example.watchorderengine.util.minTouchTarget
 import com.example.watchorderengine.util.launchStreamingProvider
 import com.example.watchorderengine.util.rememberShowPalette
-import java.util.Locale
 
 @Composable
 fun MediaDetailScreen(
@@ -66,7 +66,7 @@ fun MediaDetailScreen(
     initialSeason: Int? = null,
     onBack: () -> Unit,
     onUniverseClick: (String) -> Unit = {},
-    onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit = { _, _, _, _, _ -> },
+    onCharacterClick: (Int, String, String, Boolean, Int?, String) -> Unit = { _, _, _, _, _, _ -> },
     onAuthorClick: (String) -> Unit = {},
     viewModel: MediaDetailViewModel = hiltViewModel()
 ) {
@@ -79,7 +79,9 @@ fun MediaDetailScreen(
     val isBulkSyncing by viewModel.isBulkSyncing.collectAsStateWithLifecycle()
     val generationError by viewModel.generationError.collectAsStateWithLifecycle()
     val generationSuccess by viewModel.generationSuccess.collectAsStateWithLifecycle()
+    val aggregatedReviews by viewModel.aggregatedReviews.collectAsStateWithLifecycle()
     val dynamicShowTheming by viewModel.dynamicShowTheming.collectAsStateWithLifecycle()
+    val spoilerShieldActive by viewModel.spoilerShieldActive.collectAsStateWithLifecycle()
 
     LaunchedEffect(mediaId) {
         viewModel.loadMediaDetail(mediaId, initialSeason = initialSeason)
@@ -88,10 +90,12 @@ fun MediaDetailScreen(
     val episodesBySeason by viewModel.episodes.collectAsStateWithLifecycle()
     val bulkMarkPrompt by viewModel.bulkMarkPrompt.collectAsStateWithLifecycle()
     val showWelcomeTip by viewModel.showWelcomeTip.collectAsStateWithLifecycle()
+    val catchUpResult by viewModel.catchUpResult.collectAsStateWithLifecycle()
+    val excludeFiller by viewModel.excludeFillerFromCatchUp.collectAsStateWithLifecycle()
 
     LaunchedEffect(showWelcomeTip) {
         if (showWelcomeTip) {
-            kotlinx.coroutines.delay(4000.milliseconds)
+            kotlinx.coroutines.delay(4000)
             viewModel.dismissWelcomeTip()
         }
     }
@@ -139,6 +143,9 @@ fun MediaDetailScreen(
                             generationSuccess = generationSuccess,
                             bulkMarkPrompt = bulkMarkPrompt,
                             showWelcomeTip = showWelcomeTip,
+                            catchUpResult = catchUpResult,
+                            excludeFiller = excludeFiller,
+                            spoilerShieldActive = spoilerShieldActive,
                             onDismissGenerationError = { viewModel.dismissGenerationError() },
                             onDismissGenerationSuccess = { viewModel.dismissGenerationSuccess() },
                             onBack = onBack,
@@ -204,6 +211,9 @@ private fun DetailContent(
     generationSuccess: Boolean,
     bulkMarkPrompt: EpisodeItem?,
     showWelcomeTip: Boolean,
+    catchUpResult: CatchUpResult?,
+    excludeFiller: Boolean,
+    spoilerShieldActive: Boolean,
     onDismissGenerationError: () -> Unit,
     onDismissGenerationSuccess: () -> Unit,
     onBack: () -> Unit,
@@ -212,7 +222,7 @@ private fun DetailContent(
     onSeasonChange: (Int) -> Unit,
     onGenerateOrder: () -> Unit,
     onUniverseClick: (String) -> Unit,
-    onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit,
+    onCharacterClick: (Int, String, String, Boolean, Int?, String) -> Unit,
     onAuthorClick: (String) -> Unit,
     viewModel: MediaDetailViewModel,
     initialSeason: Int? = null
@@ -242,6 +252,7 @@ private fun DetailContent(
     val watchedCount = detail.userProgress?.totalEpisodesWatched ?: 0
     val totalEps = detail.numberOfEpisodes ?: 0
     val progress = if (totalEps > 0) (watchedCount.toFloat() / totalEps).coerceAtMost(1f) else 0f
+    val shareText = stringResource(R.string.detail_share_text, detail.title)
 
     val tabs = remember(detail.mediaCategory) {
         if (detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE) {
@@ -327,7 +338,6 @@ private fun DetailContent(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Go back", tint = theme.textPrimary)
                         }
                         val context = androidx.compose.ui.platform.LocalContext.current
-                        val shareText = stringResource(R.string.detail_share_text, detail.title)
                         IconButton(
                             onClick = {
                                 val sendIntent = android.content.Intent().apply {
@@ -394,7 +404,7 @@ private fun DetailContent(
                         Text(detail.releaseYear, color = theme.textSecondary, fontSize = 14.sp)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             Icon(Icons.Default.Star, "Rating", tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp))
-                            Text(String.format(Locale.US, "%.1f", detail.voteAverage), color = Color(0xFFFFD700), fontSize = 14.sp)
+                            Text(String.format("%.1f", detail.voteAverage), color = Color(0xFFFFD700), fontSize = 14.sp)
                         }
                         Box(modifier = Modifier.border(1.dp, theme.textSecondary.copy(alpha = 0.2f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
                             Text(detail.ageRating, color = theme.textPrimary, fontSize = 10.sp)
@@ -573,6 +583,20 @@ private fun DetailContent(
                         }
                     }
 
+                    // Binge & Catch-Up calculator
+                    if (detail.mediaCategory != com.example.watchorderengine.data.model.MediaCategory.MOVIE) {
+                        catchUpResult?.let { result ->
+                            item {
+                                CatchUpBadge(
+                                    result = result,
+                                    excludeFiller = excludeFiller,
+                                    onExcludeFillerChange = { viewModel.setExcludeFillerFromCatchUp(it) },
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
                     // Season Selector
                     item {
                         Row(
@@ -652,6 +676,7 @@ private fun DetailContent(
                     item {
                         CharactersTab(
                             detail = detail,
+                            spoilerShieldActive = spoilerShieldActive,
                             onCharacterClick = onCharacterClick,
                             viewModel = viewModel
                         )
@@ -668,7 +693,8 @@ private fun DetailContent(
                             onGenerate = onGenerateOrder,
                             onUniverseClick = onUniverseClick,
                             onDismissError = onDismissGenerationError,
-                            onDismissSuccess = onDismissGenerationSuccess
+                            onDismissSuccess = onDismissGenerationSuccess,
+                            viewModel = viewModel
                         )
                     }
                 }
@@ -727,7 +753,7 @@ private fun ReviewsTab(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
-                val uriHandler = LocalUriHandler.current
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 OutlinedButton(
                     onClick = { uriHandler.openUri("https://www.google.com/search?q=${mediaTitle}+movie+reviews") },
                     modifier = Modifier.padding(bottom = 32.dp)
@@ -838,7 +864,7 @@ private fun ReviewItem(
                             onClick = { uriHandler.openUri(review.externalUrl) },
                             modifier = Modifier.minTouchTarget().size(24.dp)
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open original review", tint = theme.textSecondary, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.OpenInNew, contentDescription = "Open original review", tint = theme.textSecondary, modifier = Modifier.size(16.dp))
                         }
                     }
                     if (review.source == com.example.watchorderengine.data.model.ReviewSource.LOCAL) {
@@ -1034,6 +1060,80 @@ private fun ReviewSubmissionDialog(
             }
         }
     )
+}
+
+/**
+ * "Binge & Catch-Up" badge — shows the exact time left to reach the latest
+ * release, with a toggle to subtract all known filler episodes from the total.
+ */
+@Composable
+private fun CatchUpBadge(
+    result: CatchUpResult,
+    excludeFiller: Boolean,
+    onExcludeFillerChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val theme = LocalAppTheme.current
+    val shape = RoundedCornerShape(theme.appRadius.coerceAtLeast(12.dp))
+
+    val hours = result.remainingRuntimeHours
+    val mins = result.remainingRuntimeMinutesPart
+    val timeLabel = when {
+        hours > 0 && mins > 0 -> "${hours}h ${mins}m"
+        hours > 0 -> "${hours}h"
+        else -> "${mins}m"
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = theme.accent.copy(alpha = 0.08f),
+        shape = shape,
+        border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.25f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Timer, null, tint = theme.accent, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        if (result.isEstimate) {
+                            Text("≈ ", color = theme.textPrimary, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                        }
+                        Text(timeLabel, color = theme.textPrimary, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("to catch up", color = theme.textSecondary, fontSize = 11.sp)
+                    }
+                    Text(
+                        "${result.remainingEpisodeCount} episode${if (result.remainingEpisodeCount == 1) "" else "s"} left to reach the latest release",
+                        color = theme.textSecondary,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+
+            if (result.hasFiller) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val savings = result.fillerRuntimeMinutes
+                    val savingsLabel = if (savings >= 60) "${savings / 60}h ${savings % 60}m" else "${savings}m"
+                    Text(
+                        "Exclude ${result.fillerEpisodeCount} filler episode${if (result.fillerEpisodeCount == 1) "" else "s"} (saves $savingsLabel)",
+                        color = theme.textSecondary,
+                        fontSize = 11.sp
+                    )
+                    Switch(
+                        checked = excludeFiller,
+                        onCheckedChange = onExcludeFillerChange,
+                        colors = SwitchDefaults.colors(checkedThumbColor = theme.accent, checkedTrackColor = theme.accent.copy(alpha = 0.4f)),
+                        modifier = Modifier.height(20.dp)
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1369,7 +1469,8 @@ private fun TrailerCard(trailerKey: String) {
 @Composable
 private fun CharactersTab(
     detail: MediaDetail,
-    onCharacterClick: (Int, String, String, Boolean, Int?) -> Unit,
+    spoilerShieldActive: Boolean,
+    onCharacterClick: (Int, String, String, Boolean, Int?, String) -> Unit,
     viewModel: MediaDetailViewModel
 ) {
     val isAnime = detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME
@@ -1381,8 +1482,9 @@ private fun CharactersTab(
             CharacterRow(
                 cast = cast,
                 viewModel = viewModel,
+                spoilerShieldActive = spoilerShieldActive,
                 characterArtUrl = if (isAnime) viewModel.characterArtFor(cast.character) else null,
-                onClick = { onCharacterClick(cast.tmdbId, cast.character, detail.title, isAnime, detail.anilistId) }
+                onClick = { onCharacterClick(cast.tmdbId, cast.character, detail.title, isAnime, detail.anilistId, detail.id) }
             )
         }
         if (isAnime && characterArt.isEmpty()) {
@@ -1400,6 +1502,7 @@ private fun CharactersTab(
 private fun CharacterRow(
     cast: com.example.watchorderengine.data.model.CastMember,
     viewModel: MediaDetailViewModel,
+    spoilerShieldActive: Boolean,
     characterArtUrl: String?,
     onClick: () -> Unit
 ) {
@@ -1461,14 +1564,19 @@ private fun CharacterRow(
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            Text(
-                text = biography ?: "Fetching character data...",
-                color = theme.textSecondary,
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
-                maxLines = 5,
-                overflow = TextOverflow.Ellipsis
-            )
+            SpoilerShield(
+                isBlurred = spoilerShieldActive,
+                label = "Character biography shielded"
+            ) {
+                Text(
+                    text = biography ?: "Fetching character data...",
+                    color = theme.textSecondary,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
             Box(modifier = Modifier.fillMaxWidth().background(theme.background.copy(alpha = 0.3f), RoundedCornerShape(8.dp)).padding(8.dp)) {
@@ -1492,9 +1600,14 @@ private fun ChronologyTab(
     onGenerate: () -> Unit,
     onUniverseClick: (String) -> Unit,
     onDismissError: () -> Unit,
-    onDismissSuccess: () -> Unit
+    onDismissSuccess: () -> Unit,
+    viewModel: MediaDetailViewModel
 ) {
     val theme = LocalAppTheme.current
+    val watchOrderExplanation by viewModel.watchOrderExplanation.collectAsStateWithLifecycle()
+    val isExplainingOrder by viewModel.isExplainingOrder.collectAsStateWithLifecycle()
+    val explainOrderError by viewModel.explainOrderError.collectAsStateWithLifecycle()
+    val hasGeneratedOrder by viewModel.hasGeneratedOrder.collectAsStateWithLifecycle()
     Column(modifier = Modifier.padding(16.dp)) {
         if (generationError != null) {
             Surface(
@@ -1573,7 +1686,7 @@ private fun ChronologyTab(
                 Text("Watch Order Guide", color = theme.textPrimary, fontWeight = FontWeight.Bold)
             }
             
-            if (detail.arcs.isEmpty() && !isAnalyzing) {
+            if (!hasGeneratedOrder && !isAnalyzing) {
                 Button(
                     onClick = onGenerate,
                     colors = ButtonDefaults.buttonColors(containerColor = theme.accent),
@@ -1581,6 +1694,86 @@ private fun ChronologyTab(
                     modifier = Modifier.height(32.dp)
                 ) {
                     Text("GENERATE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White)
+                }
+            } else if (hasGeneratedOrder && !isExplainingOrder) {
+                OutlinedButton(
+                    onClick = { viewModel.explainWatchOrder(detail.id) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = theme.accent),
+                    border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.5f)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(Icons.Default.AutoAwesome, null, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("ASK AI ABOUT THIS ORDER", fontSize = 9.sp, fontWeight = FontWeight.Black)
+                }
+            }
+        }
+
+        if (isExplainingOrder) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(color = theme.accent, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Asking Gemini why this order makes sense...", color = theme.textSecondary, fontSize = 12.sp)
+            }
+        }
+
+        if (explainOrderError != null) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                color = Color(0xFFF87171).copy(alpha = 0.15f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color(0xFFF87171).copy(alpha = 0.4f))
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFF87171), modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(explainOrderError.orEmpty(), color = Color(0xFFF87171), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    IconButton(
+                        onClick = { viewModel.dismissWatchOrderExplanation() },
+                        modifier = Modifier.minTouchTarget().size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Dismiss error", tint = Color(0xFFF87171))
+                    }
+                }
+            }
+        }
+
+        if (watchOrderExplanation != null) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                color = theme.accent.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AutoAwesome, null, tint = theme.accent, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Why this order?", color = theme.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        IconButton(
+                            onClick = { viewModel.dismissWatchOrderExplanation() },
+                            modifier = Modifier.minTouchTarget().size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss explanation", tint = theme.textSecondary)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        watchOrderExplanation.orEmpty(),
+                        color = theme.textSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
                 }
             }
         }

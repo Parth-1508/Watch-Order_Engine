@@ -29,6 +29,17 @@ import com.example.watchorderengine.viewmodel.DisplayNode
 val NodePosterHeight: Dp = 128.dp
 
 /**
+ * How a node should render relative to the timeline's current "Path
+ * Highlight" focus (see [BranchingTimelineView]).
+ *
+ *  - [NORMAL]:  no node is focused anywhere in the timeline — render as usual.
+ *  - [FOCUSED]: this is the exact node the user tapped.
+ *  - [ON_PATH]: an ancestor required to reach the focused node.
+ *  - [DIMMED]:  unrelated to the focused node's prerequisite chain.
+ */
+enum class NodePathState { NORMAL, FOCUSED, ON_PATH, DIMMED }
+
+/**
  * A single node in the simplified watch-order timeline.
  * A clean poster card (no hexagons) with a status border and a small
  * checkmark / lock badge — legible at a fixed scale, no pinch-zoom required.
@@ -40,6 +51,7 @@ fun TimelineNodeCard(
     onCheckToggle: () -> Unit,
     onCardClick: () -> Unit,
     modifier: Modifier = Modifier,
+    pathState: NodePathState = NodePathState.NORMAL,
 ) {
     val theme = com.example.watchorderengine.ui.theme.LocalAppTheme.current
     val node = displayNode.node
@@ -52,12 +64,32 @@ fun TimelineNodeCard(
         label = "spoiler_blur"
     )
 
-    val borderColor = when {
-        displayNode.isCompleted      -> theme.statusCanon
-        displayNode.isSpoilerBlurred -> theme.statusMixed.copy(alpha = 0.6f)
-        else                         -> theme.border.copy(alpha = 0.25f)
+    // Path Highlight takes precedence over the normal status border — a
+    // dimmed prerequisite chain is meaningless if you can't clearly see
+    // which nodes are actually ON the path.
+    val borderColor = when (pathState) {
+        NodePathState.FOCUSED -> theme.accent
+        NodePathState.ON_PATH -> theme.accent.copy(alpha = 0.7f)
+        NodePathState.NORMAL, NodePathState.DIMMED -> when {
+            displayNode.isCompleted      -> theme.statusCanon
+            displayNode.isSpoilerBlurred -> theme.statusMixed.copy(alpha = 0.6f)
+            else                         -> theme.border.copy(alpha = 0.25f)
+        }
     }
-    val borderWidth = if (displayNode.isCompleted) 2.dp else 1.dp
+    val borderWidth = when (pathState) {
+        NodePathState.FOCUSED -> 3.dp
+        NodePathState.ON_PATH -> 2.dp
+        NodePathState.NORMAL, NodePathState.DIMMED -> if (displayNode.isCompleted) 2.dp else 1.dp
+    }
+
+    // Everything not on the traced path fades back so the prerequisite chain
+    // reads at a glance; the path itself (including the focused node) stays
+    // fully lit.
+    val contentAlpha: Float by animateFloatAsState(
+        targetValue = if (pathState == NodePathState.DIMMED) 0.25f else 1f,
+        animationSpec = tween(durationMillis = 300),
+        label = "path_highlight_dim"
+    )
 
     val spoilerModifier: Modifier = if (displayNode.isSpoilerBlurred) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -68,7 +100,11 @@ fun TimelineNodeCard(
     } else Modifier
 
     val scale by animateFloatAsState(
-        targetValue = if (displayNode.isCompleted) 1.03f else 1f,
+        targetValue = when {
+            pathState == NodePathState.FOCUSED -> 1.05f
+            displayNode.isCompleted            -> 1.03f
+            else                                -> 1f
+        },
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
         label = "completed_scale"
     )
@@ -76,6 +112,7 @@ fun TimelineNodeCard(
     Column(
         modifier = modifier
             .scale(scale)
+            .alpha(contentAlpha)
             .padding(4.dp)
             .combinedClickable(
                 onClick = onCardClick,
@@ -89,6 +126,14 @@ fun TimelineNodeCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(NodePosterHeight)
+                    .then(
+                        // A soft accent glow behind the exact focused node —
+                        // makes the tapped node unambiguous even amid a busy
+                        // graph, without needing a second color.
+                        if (pathState == NodePathState.FOCUSED) {
+                            Modifier.shadow(elevation = 12.dp, shape = shape, spotColor = theme.accent, ambientColor = theme.accent)
+                        } else Modifier
+                    )
                     .clip(shape)
                     .background(theme.surfaceHover)
                     .border(borderWidth, borderColor, shape)

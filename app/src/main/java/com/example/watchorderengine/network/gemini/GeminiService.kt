@@ -102,6 +102,12 @@ sealed interface GeminiResult {
     data class Error(val message: String) : GeminiResult
 }
 
+/** Result of [GeminiService.explainWatchOrder] — a free-text editorial explanation, not JSON. */
+sealed interface GeminiExplanationResult {
+    data class Success(val explanation: String) : GeminiExplanationResult
+    data class Error(val message: String) : GeminiExplanationResult
+}
+
 /**
  * Service responsible for interacting with Google's Gemini AI.
  * 
@@ -259,6 +265,130 @@ class GeminiService @Inject constructor(
             }
         }
         null
+    }
+
+    /**
+     * "Ask AI about this order" — generates a spoiler-free, editorial explanation
+     * of why the given titles are placed in this specific chronological order
+     * (e.g. release order vs. chronological/in-universe lore, branch points, etc).
+     *
+     * Takes the DAG timeline already persisted for this show's watch order —
+     * [com.example.watchorderengine.data.model.MediaNode] (chrono_order,
+     * release_order, phase, filler tag) and
+     * [com.example.watchorderengine.data.model.Edge] — and asks Gemini to
+     * narrate the *reasoning* behind that structure, not regenerate it.
+     */
+    suspend fun explainWatchOrder(
+        universeName: String,
+        nodes: List<com.example.watchorderengine.data.model.MediaNode>,
+        edges: List<com.example.watchorderengine.data.model.Edge>
+    ): GeminiExplanationResult = withContext(Dispatchers.IO) {
+        if (nodes.isEmpty()) {
+            return@withContext GeminiExplanationResult.Error("There's nothing in this timeline to explain yet.")
+        }
+
+        val allKeys = getAllApiKeys()
+        if (allKeys.isEmpty()) {
+            return@withContext GeminiExplanationResult.Error(
+                "No Gemini API keys found. Add them to local.properties."
+            )
+        }
+
+        val prompt = buildExplanationPrompt(universeName, nodes, edges)
+        val requestBody = GeminiRequestBody(
+            contents = listOf(GeminiRequestContent(parts = listOf(GeminiRequestPart(prompt)))),
+            generationConfig = GeminiGenerationConfig(responseMimeType = "text/plain")
+        )
+        val requestJson = moshi.adapter(GeminiRequestBody::class.java).toJson(requestBody)
+
+        var lastError: String? = null
+
+        for (apiKey in allKeys) {
+            val request = Request.Builder()
+                .url("$ENDPOINT?key=$apiKey")
+                .post(requestJson.toRequestBody(mediaTypeJson))
+                .header("Content-Type", "application/json")
+                .build()
+
+            try {
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: continue
+
+                if (response.isSuccessful) {
+                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
+                    val text = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+                    if (text.isNullOrBlank()) {
+                        return@withContext GeminiExplanationResult.Error("Gemini returned an empty explanation.")
+                    }
+                    return@withContext GeminiExplanationResult.Success(text)
+                } else {
+                    lastError = "Gemini error HTTP ${response.code}: $body"
+                    if (response.code == 401 || response.code == 429) continue else break
+                }
+            } catch (e: Exception) {
+                lastError = "Network error: ${e.message}"
+                continue
+            }
+        }
+
+        GeminiExplanationResult.Error(lastError ?: "Failed to reach Gemini after trying all API keys.")
+    }
+
+    /**
+     * Builds the "Ask AI about this order" prompt. Only structural metadata —
+     * titles, order numbers, phase labels, edge types — goes in; no synopses,
+     * no overview text. The hard rules below exist specifically so the model
+     * can't lean on outside/training knowledge of the franchise to narrate
+     * plot content, only the ordering logic itself.
+     */
+    private fun buildExplanationPrompt(
+        universeName: String,
+        nodes: List<com.example.watchorderengine.data.model.MediaNode>,
+        edges: List<com.example.watchorderengine.data.model.Edge>
+    ): String {
+        val byId = nodes.associateBy { it.id }
+        val titleLines = nodes.sortedBy { it.release_order }.joinToString("\n") { n ->
+            "- \"${n.title}\" (${n.content_type}) — phase: ${n.phase.ifBlank { "unspecified" }}, " +
+                "chrono_order=${n.chrono_order}, release_order=${n.release_order}"
+        }
+        val edgeLines = edges.mapNotNull { e ->
+            val from = byId[e.from_node_id]?.title ?: return@mapNotNull null
+            val to = byId[e.to_node_id]?.title ?: return@mapNotNull null
+            "- \"$from\" -> \"$to\" (${e.type})"
+        }.joinToString("\n").ifBlank { "(no dependency edges — a flat/linear order)" }
+
+        return """
+            You are writing a short, spoiler-free editorial note for a watch-order
+            app's timeline view. The franchise/universe is "$universeName". Below is
+            the EXACT ordering this app already computed for it — you are explaining
+            an existing order, not creating one, and must not contradict it.
+
+            TITLES (sorted by release order):
+            $titleLines
+
+            DEPENDENCY EDGES (from -> to, type):
+            $edgeLines
+
+            YOUR JOB: In 3-5 sentences of plain prose, explain WHY these titles are
+            arranged this way for someone about to start watching — e.g. contrast
+            release order against in-story chronology where they diverge, explain
+            why a side entry or special sits where it does, or why certain titles
+            share a phase or a branch/merge point. Write like a watch-guide editor,
+            not a chatbot ("Sure! Here's...").
+
+            HARD RULES — violating any of these makes your response unusable:
+            - SPOILER-FREE, ALWAYS: never reveal plot events, character fates,
+              deaths, twists, or any specific story content for ANY title above —
+              not even from your own training knowledge of this franchise. Discuss
+              ONLY structure: timing, phases, branches, release vs. chronology.
+              If you are not sure whether a detail is a spoiler, leave it out.
+            - Do not invent titles, dates, or relationships not present above.
+            - Do not use markdown, headers, bullet points, or emoji — plain
+              prose only, ready to display as-is.
+            - If the list above is too short or too uniform to say anything
+              meaningful (e.g. a single linear release-order list with no
+              branches), say so briefly instead of inventing structure.
+        """.trimIndent()
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.example.watchorderengine.data.repository
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.watchorderengine.data.WatchOrderRepository
@@ -536,6 +537,31 @@ class MediaRepository @Inject constructor(
             episodes.map { it.toDomain(watchedIds) }
         }
 
+    /**
+     * Every episode across every season, watched-status resolved — used by
+     * the Binge & Catch-Up calculator, which needs the complete picture
+     * (not just whichever season tab happens to be open) to sum "what's left
+     * to reach the latest release." Missing seasons are fetched and cached
+     * first via [ensureEpisodesCached], same as [markAllAsWatched] already
+     * does, so this is accurate even if the person has never opened every
+     * season tab.
+     */
+    suspend fun getAllEpisodesForCatchUp(mediaId: String): List<EpisodeItem> =
+        withContext(Dispatchers.IO) {
+            if (mediaId.startsWith("tmdb_t_")) {
+                ensureEpisodesCached(mediaId)
+            }
+            val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+
+            val tmdbId = extractTmdbId(mediaId)
+            val rawId = tmdbId?.toString() ?: mediaId.removePrefix("tmdb_").removePrefix("anilist_")
+            val watchedIds = (db.episodeWatchedDao().getWatchedIds(mediaId) +
+                             db.episodeWatchedDao().getWatchedIds("tmdb_$rawId") +
+                             db.episodeWatchedDao().getWatchedIds(rawId)).toSet()
+
+            episodes.map { it.toDomain(watchedIds) }
+        }
+
     fun observeEpisodesBySeason(mediaId: String, seasonNumber: Int): Flow<List<EpisodeItem>> {
         val seasonId = "${mediaId}_s$seasonNumber"
         val tmdbId = extractTmdbId(mediaId)
@@ -554,6 +580,114 @@ class MediaRepository @Inject constructor(
             .map { it ?: 0 }
             .distinctUntilChanged()
             .flowOn(Dispatchers.IO)
+    }
+
+    /**
+     * Powers the "Binge & Catch-Up" time calculator badge on the show detail page.
+     *
+     * Sums the exact runtime of every unwatched episode that has already aired
+     * (season > 0, airDate <= today or unknown) to reach the latest release.
+     * Both totals — with and without filler — are computed in one pass so the
+     * UI's "exclude filler" toggle is an instant local flip, no re-query.
+     */
+    fun observeCatchUpSummary(mediaId: String): Flow<CatchUpSummary> {
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .format(java.util.Date())
+
+        return combine(
+            db.episodeDao().observeAllEpisodesByMedia(mediaId),
+            db.episodeWatchedDao().observeWatchedIds(mediaId)
+        ) { episodes, watchedIds ->
+            val watchedSet = watchedIds.toSet()
+            val remaining = episodes.filter { ep ->
+                ep.seasonNumber > 0 &&
+                ep.id !in watchedSet &&
+                (ep.airDate.isNullOrBlank() || ep.airDate <= todayStr)
+            }
+
+            val fillerCount = remaining.count { it.episodeType == EpisodeType.FILLER.name }
+            val totalRuntime = remaining.sumOf { it.runtime ?: 0 }
+            val nonFillerRuntime = remaining
+                .filter { it.episodeType != EpisodeType.FILLER.name }
+                .sumOf { it.runtime ?: 0 }
+
+            CatchUpSummary(
+                remainingEpisodeCount = remaining.size,
+                remainingFillerCount = fillerCount,
+                remainingRuntimeMinutes = totalRuntime,
+                remainingRuntimeMinutesExcludingFiller = nonFillerRuntime,
+                hasIncompleteRuntimeData = remaining.any { it.runtime == null }
+            )
+        }.flowOn(Dispatchers.IO)
+    }
+
+    /**
+     * Drives the progress-aware [com.example.watchorderengine.ui.components.SpoilerShield]
+     * on the Character Detail screen.
+     *
+     * Neither TMDB, AniList, nor Jikan expose "which episode first reveals this
+     * character" — so rather than fabricate that data, the shield uses the same
+     * signal already trusted for episode-level spoilers: the user's global
+     * "Spoiler Shield" preference plus their real watch progress on *this* show.
+     * The shield is active whenever the toggle is on AND the user hasn't caught
+     * up to every episode that has already aired.
+     */
+    fun observeSpoilerShieldActive(mediaId: String): Flow<Boolean> {
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .format(java.util.Date())
+
+        return combine(
+            userPrefs.hideUnwatchedSpoilers,
+            db.episodeDao().observeAllEpisodesByMedia(mediaId),
+            db.episodeWatchedDao().observeWatchedIds(mediaId)
+        ) { hideSpoilers, episodes, watchedIds ->
+            if (!hideSpoilers) return@combine false
+            val watchedSet = watchedIds.toSet()
+            val hasUnwatchedAiredEpisode = episodes.any { ep ->
+                ep.seasonNumber > 0 &&
+                ep.id !in watchedSet &&
+                (ep.airDate.isNullOrBlank() || ep.airDate <= todayStr)
+            }
+            hasUnwatchedAiredEpisode
+        }.distinctUntilChanged().flowOn(Dispatchers.IO)
+    }
+
+    /**
+     * Whether the current user has already generated a watch order for
+     * [mediaId] — checked directly against the DAG (Firestore nodes), not
+     * against [MediaDetail.arcs]. [MediaDetail.arcs] is derived from
+     * episode-level `arcName` tagging (see [generateWatchOrder]'s
+     * classification loop, which is gated on `raw.seasonNumber` and so never
+     * fires for movies), so it stays empty for movies even after a
+     * successful generation. This check works for both movies and TV shows.
+     */
+    suspend fun hasGeneratedWatchOrder(mediaId: String): Boolean = withContext(Dispatchers.IO) {
+        val uid = auth.currentUser?.uid ?: return@withContext false
+        val uniqueUniverseId = "${uid}_$mediaId"
+        watchOrderRepository.getNodes(uniqueUniverseId).first().isNotEmpty()
+    }
+
+    /**
+     * "Ask AI about this order" — fetches the DAG timeline this user already
+     * generated for [mediaId] (via [generateWatchOrder]) and asks Gemini for a
+     * spoiler-free editorial explanation of why the titles are ordered that way.
+     *
+     * Returns null if the user hasn't generated a watch order for this show yet
+     * (nothing to explain) or if Gemini couldn't produce an explanation.
+     */
+    suspend fun explainWatchOrder(mediaId: String): String? = withContext(Dispatchers.IO) {
+        val entity = db.mediaDao().getById(mediaId) ?: return@withContext null
+        val uid = auth.currentUser?.uid ?: return@withContext null
+        val uniqueUniverseId = "${uid}_$mediaId"
+
+        val nodes = watchOrderRepository.getNodes(uniqueUniverseId).first()
+        if (nodes.isEmpty()) return@withContext null
+        val edges = watchOrderRepository.getEdges(uniqueUniverseId).first()
+
+        val result = geminiService.explainWatchOrder(universeName = entity.title, nodes = nodes, edges = edges)
+        if (result is com.example.watchorderengine.network.gemini.GeminiExplanationResult.Success) {
+            result.explanation
+        } else null
     }
 
     // ─── Search ───────────────────────────────────────────────────────────────
@@ -1236,7 +1370,7 @@ class MediaRepository @Inject constructor(
             if (isMovieId(mediaId)) {
                 fetchAndCacheMovie(tmdbId, mediaId)
             } else {
-                val response = retry { apiService.getTvShow(tmdbId) }
+                val response = com.example.watchorderengine.util.retry { apiService.getTvShow(tmdbId) }
                 if (!response.isSuccessful || response.body() == null) return false
                 val body = response.body()!!
                 val entity = body.toMediaEntity(mediaId)

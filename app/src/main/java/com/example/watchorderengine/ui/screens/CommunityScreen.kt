@@ -908,7 +908,7 @@ fun CommunityPostDetailSheet(
         modifier = Modifier.fillMaxHeight(0.95f)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Starry Background (Simplified version of TimelineScreen effect)
+            // Starry Background
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val random = java.util.Random(post.postId.hashCode().toLong())
                 repeat(40) {
@@ -982,7 +982,7 @@ fun CommunityPostDetailSheet(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            // Import Button (Compact version next to title)
+                            // Import Button
                             Surface(
                                 onClick = onImport,
                                 modifier = Modifier.size(44.dp),
@@ -1075,6 +1075,7 @@ fun CommunityPostDetailSheet(
                     if (rows.isNotEmpty()) {
                         BranchingTimelineView(
                             rows = rows,
+                            edges = payload?.edges ?: emptyList(),
                             onNodeToggle = { /* No toggle in preview */ },
                             onNodeClick = { onMediaClick(TimelineViewModel.resolveMediaId(it.node)) },
                             modifier = Modifier.fillMaxSize()
@@ -1162,11 +1163,6 @@ fun computePreviewRows(payload: SharedTimelinePayload, tmdbCache: TmdbMetadataCa
                 outgoing = connections[level] ?: emptyList()
             )
         }
-}
-
-private fun extractPosterUrls(nodesJson: String): List<String> {
-    val payload = SharedTimelineCodec.decode(nodesJson) ?: return emptyList()
-    return payload.nodes.mapNotNull { it.posterUrl }.filter { it.isNotBlank() }.take(10)
 }
 
 private fun relativeTimeLabel(timestampMillis: Long): String {

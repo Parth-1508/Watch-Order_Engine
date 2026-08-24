@@ -76,6 +76,14 @@ sealed interface TimelineEvent {
     data class NavigateToDetail(val mediaId: String) : TimelineEvent
 }
 
+/** UI state for the "Ask AI about this order" panel. */
+sealed interface ExplanationState {
+    data object Idle : ExplanationState
+    data object Loading : ExplanationState
+    data class Loaded(val text: String) : ExplanationState
+    data class Failed(val message: String) : ExplanationState
+}
+
 // ─── ViewModel ────────────────────────────────────────────────────────────────
 
 @HiltViewModel
@@ -84,8 +92,37 @@ class TimelineViewModel @Inject constructor(
     private val repository: WatchOrderRepository,
     private val mediaRepository: MediaRepository,
     private val tmdbRepo: TmdbRepository,
-    private val tmdbCache: TmdbMetadataCache
+    private val tmdbCache: TmdbMetadataCache,
+    private val geminiService: com.example.watchorderengine.network.gemini.GeminiService
 ) : ViewModel() {
+
+    private val _explanationState = MutableStateFlow<ExplanationState>(ExplanationState.Idle)
+    val explanationState: StateFlow<ExplanationState> = _explanationState.asStateFlow()
+
+    /**
+     * "Ask AI about this order" — sends the current DAG's structural metadata
+     * (titles, order numbers, phases, edges — no synopses) to Gemini and asks
+     * for a short, spoiler-free explanation of why it's arranged this way.
+     * No-ops if a request is already in flight or nothing has loaded yet.
+     */
+    fun askAiAboutThisOrder() {
+        val current = (uiState.value as? TimelineUiState.Success) ?: return
+        if (_explanationState.value is ExplanationState.Loading) return
+
+        _explanationState.value = ExplanationState.Loading
+        viewModelScope.launch {
+            when (val result = geminiService.explainWatchOrder(current.universe.name, current.nodes, current.edges)) {
+                is com.example.watchorderengine.network.gemini.GeminiExplanationResult.Success ->
+                    _explanationState.value = ExplanationState.Loaded(result.explanation)
+                is com.example.watchorderengine.network.gemini.GeminiExplanationResult.Error ->
+                    _explanationState.value = ExplanationState.Failed(result.message)
+            }
+        }
+    }
+
+    fun dismissExplanation() {
+        _explanationState.value = ExplanationState.Idle
+    }
 
     private val optimisticOverrides = MutableStateFlow<Map<String, Boolean>>(emptyMap())
 

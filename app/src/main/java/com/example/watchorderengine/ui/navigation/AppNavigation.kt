@@ -66,11 +66,14 @@ sealed class Screen(val route: String) {
         fun route(mediaId: String, initialSeason: Int? = null) = 
             "detail/$mediaId" + (initialSeason?.let { "?initialSeason=$it" } ?: "")
     }
-    object CharacterDetail : Screen("character/{tmdbPersonId}/{characterName}/{showTitle}/{isAnime}/{anilistId}") {
-        fun route(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean, anilistId: Int? = null): String {
+    object CharacterDetail : Screen("character/{tmdbPersonId}/{characterName}/{showTitle}/{isAnime}/{anilistId}?mediaId={mediaId}") {
+        fun route(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean, anilistId: Int? = null, mediaId: String? = null): String {
             val encodedName = java.net.URLEncoder.encode(characterName, "UTF-8")
             val encodedTitle = java.net.URLEncoder.encode(showTitle, "UTF-8")
-            return "character/$tmdbPersonId/$encodedName/$encodedTitle/$isAnime/${anilistId ?: -1}"
+            val base = "character/$tmdbPersonId/$encodedName/$encodedTitle/$isAnime/${anilistId ?: -1}"
+            // mediaId is optional — the Spoiler Shield only activates when the caller
+            // (the show's own Characters tab) can supply real watch-progress context.
+            return if (mediaId != null) "$base?mediaId=${java.net.URLEncoder.encode(mediaId, "UTF-8")}" else base
         }
     }
 }
@@ -495,9 +498,9 @@ fun AppNavigation() {
                         onUniverseClick = { universeId ->
                             navController.navigate("timeline/$universeId")
                         },
-                        onCharacterClick = { tmdbPersonId, characterName, showTitle, isAnime, anilistId ->
+                        onCharacterClick = { tmdbPersonId, characterName, showTitle, isAnime, anilistId, characterMediaId ->
                             navController.navigate(
-                                Screen.CharacterDetail.route(tmdbPersonId, characterName, showTitle, isAnime, anilistId)
+                                Screen.CharacterDetail.route(tmdbPersonId, characterName, showTitle, isAnime, anilistId, characterMediaId)
                             )
                         },
                         onAuthorClick = { userId ->
@@ -513,7 +516,8 @@ fun AppNavigation() {
                         navArgument("characterName")  { type = NavType.StringType },
                         navArgument("showTitle")      { type = NavType.StringType },
                         navArgument("isAnime")        { type = NavType.BoolType },
-                        navArgument("anilistId")      { type = NavType.IntType; defaultValue = -1 }
+                        navArgument("anilistId")      { type = NavType.IntType; defaultValue = -1 },
+                        navArgument("mediaId")        { type = NavType.StringType; nullable = true; defaultValue = null }
                     )
                 ) { backStackEntry ->
                     val args = backStackEntry.arguments
@@ -523,6 +527,7 @@ fun AppNavigation() {
                         showTitle     = java.net.URLDecoder.decode(args?.getString("showTitle") ?: "", "UTF-8"),
                         isAnime       = args?.getBoolean("isAnime") ?: false,
                         anilistId     = args?.getInt("anilistId")?.takeIf { it > 0 },
+                        mediaId       = args?.getString("mediaId")?.let { java.net.URLDecoder.decode(it, "UTF-8") },
                         onBack        = { navController.popBackStack() },
                         onMediaClick  = { mediaId ->
                             navController.navigate(Screen.Detail.route(safeMediaId(mediaId)))

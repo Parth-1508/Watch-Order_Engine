@@ -211,6 +211,29 @@ data class StoryArc(
     val synopsis: String
 )
 
+// ─── Catch-Up Calculator ──────────────────────────────────────────────────────
+
+/**
+ * Summary of everything left to watch to catch up to the latest aired episode.
+ *
+ * Built by [com.example.watchorderengine.data.repository.MediaRepository.observeCatchUpSummary]
+ * from every unwatched, already-released episode (season > 0). Episodes with a
+ * null [EpisodeItem.runtime] are counted toward [remainingEpisodeCount] /
+ * [remainingFillerCount] but contribute 0 minutes, since TMDB/Jikan don't always
+ * report a per-episode runtime — [hasIncompleteRuntimeData] flags this so the UI
+ * can caveat the total rather than silently under-report it.
+ */
+data class CatchUpSummary(
+    val remainingEpisodeCount: Int,
+    val remainingFillerCount: Int,
+    val remainingRuntimeMinutes: Int,
+    val remainingRuntimeMinutesExcludingFiller: Int,
+    val hasIncompleteRuntimeData: Boolean
+) {
+    val remainingCanonCount: Int get() = remainingEpisodeCount - remainingFillerCount
+    val isCaughtUp: Boolean get() = remainingEpisodeCount == 0
+}
+
 // ─── Sync Progress ───────────────────────────────────────────────────────────
 
 data class SyncProgress(

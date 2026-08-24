@@ -19,6 +19,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import com.example.watchorderengine.util.CatchUpResult
+import com.example.watchorderengine.util.calculateCatchUp
 import javax.inject.Inject
 
 @HiltViewModel
@@ -79,6 +81,54 @@ class MediaDetailViewModel @Inject constructor(
     private val _showWelcomeTip = MutableStateFlow(true)
     val showWelcomeTip: StateFlow<Boolean> = _showWelcomeTip.asStateFlow()
 
+    /** Powers the "Binge & Catch-Up" badge — runtime remaining to reach the latest release. */
+    private val _catchUpEpisodes = MutableStateFlow<List<EpisodeItem>>(emptyList())
+    private val _excludeFillerFromCatchUp = MutableStateFlow(false)
+    val excludeFillerFromCatchUp: StateFlow<Boolean> = _excludeFillerFromCatchUp.asStateFlow()
+
+    /**
+     * "How much do I need to watch to be caught up with what's out" — sums
+     * the exact runtime of every unwatched, already-released episode across
+     * the whole show (see [MediaRepository.getAllEpisodesForCatchUp] for why
+     * this can't just use whatever season tab happens to be open). Null
+     * while episodes are still loading, or for movies (no episodes to
+     * "catch up" on).
+     */
+    val catchUpResult: StateFlow<CatchUpResult?> = combine(
+        _catchUpEpisodes, _excludeFillerFromCatchUp, _mediaDetail
+    ) { episodes, excludeFiller, detail ->
+        if (episodes.isEmpty() || detail == null) return@combine null
+        calculateCatchUp(
+            episodes = episodes,
+            excludeFiller = excludeFiller,
+            fallbackRuntimeMinutes = detail.runtime?.takeIf { it > 0 } ?: 24
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** "Ask AI about this order" — Chronology tab, spoiler-free editorial explanation. */
+    private val _watchOrderExplanation = MutableStateFlow<String?>(null)
+    val watchOrderExplanation: StateFlow<String?> = _watchOrderExplanation.asStateFlow()
+    private val _isExplainingOrder = MutableStateFlow(false)
+    val isExplainingOrder: StateFlow<Boolean> = _isExplainingOrder.asStateFlow()
+    private val _explainOrderError = MutableStateFlow<String?>(null)
+    val explainOrderError: StateFlow<String?> = _explainOrderError.asStateFlow()
+
+    /**
+     * Whether the Spoiler Shield should currently blur character
+     * description / voice-actor reveal content.
+     */
+    private val _spoilerShieldActive = MutableStateFlow(false)
+    val spoilerShieldActive: StateFlow<Boolean> = _spoilerShieldActive.asStateFlow()
+
+    /**
+     * Whether a watch order has already been generated for the currently
+     * loaded media — checked directly against the DAG, not [MediaDetail.arcs]
+     * (which never populates for movies). Drives whether the Chronology tab
+     * shows GENERATE or ASK AI ABOUT THIS ORDER.
+     */
+    private val _hasGeneratedOrder = MutableStateFlow(false)
+    val hasGeneratedOrder: StateFlow<Boolean> = _hasGeneratedOrder.asStateFlow()
+
     /** Whether this screen should tint itself from the show's poster/backdrop art (Settings toggle). */
     val dynamicShowTheming: StateFlow<Boolean> = userPrefs.dynamicShowTheming
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
@@ -87,6 +137,8 @@ class MediaDetailViewModel @Inject constructor(
     private var episodesJob: Job? = null
     private var reviewsJob: Job? = null
     private var characterArtJob: Job? = null
+    private var catchUpJob: Job? = null
+    private var shieldJob: Job? = null
 
     fun loadMediaDetail(mediaId: String, forceRefresh: Boolean = false, initialSeason: Int? = null) {
         val sanitizedMediaId = if (mediaId.startsWith("tmdb_") || mediaId.startsWith("anilist_")) mediaId else "tmdb_$mediaId"
@@ -139,6 +191,10 @@ class MediaDetailViewModel @Inject constructor(
                             showTitle = detail.title,
                             isAnime = detail.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME
                         )
+
+                        loadCatchUpEpisodes(sanitizedMediaId, detail.mediaCategory)
+                        observeSpoilerShield(sanitizedMediaId)
+                        checkHasGeneratedOrder(sanitizedMediaId)
                     }
                 }
                 // Once the detail flow is finished, if we are still "loading episodes" 
@@ -290,6 +346,7 @@ class MediaDetailViewModel @Inject constructor(
                     _generationError.value = errorMessage
                 } else {
                     _generationSuccess.value = true
+                    _hasGeneratedOrder.value = true
                     // Reload to reflect changes in episode types
                     loadMediaDetail(mediaId, forceRefresh = true)
                     
@@ -433,4 +490,60 @@ class MediaDetailViewModel @Inject constructor(
     /** Fuzzy-matches a TMDB cast member's character name against the batched AniList art map. */
     fun characterArtFor(characterName: String): String? =
         characterRepository.matchCharacterArt(characterArt.value, characterName)
+
+    /** Checks whether this media already has a generated watch order — works for movies too. */
+    private fun checkHasGeneratedOrder(mediaId: String) {
+        viewModelScope.launch {
+            _hasGeneratedOrder.value = repository.hasGeneratedWatchOrder(mediaId)
+        }
+    }
+
+    fun setExcludeFillerFromCatchUp(exclude: Boolean) {
+        _excludeFillerFromCatchUp.value = exclude
+    }
+
+    private fun loadCatchUpEpisodes(mediaId: String, category: MediaCategory) {
+        if (category == MediaCategory.MOVIE) {
+            _catchUpEpisodes.value = emptyList()
+            return
+        }
+        catchUpJob?.cancel()
+        catchUpJob = viewModelScope.launch {
+            _catchUpEpisodes.value = repository.getAllEpisodesForCatchUp(mediaId)
+        }
+    }
+
+    private fun observeSpoilerShield(mediaId: String) {
+        shieldJob?.cancel()
+        shieldJob = viewModelScope.launch {
+            repository.observeSpoilerShieldActive(mediaId).collect { active ->
+                _spoilerShieldActive.value = active
+            }
+        }
+    }
+
+    /** "Ask AI about this order" — Chronology tab. */
+    fun explainWatchOrder(mediaId: String) {
+        viewModelScope.launch {
+            _isExplainingOrder.value = true
+            _explainOrderError.value = null
+            try {
+                val explanation = repository.explainWatchOrder(mediaId)
+                if (explanation != null) {
+                    _watchOrderExplanation.value = explanation
+                } else {
+                    _explainOrderError.value = "Generate a watch order first, then ask AI why it's ordered that way."
+                }
+            } catch (e: Exception) {
+                _explainOrderError.value = "Couldn't reach Gemini right now. Try again in a moment."
+            } finally {
+                _isExplainingOrder.value = false
+            }
+        }
+    }
+
+    fun dismissWatchOrderExplanation() {
+        _watchOrderExplanation.value = null
+        _explainOrderError.value = null
+    }
 }

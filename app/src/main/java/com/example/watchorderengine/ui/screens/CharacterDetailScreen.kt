@@ -1,8 +1,5 @@
 package com.example.watchorderengine.ui.screens
 
-import android.os.Build
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -41,6 +38,7 @@ import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.CharacterDetailState
 import com.example.watchorderengine.ui.viewmodel.CharacterDetailViewModel
+import com.example.watchorderengine.ui.components.SpoilerShield
 
 /**
  * Main screen for viewing character details.
@@ -67,14 +65,16 @@ fun CharacterDetailScreen(
     onBack: () -> Unit,
     onMediaClick: (String) -> Unit,
     anilistId: Int? = null,
+    mediaId: String? = null,
     viewModel: CharacterDetailViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     val photoIndex by viewModel.photoIndex.collectAsStateWithLifecycle()
+    val spoilerShieldActive by viewModel.spoilerShieldActive.collectAsStateWithLifecycle()
 
     LaunchedEffect(tmdbPersonId, characterName) {
-        viewModel.load(tmdbPersonId, characterName, showTitle, isAnime, anilistId)
+        viewModel.load(tmdbPersonId, characterName, showTitle, isAnime, anilistId, mediaId)
     }
 
     Box(modifier = Modifier.fillMaxSize().background(theme.background)) {
@@ -82,7 +82,7 @@ fun CharacterDetailScreen(
             is CharacterDetailState.Loading -> CharacterDetailLoading(onBack)
             is CharacterDetailState.Error -> CharacterDetailError(
                 message = s.message,
-                onRetry = { viewModel.retry(tmdbPersonId, characterName, showTitle, isAnime, anilistId) },
+                onRetry = { viewModel.retry(tmdbPersonId, characterName, showTitle, isAnime, anilistId, mediaId) },
                 onBack = onBack
             )
             is CharacterDetailState.Success -> CharacterDetailBody(
@@ -91,7 +91,8 @@ fun CharacterDetailScreen(
                 onPhotoSelect = viewModel::setPhotoIndex,
                 onBack = onBack,
                 onMediaClick = onMediaClick,
-                isAnime = isAnime
+                isAnime = isAnime,
+                spoilerShieldActive = spoilerShieldActive
             )
         }
     }
@@ -188,7 +189,8 @@ private fun CharacterDetailBody(
     onPhotoSelect: (Int) -> Unit,
     onBack: () -> Unit,
     onMediaClick: (String) -> Unit,
-    isAnime: Boolean
+    isAnime: Boolean,
+    spoilerShieldActive: Boolean = false
 ) {
     val theme = LocalAppTheme.current
     val scrollState = rememberScrollState()
@@ -390,7 +392,7 @@ private fun CharacterDetailBody(
 
         Crossfade(targetState = activeTab, label = "character_tab") { tab ->
             when (tabs.getOrNull(tab)) {
-                "Character" -> CharacterTab(detail, isAnime)
+                "Character" -> CharacterTab(detail, isAnime, spoilerShieldActive)
                 "Actor" -> ActorTab(detail)
                 "Appearances" -> AppearancesTab(detail)
                 "Filmography" -> FilmographyTab(detail, onMediaClick)
@@ -434,20 +436,25 @@ private fun QuickStat(label: String, value: String, modifier: Modifier = Modifie
  * Tab content showing character-specific lore, biography, and voice actor information.
  */
 @Composable
-private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
+private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean, spoilerShieldActive: Boolean = false) {
     val theme = LocalAppTheme.current
     Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
         if (detail.characterDescription.isNotBlank()) {
             SectionHeader("About this character")
-            if (detail.characterDescription.length > 200) {
-                ExpandableLoreCard(lore = detail.characterDescription, source = detail.loreSource)
-            } else {
-                InfoCard {
-                    Text(detail.characterDescription, color = theme.textSecondary, fontSize = 13.sp, lineHeight = 19.sp)
-                    when (detail.loreSource) {
-                        "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
-                        "anilist" -> LoreAttributionFooter("Source: AniList")
+            SpoilerShield(
+                isBlurred = spoilerShieldActive,
+                label = "Ahead of your progress"
+            ) {
+                if (detail.characterDescription.length > 200) {
+                    ExpandableLoreCard(lore = detail.characterDescription, source = detail.loreSource)
+                } else {
+                    InfoCard {
+                        Text(detail.characterDescription, color = theme.textSecondary, fontSize = 13.sp, lineHeight = 19.sp)
+                        when (detail.loreSource) {
+                            "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
+                            "anilist" -> LoreAttributionFooter("Source: AniList")
+                        }
                     }
                 }
             }
@@ -462,22 +469,27 @@ private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean) {
 
         if (detail.voiceActorName != null) {
             SectionHeader("Japanese Voice Actor")
-            InfoCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(
-                        model = detail.voiceActorImageUrl,
-                        contentDescription = detail.voiceActorName,
-                        modifier = Modifier.size(48.dp).clip(CircleShape).background(theme.surfaceHover),
-                        contentScale = ContentScale.Crop,
-                        error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(detail.voiceActorName, color = theme.textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Mic, contentDescription = null, tint = theme.accent, modifier = Modifier.size(12.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Japanese dub", color = theme.accent, fontSize = 11.sp)
+            SpoilerShield(
+                isBlurred = spoilerShieldActive,
+                label = "Voice actor reveal shielded"
+            ) {
+                InfoCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(
+                            model = detail.voiceActorImageUrl,
+                            contentDescription = detail.voiceActorName,
+                            modifier = Modifier.size(48.dp).clip(CircleShape).background(theme.surfaceHover),
+                            contentScale = ContentScale.Crop,
+                            error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.AccountCircle)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(detail.voiceActorName, color = theme.textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.Mic, contentDescription = null, tint = theme.accent, modifier = Modifier.size(12.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Japanese dub", color = theme.accent, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -744,9 +756,12 @@ private fun KnownForCard(credit: CreditItem, onClick: () -> Unit, modifier: Modi
 }
 
 /**
- * A specialized card for displaying lore that might contain spoilers.
+ * A card for displaying (potentially long) character lore with expand/collapse.
  *
- * Includes a "Tap to Reveal" overlay and a blur effect to protect the user from spoilers.
+ * Spoiler blurring is no longer handled here — the caller wraps this card in
+ * [com.example.watchorderengine.ui.components.SpoilerShield], which is
+ * progress-aware (see [com.example.watchorderengine.ui.viewmodel.CharacterDetailViewModel.spoilerShieldActive])
+ * rather than always-on.
  *
  * @param lore The biography text to display.
  * @param source The source of the lore (e.g., "wikipedia", "gemini", "anilist") for attribution.
@@ -757,83 +772,38 @@ private fun ExpandableLoreCard(lore: String, source: String? = null) {
     var expanded by remember { mutableStateOf(false) }
     var overflows by remember { mutableStateOf(false) }
 
-    var revealed by remember { mutableStateOf(false) }
-    val blurRadius by animateDpAsState(
-        targetValue   = if (revealed) 0.dp else 16.dp,
-        animationSpec = tween(durationMillis = 400),
-        label         = "wikiLoreBlur"
-    )
-
     InfoCard {
-        Box {
-            Column(modifier = Modifier.blur(blurRadius)) {
-                Text(
-                    text       = lore,
-                    color      = theme.textSecondary,
-                    fontSize   = 13.sp,
-                    lineHeight = 19.sp,
-                    fontStyle  = androidx.compose.ui.text.font.FontStyle.Italic,
-                    maxLines   = if (expanded) Int.MAX_VALUE else 4,
-                    overflow   = TextOverflow.Ellipsis,
-                    onTextLayout = { result ->
-                        if (!overflows) overflows = result.hasVisualOverflow
-                    }
-                )
-
-                if (overflows || expanded) {
-                    TextButton(
-                        onClick  = { expanded = !expanded },
-                        modifier = Modifier.align(Alignment.End),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                        enabled  = revealed
-                    ) {
-                        Text(
-                            if (expanded) "Show less" else "Show more",
-                            color    = theme.accent,
-                            fontSize = 12.sp
-                        )
-                    }
+        Column {
+            Text(
+                text       = lore,
+                color      = theme.textSecondary,
+                fontSize   = 13.sp,
+                lineHeight = 19.sp,
+                fontStyle  = androidx.compose.ui.text.font.FontStyle.Italic,
+                maxLines   = if (expanded) Int.MAX_VALUE else 4,
+                overflow   = TextOverflow.Ellipsis,
+                onTextLayout = { result ->
+                    if (!overflows) overflows = result.hasVisualOverflow
                 }
+            )
 
-                when (source) {
-                    "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
-                    "anilist" -> LoreAttributionFooter("Source: AniList")
+            if (overflows || expanded) {
+                TextButton(
+                    onClick  = { expanded = !expanded },
+                    modifier = Modifier.align(Alignment.End),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        if (expanded) "Show less" else "Show more",
+                        color    = theme.accent,
+                        fontSize = 12.sp
+                    )
                 }
             }
 
-            if (!revealed) {
-                val scrimAlpha = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.55f else 0.94f
-                Surface(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clickable(onClickLabel = "Reveal spoilers") { revealed = true },
-                    color = theme.background.copy(alpha = scrimAlpha)
-                ) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Surface(
-                            shape  = RoundedCornerShape(chipRadius(theme.appRadius)),
-                            color  = theme.surface,
-                            border = BorderStroke(1.dp, theme.border)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.VisibilityOff, contentDescription = null,
-                                    tint = theme.accent, modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "Tap to Reveal Spoilers",
-                                    color = theme.textPrimary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
+            when (source) {
+                "gemini" -> LoreAttributionFooter("Source: AI Generated (Gemini)")
+                "anilist" -> LoreAttributionFooter("Source: AniList")
             }
         }
     }

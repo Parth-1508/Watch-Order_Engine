@@ -50,6 +50,7 @@ fun TimelineScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val shareState by communityViewModel.shareState.collectAsStateWithLifecycle()
+    val explanationState by viewModel.explanationState.collectAsStateWithLifecycle()
 
     var showShareDialog by remember { mutableStateOf(false) }
 
@@ -57,7 +58,6 @@ fun TimelineScreen(
 
     LaunchedEffect(shareState) {
         if (shareState is ShareTimelineState.Shared) {
-            // Show success and reset
             communityViewModel.resetShareState()
             showShareDialog = false
         }
@@ -117,6 +117,7 @@ fun TimelineScreen(
                 uiState = uiState,
                 onBack = onBack,
                 onSpoilerToggle = { viewModel.toggleSpoilerShield() },
+                onAskAiClick = { viewModel.askAiAboutThisOrder() },
                 onShareCommunityClick = { showShareDialog = true }
             )
 
@@ -156,7 +157,253 @@ fun TimelineScreen(
                 )
             }
         }
+
+        if (explanationState !is ExplanationState.Idle) {
+            AskAiDialog(
+                state = explanationState,
+                onDismiss = { viewModel.dismissExplanation() },
+                onRetry = { viewModel.askAiAboutThisOrder() }
+            )
+        }
     }
+}
+
+@Composable
+private fun TimelineHeader(
+    uiState: TimelineUiState,
+    onBack: () -> Unit,
+    onSpoilerToggle: () -> Unit,
+    onAskAiClick: () -> Unit,
+    onShareCommunityClick: () -> Unit
+) {
+    val theme = LocalAppTheme.current
+    val context = LocalContext.current
+    val universeName = (uiState as? TimelineUiState.Success)?.universe?.name ?: "Skill Tree"
+    val spoilerEnabled = (uiState as? TimelineUiState.Success)?.spoilerShieldEnabled ?: true
+    val completedCount = (uiState as? TimelineUiState.Success)?.completedCount ?: 0
+    val totalCount = (uiState as? TimelineUiState.Success)?.totalNodeCount ?: 0
+
+    var showShareMenu by remember { mutableStateOf(false) }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = theme.textPrimary)
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Column {
+                Text(
+                    universeName,
+                    color = theme.textPrimary,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 18.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text("SKILL TREE", color = theme.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            }
+        }
+        
+        Row(
+            verticalAlignment = Alignment.CenterVertically, 
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(end = 8.dp)
+        ) {
+            Box {
+                Surface(
+                    onClick = { showShareMenu = true },
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = theme.surface,
+                    border = BorderStroke(1.dp, theme.border.copy(alpha = 0.1f)),
+                    tonalElevation = 2.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Share, "Share", tint = theme.accent, modifier = Modifier.size(20.dp))
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = showShareMenu,
+                    onDismissRequest = { showShareMenu = false },
+                    modifier = Modifier.background(theme.surface)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Standard Share", color = theme.textPrimary) },
+                        leadingIcon = { Icon(Icons.Default.Share, null, tint = theme.accent) },
+                        onClick = {
+                            showShareMenu = false
+                            val shareText = "Check out my watch order for $universeName on Watch Order Engine! I've completed $completedCount/$totalCount entries."
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, null))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Post to Community", color = theme.textPrimary) },
+                        leadingIcon = { Icon(Icons.Default.Groups, null, tint = theme.accent) },
+                        onClick = {
+                            showShareMenu = false
+                            onShareCommunityClick()
+                        }
+                    )
+                }
+            }
+
+            Surface(
+                onClick = onSpoilerToggle,
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = if (spoilerEnabled) theme.statusMixed.copy(alpha = 0.15f) else theme.surface,
+                border = BorderStroke(
+                    width = 1.dp, 
+                    color = if (spoilerEnabled) theme.statusMixed.copy(alpha = 0.5f) else theme.border.copy(alpha = 0.1f)
+                ),
+                tonalElevation = 2.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (spoilerEnabled) Icons.Default.VisibilityOff else Icons.Default.Visibility, 
+                        contentDescription = "Toggle Spoilers", 
+                        tint = if (spoilerEnabled) theme.statusMixed else theme.textSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Surface(
+                onClick = onAskAiClick,
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = theme.accent.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.4f)),
+                tonalElevation = 2.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = "Ask AI about this order",
+                        tint = theme.accent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelineContent(
+    state: TimelineUiState.Success,
+    viewModel: TimelineViewModel
+) {
+    val theme = LocalAppTheme.current
+    Column(modifier = Modifier.fillMaxSize()) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            color = theme.accent.copy(alpha = 0.1f),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.2f))
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lightbulb,
+                    contentDescription = null,
+                    tint = theme.accent,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Tip: Tap a card to trace its prerequisite path, long-press to mark it watched.",
+                    color = theme.textPrimary.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
+        BranchingTimelineView(
+            rows = state.rows,
+            edges = state.edges,
+            onNodeToggle = { node -> viewModel.toggleNodeCompletion(node.node.id, node.isCompleted) },
+            onNodeClick = { node -> viewModel.onNodeClick(node.node) },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+@Composable
+private fun AskAiDialog(
+    state: ExplanationState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit
+) {
+    val theme = LocalAppTheme.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = theme.surface,
+        icon = {
+            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = theme.accent)
+        },
+        title = {
+            Text("Why this order?", color = theme.textPrimary, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            when (state) {
+                is ExplanationState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(color = theme.accent, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Reading the timeline...", color = theme.textSecondary, fontSize = 13.sp)
+                }
+                is ExplanationState.Loaded -> Text(
+                    state.text,
+                    color = theme.textPrimary,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+                is ExplanationState.Failed -> Text(
+                    state.message,
+                    color = theme.statusFiller,
+                    fontSize = 13.sp
+                )
+                is ExplanationState.Idle -> {}
+            }
+        },
+        confirmButton = {
+            if (state is ExplanationState.Failed) {
+                TextButton(onClick = onRetry) {
+                    Text("Retry", color = theme.accent, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                TextButton(onClick = onDismiss) {
+                    Text("Close", color = theme.accent, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            if (state is ExplanationState.Failed) {
+                TextButton(onClick = onDismiss) {
+                    Text("Dismiss", color = theme.textSecondary)
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -371,166 +618,5 @@ private fun CompletionBanner(visible: Boolean) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun TimelineHeader(
-    uiState: TimelineUiState,
-    onBack: () -> Unit,
-    onSpoilerToggle: () -> Unit,
-    onShareCommunityClick: () -> Unit
-) {
-    val theme = LocalAppTheme.current
-    val context = LocalContext.current
-    val universeName = (uiState as? TimelineUiState.Success)?.universe?.name ?: "Skill Tree"
-    val spoilerEnabled = (uiState as? TimelineUiState.Success)?.spoilerShieldEnabled ?: true
-    val completedCount = (uiState as? TimelineUiState.Success)?.completedCount ?: 0
-    val totalCount = (uiState as? TimelineUiState.Success)?.totalNodeCount ?: 0
-
-    var showShareMenu by remember { mutableStateOf(false) }
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = theme.textPrimary)
-            }
-            Spacer(modifier = Modifier.width(4.dp))
-            Column {
-                Text(
-                    universeName,
-                    color = theme.textPrimary,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 18.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text("SKILL TREE", color = theme.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            }
-        }
-        
-        Row(
-            verticalAlignment = Alignment.CenterVertically, 
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(end = 8.dp)
-        ) {
-            Box {
-                Surface(
-                    onClick = { showShareMenu = true },
-                    modifier = Modifier.size(40.dp),
-                    shape = CircleShape,
-                    color = theme.surface,
-                    border = BorderStroke(1.dp, theme.border.copy(alpha = 0.1f)),
-                    tonalElevation = 2.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Share, "Share", tint = theme.accent, modifier = Modifier.size(20.dp))
-                    }
-                }
-
-                DropdownMenu(
-                    expanded = showShareMenu,
-                    onDismissRequest = { showShareMenu = false },
-                    modifier = Modifier.background(theme.surface)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Standard Share", color = theme.textPrimary) },
-                        leadingIcon = { Icon(Icons.Default.Share, null, tint = theme.accent) },
-                        onClick = {
-                            showShareMenu = false
-                            val shareText = "Check out my watch order for $universeName on Watch Order Engine! I've completed $completedCount/$totalCount entries."
-                            val sendIntent = Intent().apply {
-                                action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, shareText)
-                                type = "text/plain"
-                            }
-                            context.startActivity(Intent.createChooser(sendIntent, null))
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Post to Community", color = theme.textPrimary) },
-                        leadingIcon = { Icon(Icons.Default.Groups, null, tint = theme.accent) },
-                        onClick = {
-                            showShareMenu = false
-                            onShareCommunityClick()
-                        }
-                    )
-                }
-            }
-
-            Surface(
-                onClick = onSpoilerToggle,
-                modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = if (spoilerEnabled) theme.statusMixed.copy(alpha = 0.15f) else theme.surface,
-                border = BorderStroke(
-                    width = 1.dp, 
-                    color = if (spoilerEnabled) theme.statusMixed.copy(alpha = 0.5f) else theme.border.copy(alpha = 0.1f)
-                ),
-                tonalElevation = 2.dp
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (spoilerEnabled) Icons.Default.VisibilityOff else Icons.Default.Visibility, 
-                        contentDescription = "Toggle Spoilers", 
-                        tint = if (spoilerEnabled) theme.statusMixed else theme.textSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TimelineContent(
-    state: TimelineUiState.Success,
-    viewModel: TimelineViewModel
-) {
-    val theme = LocalAppTheme.current
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Floating Hint
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            color = theme.accent.copy(alpha = 0.1f),
-            shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.2f))
-        ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lightbulb,
-                    contentDescription = null,
-                    tint = theme.accent,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "Tip: Tap a card for details, long-press to mark it watched.",
-                    color = theme.textPrimary.copy(alpha = 0.7f),
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp
-                )
-            }
-        }
-
-        BranchingTimelineView(
-            rows = state.rows,
-            onNodeToggle = { node -> viewModel.toggleNodeCompletion(node.node.id, node.isCompleted) },
-            onNodeClick = { node -> viewModel.onNodeClick(node.node) },
-            modifier = Modifier.fillMaxSize()
-        )
     }
 }
