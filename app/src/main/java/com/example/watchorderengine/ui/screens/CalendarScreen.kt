@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -63,7 +65,39 @@ fun CalendarScreen(
     val listState     = rememberLazyListState()
     val scope         = rememberCoroutineScope()
 
+    var isCalendarExpanded by remember { mutableStateOf(true) }
+
     val episodes = (uiState as? CalendarUiState.Success)?.episodes ?: emptyList()
+
+    // Initial scroll to Today
+    LaunchedEffect(episodes) {
+        if (episodes.isNotEmpty()) {
+            val todayStr = today.toString()
+            var index = 0
+            var lastDateKey: String? = null
+            var targetIndex = -1
+            
+            for (ep in episodes) {
+                if (ep.airDate != lastDateKey) {
+                    if (ep.airDate == todayStr) {
+                        targetIndex = index
+                        break
+                    }
+                    index++ // header
+                    lastDateKey = ep.airDate
+                }
+                if (ep.airDate == todayStr) {
+                    targetIndex = index
+                    break
+                }
+                index++ // item
+            }
+            
+            if (targetIndex >= 0) {
+                listState.scrollToItem(targetIndex)
+            }
+        }
+    }
 
     // date -> how many episodes air that day, for the grid's per-cell badge
     val markedDates: Map<LocalDate, Int> = remember(episodes) {
@@ -107,26 +141,52 @@ fun CalendarScreen(
                     Icon(Icons.Default.Refresh, "Refresh", tint = theme.textSecondary)
                 }
             }
+            IconButton(onClick = { isCalendarExpanded = !isCalendarExpanded }) {
+                Icon(
+                    if (isCalendarExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    null,
+                    tint = theme.textSecondary
+                )
+            }
         }
 
         // ── Month grid ───────────────────────────────────────────────────────
-        MonthGridCalendar(
-            yearMonth    = selectedMonth,
-            selectedDate = selectedDate,
-            today        = today,
-            markedDates  = markedDates,
-            onPrevMonth  = { viewModel.previousMonth() },
-            onNextMonth  = { viewModel.nextMonth() },
-            onDateClick  = { date ->
-                viewModel.selectDate(date)
-                val targetIndex = episodes.indexOfFirst {
-                    runCatching { LocalDate.parse(it.airDate) }.getOrNull() == date
+        androidx.compose.animation.AnimatedVisibility(visible = isCalendarExpanded) {
+            MonthGridCalendar(
+                yearMonth    = selectedMonth,
+                selectedDate = selectedDate,
+                today        = today,
+                markedDates  = markedDates,
+                onPrevMonth  = { viewModel.previousMonth() },
+                onNextMonth  = { viewModel.nextMonth() },
+                onDateClick  = { date ->
+                    viewModel.selectDate(date)
+                    val targetDateStr = date.toString()
+                    var index = 0
+                    var lastDateKey: String? = null
+                    var foundIndex = -1
+                    for (ep in episodes) {
+                        if (ep.airDate != lastDateKey) {
+                            if (ep.airDate == targetDateStr) {
+                                foundIndex = index
+                                break
+                            }
+                            index++ // header
+                            lastDateKey = ep.airDate
+                        }
+                        if (ep.airDate == targetDateStr) {
+                            foundIndex = index
+                            break
+                        }
+                        index++ // item
+                    }
+                    
+                    if (foundIndex >= 0) {
+                        scope.launch { listState.animateScrollToItem(foundIndex) }
+                    }
                 }
-                if (targetIndex >= 0) {
-                    scope.launch { listState.animateScrollToItem(targetIndex) }
-                }
-            }
-        )
+            )
+        }
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
 
@@ -172,18 +232,19 @@ fun CalendarScreen(
                             contentPadding    = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            var lastDateHeader: String? = null
+                            var lastDateKey: String? = null
                             state.episodes.forEach { episode ->
                                 val episodeDate = runCatching { LocalDate.parse(episode.airDate) }.getOrNull()
+                                val dateKey     = episode.airDate
                                 val headerLabel = episodeDate?.let { relativeDateLabel(it, today) } ?: episode.airDate
 
-                                if (headerLabel != lastDateHeader) {
-                                    lastDateHeader = headerLabel
-                                    item(key = "header_$headerLabel") {
+                                if (dateKey != lastDateKey) {
+                                    lastDateKey = dateKey
+                                    item(key = "header_$dateKey") {
                                         DateHeader(headerLabel)
                                     }
                                 }
-                                item(key = episode.mediaId + episode.seasonEpisodeLabel) {
+                                item(key = "${episode.mediaId}_${episode.airDate}_${episode.seasonEpisodeLabel}") {
                                     UpcomingEpisodeCard(
                                         episode = episode,
                                         onClick = { onEpisodeClick(episode.mediaId) }
@@ -328,7 +389,7 @@ private fun GridDayCell(
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .padding(2.dp)
+            .padding(1.dp)
             .clip(CircleShape)
             .background(if (isSelected) theme.accent else Color.Transparent)
             .border(
@@ -342,7 +403,7 @@ private fun GridDayCell(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 date.dayOfMonth.toString(),
-                fontSize   = 13.sp,
+                fontSize   = 11.sp,
                 fontWeight = if (isToday || isSelected) FontWeight.Black else FontWeight.Normal,
                 color = when {
                     isSelected -> Color.White
@@ -354,12 +415,12 @@ private fun GridDayCell(
                 Box(
                     modifier = Modifier
                         .padding(top = 1.dp)
-                        .size(4.dp)
+                        .size(3.dp)
                         .clip(CircleShape)
                         .background(if (isSelected) Color.White else theme.accent)
                 )
             } else {
-                Spacer(Modifier.size(4.dp).padding(top = 1.dp))
+                Spacer(Modifier.size(3.dp).padding(top = 1.dp))
             }
         }
     }
@@ -471,8 +532,9 @@ private fun EmptyCalendarState() {
 // ─── Date label helper ──────────────────────────────────────────────────────
 
 private fun relativeDateLabel(date: LocalDate, today: LocalDate): String = when {
-    date == today             -> "Today"
-    date == today.plusDays(1) -> "Tomorrow"
-    date.isBefore(today.plusDays(7)) -> date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
+    date == today                                            -> "Today"
+    date == today.plusDays(1)                                -> "Tomorrow"
+    date == today.minusDays(1)                               -> "Yesterday"
+    date.isAfter(today) && date.isBefore(today.plusDays(7))  -> date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
     else -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()))
 }

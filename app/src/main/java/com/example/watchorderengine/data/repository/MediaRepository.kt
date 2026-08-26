@@ -1996,7 +1996,7 @@ class MediaRepository @Inject constructor(
 
         (myEpisodes + trendingTmdbEpisodes + trendingAnilist)
             .distinctBy { it.mediaId + it.airDate + it.episodeNumber }
-            .sortedByDescending { it.airDate } // Newest first (historical window)
+            .sortedBy { it.airDate } // Ascending (Past to Future)
     }
 
     private suspend fun fetchAiringTrendingAnime(startDateIso: String): List<UpcomingEpisode> {
@@ -2020,26 +2020,55 @@ class MediaRepository @Inject constructor(
         return try {
             val response = anilistApi.query(AnilistRequest(query, mapOf("page" to 1)))
             if (!response.isSuccessful) return emptyList()
-            
+
             val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-            
-            response.body()?.data?.page?.media?.mapNotNull { anime ->
+            val animeList = response.body()?.data?.page?.media.orEmpty()
+
+            animeList.mapNotNull { anime ->
                 val nextEp = anime.nextAiringEpisode ?: return@mapNotNull null
                 val date = sdf.format(java.util.Date(nextEp.airingAt * 1000L))
-                
-                if (date >= startDateIso) {
-                    UpcomingEpisode(
-                        mediaId = "anilist_${anime.id}",
-                        showTitle = anime.title?.english ?: anime.title?.romaji ?: "Unknown Anime",
-                        posterUrl = anime.coverImage?.large,
-                        mediaCategory = "ANIME",
-                        seasonNumber = 1, // AniList doesn't do "seasons" in the TMDB sense here
-                        episodeNumber = nextEp.episode,
-                        episodeName = "Upcoming Episode",
-                        airDate = date
-                    )
-                } else null
-            } ?: emptyList()
+                if (date < startDateIso) return@mapNotNull null
+
+                val title = anime.title?.english ?: anime.title?.romaji ?: return@mapNotNull null
+
+                // ── Resolve to a REAL tmdb_t_{id} mediaId ──────────────────────
+                val existing = db.mediaDao().getByAnilistId(anime.id)
+
+                val resolvedMediaId = existing?.id ?: run {
+                    val searchResult = try {
+                        apiService.searchTv(query = title).body()?.results?.firstOrNull()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "TMDB resolve failed for AniList '$title': ${e.message}")
+                        null
+                    } ?: return@mapNotNull null
+
+                    val newMediaId = buildMediaId(searchResult.id, "tv")
+                    val existingByTmdbId = db.mediaDao().getById(newMediaId)
+                    when {
+                        existingByTmdbId == null -> {
+                            db.mediaDao().upsert(
+                                searchResult.toMinimalEntity(newMediaId, explicitIsMovie = false)
+                                    .copy(anilistId = anime.id)
+                            )
+                        }
+                        existingByTmdbId.anilistId == null -> {
+                            db.mediaDao().upsert(existingByTmdbId.copy(anilistId = anime.id))
+                        }
+                    }
+                    newMediaId
+                }
+
+                UpcomingEpisode(
+                    mediaId       = resolvedMediaId,
+                    showTitle     = title,
+                    posterUrl     = anime.coverImage?.large,
+                    mediaCategory = "ANIME",
+                    seasonNumber  = 1,
+                    episodeNumber = nextEp.episode,
+                    episodeName   = "Upcoming Episode",
+                    airDate       = date,
+                )
+            }
         } catch (e: Exception) {
             Log.w(TAG, "AniList trending fetch failed: ${e.message}")
             emptyList()
