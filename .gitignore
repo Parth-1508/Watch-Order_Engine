@@ -16,3 +16,4 @@ node_modules/
 *.log
 app/src/main/java/com/example/watchorderengine/temp/
 temp/
+.artifacts/
