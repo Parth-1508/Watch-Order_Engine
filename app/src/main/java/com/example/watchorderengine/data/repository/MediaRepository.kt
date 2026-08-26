@@ -14,6 +14,7 @@ import androidx.paging.PagingData
 import com.example.watchorderengine.data.model.*
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.sync.SyncWorker
+import com.example.watchorderengine.network.AnilistRequest
 import com.example.watchorderengine.network.JikanApiService
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbConfig
@@ -1937,16 +1938,28 @@ class MediaRepository @Inject constructor(
      * [refreshCurrentSeasonForWatchingShows] first (or after, then re-call
      * this) to pick up dates announced since the last cache.
      */
+    /**
+     * Expanded calendar: sources every future-dated episode already cached for
+     * any tracked show (except DROPPED), plus dates up to 14 days in the past,
+     * plus current Trending titles from both TMDB and AniList.
+     */
     suspend fun getUpcomingEpisodes(): List<UpcomingEpisode> = withContext(Dispatchers.IO) {
-        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-        val episodes = db.episodeDao().getUpcomingForWatching(todayIso)
-        if (episodes.isEmpty()) return@withContext emptyList()
+        val today = java.util.Calendar.getInstance()
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        
+        // 14 days in past
+        val startCal = today.clone() as java.util.Calendar
+        startCal.add(java.util.Calendar.DATE, -14)
+        val startDateIso = sdf.format(startCal.time)
 
+        // 1. My Tracked Shows (expanded)
+        val episodes = db.episodeDao().getUpcomingExpanded(startDateIso)
+        
         val mediaMap = db.mediaDao()
             .getByIds(episodes.map { it.mediaId }.distinct())
             .associateBy { it.id }
 
-        episodes.mapNotNull { ep ->
+        val myEpisodes = episodes.mapNotNull { ep ->
             val media = mediaMap[ep.mediaId] ?: return@mapNotNull null
             UpcomingEpisode(
                 mediaId       = ep.mediaId,
@@ -1956,8 +1969,80 @@ class MediaRepository @Inject constructor(
                 seasonNumber  = ep.seasonNumber,
                 episodeNumber = ep.episodeNumber,
                 episodeName   = ep.title.ifBlank { "Episode ${ep.episodeNumber}" },
-                airDate       = ep.airDate!!,   // safe — DAO query already filters airDate IS NOT NULL
+                airDate       = ep.airDate!!,
             )
+        }
+
+        // 2. Trending Shows (TMDB)
+        val trendingTmdb = runCatching { getTrending() }.getOrDefault(emptyList())
+        val trendingTmdbEpisodes = trendingTmdb.mapNotNull { summary ->
+            val date = summary.releaseDate
+            if (date != null && date >= startDateIso) {
+                UpcomingEpisode(
+                    mediaId = summary.id,
+                    showTitle = summary.title,
+                    posterUrl = summary.posterUrl,
+                    mediaCategory = summary.mediaCategory.name,
+                    seasonNumber = 1,
+                    episodeNumber = 1,
+                    episodeName = if (summary.mediaCategory == MediaCategory.MOVIE) "Theater Release" else "Series Premiere",
+                    airDate = date
+                )
+            } else null
+        }
+
+        // 3. Trending/Airing Anime (AniList)
+        val trendingAnilist = fetchAiringTrendingAnime(startDateIso)
+
+        (myEpisodes + trendingTmdbEpisodes + trendingAnilist)
+            .distinctBy { it.mediaId + it.airDate + it.episodeNumber }
+            .sortedByDescending { it.airDate } // Newest first (historical window)
+    }
+
+    private suspend fun fetchAiringTrendingAnime(startDateIso: String): List<UpcomingEpisode> {
+        val query = """
+            query (${'$'}page: Int) {
+              Page (page: ${'$'}page, perPage: 15) {
+                media (status: RELEASING, sort: TRENDING_DESC, type: ANIME) {
+                  id
+                  title { english romaji }
+                  coverImage { large }
+                  format
+                  nextAiringEpisode {
+                    airingAt
+                    episode
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        return try {
+            val response = anilistApi.query(AnilistRequest(query, mapOf("page" to 1)))
+            if (!response.isSuccessful) return emptyList()
+            
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            
+            response.body()?.data?.page?.media?.mapNotNull { anime ->
+                val nextEp = anime.nextAiringEpisode ?: return@mapNotNull null
+                val date = sdf.format(java.util.Date(nextEp.airingAt * 1000L))
+                
+                if (date >= startDateIso) {
+                    UpcomingEpisode(
+                        mediaId = "anilist_${anime.id}",
+                        showTitle = anime.title?.english ?: anime.title?.romaji ?: "Unknown Anime",
+                        posterUrl = anime.coverImage?.large,
+                        mediaCategory = "ANIME",
+                        seasonNumber = 1, // AniList doesn't do "seasons" in the TMDB sense here
+                        episodeNumber = nextEp.episode,
+                        episodeName = "Upcoming Episode",
+                        airDate = date
+                    )
+                } else null
+            } ?: emptyList()
+        } catch (e: Exception) {
+            Log.w(TAG, "AniList trending fetch failed: ${e.message}")
+            emptyList()
         }
     }
 

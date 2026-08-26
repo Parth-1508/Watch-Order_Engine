@@ -198,6 +198,17 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `notified_episodes` (
+                `episodeId`  TEXT NOT NULL PRIMARY KEY,
+                `notifiedAt` INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
@@ -209,9 +220,10 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
         EpisodeWatchedEntity::class,
         DiscoverySkippedEntity::class,
         PendingSyncTaskEntity::class,
-        ReviewEntity::class
+        ReviewEntity::class,
+        NotifiedEpisodeEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -225,6 +237,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
     abstract fun discoverySkippedDao(): DiscoverySkippedDao
     abstract fun pendingSyncTaskDao(): PendingSyncTaskDao
     abstract fun reviewDao(): ReviewDao
+    abstract fun notifiedEpisodeDao(): NotifiedEpisodeDao
 
     /**
      * Surgically clears only the cached metadata (shows, seasons, episodes)
@@ -257,7 +270,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

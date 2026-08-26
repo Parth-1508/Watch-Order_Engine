@@ -1,9 +1,12 @@
 package com.example.watchorderengine.ui.viewmodel
 
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.watchorderengine.data.WatchOrderRepository
+import com.example.watchorderengine.data.backup.DataBackupManager
+import com.example.watchorderengine.data.backup.ImportStrategy
+import com.example.watchorderengine.data.backup.ImportSummary
 import com.example.watchorderengine.data.db.WatchOrderDatabase
 import com.example.watchorderengine.data.prefs.LayoutStyle
 import com.example.watchorderengine.data.prefs.ThemeMode
@@ -38,12 +41,21 @@ sealed interface ChangePasswordState {
     data class Error(val message: String) : ChangePasswordState
 }
 
+sealed interface BackupUiState {
+    data object Idle : BackupUiState
+    data object Working : BackupUiState
+    data class ExportSuccess(val itemCount: Int) : BackupUiState
+    data class ImportSuccess(val summary: ImportSummary) : BackupUiState
+    data class Failed(val message: String) : BackupUiState
+}
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     val prefsRepository: UserPreferencesRepository,
     private val db: WatchOrderDatabase,
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val backupManager: DataBackupManager
 ) : ViewModel() {
 
     val themeMode: StateFlow<ThemeMode> = prefsRepository.themeMode
@@ -64,11 +76,17 @@ class SettingsViewModel @Inject constructor(
     val dynamicShowTheming: StateFlow<Boolean> = prefsRepository.dynamicShowTheming
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    val airingAlertsEnabled: StateFlow<Boolean> = prefsRepository.airingAlertsEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     private val _wipeAccountState = MutableStateFlow<WipeAccountState>(WipeAccountState.Idle)
     val wipeAccountState: StateFlow<WipeAccountState> = _wipeAccountState.asStateFlow()
 
     private val _changePasswordState = MutableStateFlow<ChangePasswordState>(ChangePasswordState.Idle)
     val changePasswordState: StateFlow<ChangePasswordState> = _changePasswordState.asStateFlow()
+
+    private val _backupState = MutableStateFlow<BackupUiState>(BackupUiState.Idle)
+    val backupState: StateFlow<BackupUiState> = _backupState.asStateFlow()
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { prefsRepository.setThemeMode(mode) }
@@ -92,6 +110,34 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicShowTheming(enabled: Boolean) {
         viewModelScope.launch { prefsRepository.setDynamicShowTheming(enabled) }
+    }
+
+    fun setAiringAlertsEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepository.setAiringAlertsEnabled(enabled) }
+    }
+
+    fun exportBackup(destinationUri: Uri) {
+        viewModelScope.launch {
+            _backupState.value = BackupUiState.Working
+            backupManager.exportBackup(destinationUri).fold(
+                onSuccess = { count -> _backupState.value = BackupUiState.ExportSuccess(count) },
+                onFailure = { e -> _backupState.value = BackupUiState.Failed(e.message ?: "Export failed.") }
+            )
+        }
+    }
+
+    fun importBackup(sourceUri: Uri, strategy: ImportStrategy) {
+        viewModelScope.launch {
+            _backupState.value = BackupUiState.Working
+            backupManager.importBackup(sourceUri, strategy).fold(
+                onSuccess = { summary -> _backupState.value = BackupUiState.ImportSuccess(summary) },
+                onFailure = { e -> _backupState.value = BackupUiState.Failed(e.message ?: "Import failed.") }
+            )
+        }
+    }
+
+    fun acknowledgeBackupResult() {
+        _backupState.value = BackupUiState.Idle
     }
 
     fun signOut() {

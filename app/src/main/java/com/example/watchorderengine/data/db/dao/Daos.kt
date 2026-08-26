@@ -106,6 +106,19 @@ interface EpisodeDao {
     """)
     suspend fun getUpcomingForWatching(todayIso: String): List<EpisodeEntity>
 
+    /**
+     * Expanded calendar query: shows from every category except DROPPED, 
+     * plus a 14-day historical window.
+     */
+    @Query("""
+        SELECT * FROM episodes
+        WHERE airDate IS NOT NULL AND airDate != '' AND airDate >= :startDateIso
+          AND seasonNumber > 0
+          AND mediaId IN (SELECT mediaId FROM user_progress WHERE trackingState != 'DROPPED')
+        ORDER BY airDate ASC
+    """)
+    suspend fun getUpcomingExpanded(startDateIso: String): List<EpisodeEntity>
+
     @Query("""
         SELECT * FROM episodes
         WHERE airDate IS NOT NULL AND airDate != '' AND airDate >= :todayIso
@@ -167,6 +180,15 @@ interface UserProgressDao {
     @Query("SELECT * FROM user_progress")
     suspend fun getAll(): List<UserProgressEntity>
 
+    @Query("SELECT * FROM user_progress")
+    suspend fun getAllProgress(): List<UserProgressEntity>
+
+    @Upsert
+    suspend fun upsertAll(entities: List<UserProgressEntity>)
+
+    @Query("DELETE FROM user_progress")
+    suspend fun deleteAll()
+
     @Query("SELECT * FROM user_progress WHERE mediaId = :mediaId")
     suspend fun getByMediaId(mediaId: String): UserProgressEntity?
 
@@ -210,6 +232,15 @@ interface EpisodeWatchedDao {
 
     @Query("SELECT episodeId FROM episode_watched")
     suspend fun getAllWatchedIds(): List<String>
+
+    @Query("SELECT * FROM episode_watched")
+    suspend fun getAllWatched(): List<EpisodeWatchedEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllWatched(entities: List<EpisodeWatchedEntity>)
+
+    @Query("DELETE FROM episode_watched")
+    suspend fun deleteAll()
 
     @Query("""
         SELECT SUM(e.runtime) FROM episodes e
@@ -280,6 +311,15 @@ interface ReviewDao {
     @Query("SELECT * FROM user_reviews WHERE mediaId = :mediaId ORDER BY createdAt DESC")
     fun observeReviewsForMedia(mediaId: String): Flow<List<ReviewEntity>>
 
+    @Query("SELECT * FROM user_reviews")
+    suspend fun getAllReviews(): List<ReviewEntity>
+
+    @Upsert
+    suspend fun upsertAllReviews(entities: List<ReviewEntity>)
+
+    @Query("DELETE FROM user_reviews")
+    suspend fun deleteAll()
+
     @Query("SELECT * FROM user_reviews WHERE mediaId = :mediaId ORDER BY createdAt DESC")
     suspend fun getReviewsForMedia(mediaId: String): List<ReviewEntity>
 
@@ -321,6 +361,12 @@ interface DiscoverySkippedDao {
     @Query("SELECT mediaId FROM discovery_skipped")
     suspend fun getAllSkippedIds(): List<String>
 
+    @Query("SELECT * FROM discovery_skipped")
+    suspend fun getAll(): List<DiscoverySkippedEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<DiscoverySkippedEntity>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun markSkipped(entity: DiscoverySkippedEntity)
 
@@ -329,4 +375,17 @@ interface DiscoverySkippedDao {
 
     @Query("DELETE FROM discovery_skipped")
     suspend fun clearAllSkipped()
+}
+
+@Dao
+interface NotifiedEpisodeDao {
+    @Query("SELECT episodeId FROM notified_episodes")
+    suspend fun getAllNotifiedIds(): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(entities: List<NotifiedEpisodeEntity>)
+
+    /** Housekeeping so this table doesn't grow forever. */
+    @Query("DELETE FROM notified_episodes WHERE notifiedAt < :cutoffMillis")
+    suspend fun deleteOlderThan(cutoffMillis: Long)
 }

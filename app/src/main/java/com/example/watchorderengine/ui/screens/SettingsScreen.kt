@@ -1,5 +1,10 @@
 package com.example.watchorderengine.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -17,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -25,14 +31,21 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.watchorderengine.BuildConfig
+import com.example.watchorderengine.data.backup.ImportStrategy
 import com.example.watchorderengine.data.prefs.ThemeMode
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
+import com.example.watchorderengine.ui.viewmodel.BackupUiState
 import com.example.watchorderengine.ui.viewmodel.ChangePasswordState
 import com.example.watchorderengine.ui.viewmodel.SettingsViewModel
 import com.example.watchorderengine.ui.viewmodel.WipeAccountState
+import com.example.watchorderengine.worker.AiringAlertWorker
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 @Composable
@@ -49,12 +62,16 @@ fun SettingsScreen(
     val hideUnwatchedSpoilers by viewModel.hideUnwatchedSpoilers.collectAsStateWithLifecycle()
     val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsStateWithLifecycle()
     val dynamicShowTheming by viewModel.dynamicShowTheming.collectAsStateWithLifecycle()
+    val airingAlertsEnabled by viewModel.airingAlertsEnabled.collectAsStateWithLifecycle()
     val wipeAccountState by viewModel.wipeAccountState.collectAsStateWithLifecycle()
+    val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val changePasswordState by viewModel.changePasswordState.collectAsStateWithLifecycle()
 
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var showImportStrategyDialog by remember { mutableStateOf(false) }
+    var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
     
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -65,6 +82,46 @@ fun SettingsScreen(
 
     // Lock to default "Engine" colors for critical account actions
     val engineAccent = Color(0xFFFFC300)
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.setAiringAlertsEnabled(true)
+        if (granted) AiringAlertWorker.schedule(context) else AiringAlertWorker.cancel(context)
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { viewModel.exportBackup(it) } }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> 
+        uri?.let { 
+            pendingImportUri = it
+            showImportStrategyDialog = true 
+        } 
+    }
+
+    if (showImportStrategyDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportStrategyDialog = false },
+            title = { Text("Import Backup", fontWeight = FontWeight.Black) },
+            text = { Text("MERGE adds/updates data from the file to your current list. REPLACE ALL erases everything first (destructive).") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.importBackup(pendingImportUri!!, ImportStrategy.MERGE)
+                    showImportStrategyDialog = false
+                }) { Text("MERGE", fontWeight = FontWeight.Bold, color = theme.accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.importBackup(pendingImportUri!!, ImportStrategy.REPLACE_ALL)
+                    showImportStrategyDialog = false
+                }) { Text("REPLACE ALL", fontWeight = FontWeight.Bold, color = Color.Red) }
+            }
+        )
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -359,6 +416,35 @@ fun SettingsScreen(
                     checked = cloudSyncEnabled,
                     onCheckedChange = { viewModel.setCloudSyncEnabled(it) }
                 )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = theme.textPrimary.copy(alpha = 0.05f)
+                )
+                PreferenceToggleRow(
+                    icon     = Icons.Default.NotificationsActive,
+                    title    = "AIRING ALERTS",
+                    subtitle = if (airingAlertsEnabled)
+                                   "CHECKS ~2X DAILY FOR NEW EPISODES"
+                               else
+                                   "GET NOTIFIED WHEN A SHOW YOU'RE WATCHING DROPS A NEW EPISODE",
+                    checked  = airingAlertsEnabled,
+                    onCheckedChange = { enabled ->
+                        if (!enabled) {
+                            viewModel.setAiringAlertsEnabled(false)
+                            AiringAlertWorker.cancel(context)
+                            return@PreferenceToggleRow
+                        }
+                        val alreadyGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                                PackageManager.PERMISSION_GRANTED
+                        if (alreadyGranted) {
+                            viewModel.setAiringAlertsEnabled(true)
+                            AiringAlertWorker.schedule(context)
+                        } else {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                )
             }
         }
 
@@ -368,22 +454,117 @@ fun SettingsScreen(
             modifier = Modifier
                 .padding(16.dp)
                 .fillMaxWidth()
-                .height(64.dp)
-                .then(ThemeBorderModifier())
-                .clickable { showClearCacheDialog = true },
+                .then(ThemeBorderModifier()),
             color = theme.surface
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.DeleteSweep, null, tint = theme.textPrimary)
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text("CLEAR LOCAL CACHE", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
-                    Text("Cached TMDB metadata only — progress is safe", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .clickable { showClearCacheDialog = true }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.DeleteSweep, null, tint = theme.textPrimary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text("CLEAR LOCAL CACHE", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
+                        Text("Cached TMDB metadata only — progress is safe", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    }
+                }
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = theme.textPrimary.copy(alpha = 0.05f))
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .clickable { 
+                            val timestamp = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                            exportLauncher.launch("watchorderengine_backup_$timestamp.json")
+                        }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Upload, null, tint = theme.textPrimary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text("EXPORT BACKUP", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
+                        Text("Save your data to a local JSON file", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    }
+                }
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = theme.textPrimary.copy(alpha = 0.05f))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .clickable { importLauncher.launch(arrayOf("application/json")) }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Download, null, tint = theme.textPrimary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text("IMPORT BACKUP", fontWeight = FontWeight.Black, fontSize = 14.sp, color = theme.textPrimary)
+                        Text("Restore your data from a local JSON file", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
+        }
+
+        when (val state = backupState) {
+            is BackupUiState.Working -> {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = theme.accent)
+                }
+            }
+            is BackupUiState.ExportSuccess -> {
+                Surface(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    color = Color(0xFF4ADE80).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4ADE80))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Backup exported (${state.itemCount} items).", color = Color(0xFF4ADE80), fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { viewModel.acknowledgeBackupResult() }) { Text("Dismiss") }
+                    }
+                }
+            }
+            is BackupUiState.ImportSuccess -> {
+                Surface(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    color = Color(0xFF4ADE80).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4ADE80))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Backup imported successfully!", color = Color(0xFF4ADE80), fontWeight = FontWeight.Bold)
+                        }
+                        Text("Restored ${state.summary.totalCount} items from backup.", fontSize = 11.sp, color = Color.Gray)
+                        TextButton(onClick = { viewModel.acknowledgeBackupResult() }) { Text("Dismiss") }
+                    }
+                }
+            }
+            is BackupUiState.Failed -> {
+                Surface(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    color = Color.Red.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Operation failed", color = Color.Red, fontWeight = FontWeight.Bold)
+                        Text(state.message, color = Color.Red, fontSize = 11.sp)
+                        TextButton(onClick = { viewModel.acknowledgeBackupResult() }) { Text("Dismiss") }
+                    }
+                }
+            }
+            else -> Unit
         }
 
         if (showClearedToast) {

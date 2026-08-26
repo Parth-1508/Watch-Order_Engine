@@ -1,6 +1,7 @@
 package com.example.watchorderengine.data.db.entity
 
 import androidx.room.*
+import kotlinx.serialization.Serializable
 
 /**
  * Primary cache entity for a movie or TV show.
@@ -129,6 +130,7 @@ data class EpisodeEntity(
     val lastUpdated: Long = System.currentTimeMillis()
 )
 
+@Serializable
 @Entity(tableName = "user_progress", indices = [Index("trackingState")])
 data class UserProgressEntity(
     @PrimaryKey var mediaId: String = "",
@@ -157,6 +159,7 @@ data class JoinedProgressMedia(
     val media: MediaEntity?
 )
 
+@Serializable
 @Entity(
     tableName = "episode_watched",
     primaryKeys = ["episodeId"],
@@ -173,8 +176,16 @@ data class EpisodeWatchedEntity(
  * Distinct from [TrackingState.DROPPED]: skipped items resurface after a deck
  * reset; dropped items are permanently excluded.
  */
+@Serializable
 @Entity(tableName = "discovery_skipped")
 data class DiscoverySkippedEntity(
     @PrimaryKey val mediaId: String,
     val skippedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "notified_episodes")
+data class NotifiedEpisodeEntity(
+    /** Matches EpisodeEntity.id exactly: "{mediaId}_s{seasonNumber}e{episodeNumber}". */
+    @PrimaryKey val episodeId: String,
+    val notifiedAt: Long = System.currentTimeMillis(),
 )

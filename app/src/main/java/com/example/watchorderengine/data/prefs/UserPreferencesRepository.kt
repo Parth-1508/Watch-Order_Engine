@@ -38,6 +38,7 @@ class UserPreferencesRepository(private val context: Context) {
         val LAST_ACTIVE_DATE = longPreferencesKey("last_active_date")
         val CURRENT_STREAK = intPreferencesKey("current_streak")
         val LAST_SMART_NOTIF_TRIGGER = longPreferencesKey("last_smart_notif_trigger")
+        val AIRING_ALERTS_ENABLED = booleanPreferencesKey("airing_alerts_enabled")
     }
 
     val isTasteProfileCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -56,6 +57,10 @@ class UserPreferencesRepository(private val context: Context) {
         preferences[PreferencesKeys.LAST_SMART_NOTIF_TRIGGER] ?: 0L
     }
 
+    val airingAlertsEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.AIRING_ALERTS_ENABLED] ?: false
+    }
+
     suspend fun setTasteProfileCompleted(completed: Boolean) {
         context.dataStore.edit { it[PreferencesKeys.IS_TASTE_PROFILE_COMPLETED] = completed }
     }
@@ -69,6 +74,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setLastSmartNotifTrigger(time: Long) {
         context.dataStore.edit { it[PreferencesKeys.LAST_SMART_NOTIF_TRIGGER] = time }
+    }
+
+    suspend fun setAiringAlertsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.AIRING_ALERTS_ENABLED] = enabled }
     }
 
     val username: StateFlow<String> = context.dataStore.data.map { preferences ->

@@ -79,10 +79,17 @@ data class AnilistMedia(
     val relations: AnilistRelations?,
     val characters: AnilistCharacters?,
     val reviews: AnilistReviews? = null,
+    val nextAiringEpisode: AnilistAiringEpisode? = null,
     // "TV" | "TV_SHORT" | "MOVIE" | "SPECIAL" | "OVA" | "ONA" | "MUSIC" — used to
     // pick out franchise movies/specials from a media's relations list.
     val format: String? = null,
     val startDate: AnilistFuzzyDate? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistAiringEpisode(
+    val airingAt: Long,
+    val episode: Int
 )
 
 @JsonClass(generateAdapter = true)

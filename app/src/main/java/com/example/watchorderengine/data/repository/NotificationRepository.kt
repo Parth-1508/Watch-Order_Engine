@@ -5,6 +5,7 @@ import com.example.watchorderengine.data.model.Notification
 import com.example.watchorderengine.data.model.NotificationType
 import com.example.watchorderengine.util.NotificationHelper
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.toObject
@@ -28,8 +29,6 @@ class NotificationRepository @Inject constructor(
     private val notificationHelper: NotificationHelper
 ) {
 
-    private val notifiedIds = mutableSetOf<String>()
-
     fun observeNotifications(): Flow<Result<List<Notification>>> = callbackFlow {
         val uid = auth.currentUser?.uid
         if (uid == null) {
@@ -43,6 +42,8 @@ class NotificationRepository @Inject constructor(
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(50)
 
+        var isFirstSnapshot = true
+
         val listener = query.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w(TAG, "Listen failed", error)
@@ -51,20 +52,31 @@ class NotificationRepository @Inject constructor(
             }
 
             val list = snapshot?.documents?.mapNotNull { doc ->
-                doc.toObject<Notification>()?.apply { 
-                    id = doc.id 
-                    // Trigger system notification for NEW unread notifications
-                    if (!isRead && id !in notifiedIds) {
-                        notifiedIds.add(id)
-                        notificationHelper.showNotification(
-                            id = id.hashCode(),
-                            title = title,
-                            message = message,
-                            targetId = targetId
-                        )
-                    }
-                }
+                doc.toObject<Notification>()?.apply { id = doc.id }
             } ?: emptyList()
+
+            if (isFirstSnapshot) {
+                // The initial full result set — never fire system notifications
+                // from this one, it's a catch-up read, not new activity.
+                isFirstSnapshot = false
+            } else {
+                snapshot?.documentChanges
+                    ?.filter { it.type == DocumentChange.Type.ADDED }
+                    ?.forEach { change ->
+                        val notif = change.document.toObject<Notification>()?.apply {
+                            id = change.document.id
+                        } ?: return@forEach
+
+                        if (!notif.isRead) {
+                            notificationHelper.showNotification(
+                                id = notif.id.hashCode(),
+                                title = notif.title,
+                                message = notif.message,
+                                targetId = notif.targetId
+                            )
+                        }
+                    }
+            }
 
             trySend(Result.success(list))
         }
