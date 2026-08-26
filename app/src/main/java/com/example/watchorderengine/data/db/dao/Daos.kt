@@ -89,6 +89,32 @@ interface EpisodeDao {
     @Query("SELECT * FROM episodes WHERE mediaId = :mediaId ORDER BY absoluteEpisodeNumber ASC")
     suspend fun getAllEpisodesByMedia(mediaId: String): List<EpisodeEntity>
 
+    /**
+     * Every future-dated episode (any season) for shows currently tracked as
+     * WATCHING — sorted soonest-first. Reads whatever's already cached; call
+     * [com.example.watchorderengine.data.repository.MediaRepository.refreshCurrentSeasonForWatchingShows]
+     * first if you want newly-announced dates picked up before reading.
+     *
+     * ISO date strings compare correctly as plain TEXT — no date functions needed.
+     */
+    @Query("""
+        SELECT * FROM episodes
+        WHERE airDate IS NOT NULL AND airDate != '' AND airDate >= :todayIso
+          AND seasonNumber > 0
+          AND mediaId IN (SELECT mediaId FROM user_progress WHERE trackingState = 'WATCHING')
+        ORDER BY airDate ASC
+    """)
+    suspend fun getUpcomingForWatching(todayIso: String): List<EpisodeEntity>
+
+    @Query("""
+        SELECT * FROM episodes
+        WHERE airDate IS NOT NULL AND airDate != '' AND airDate >= :todayIso
+          AND seasonNumber > 0
+          AND mediaId IN (SELECT mediaId FROM user_progress WHERE trackingState = 'WATCHING')
+        ORDER BY airDate ASC
+    """)
+    fun observeUpcomingForWatching(todayIso: String): Flow<List<EpisodeEntity>>
+
     @Query("SELECT * FROM episodes WHERE mediaId = :mediaId ORDER BY absoluteEpisodeNumber ASC")
     fun observeAllEpisodesByMedia(mediaId: String): Flow<List<EpisodeEntity>>
 

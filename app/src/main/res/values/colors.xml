@@ -7,4 +7,13 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Widget Colors (Watch Order Engine V2 Theme) -->
+    <color name="widget_background">#FF080B14</color>
+    <color name="widget_surface">#FF141B2D</color>
+    <color name="widget_accent_gold">#FFFFBF3C</color>
+    <color name="widget_accent_blue">#FF4390F7</color>
+    <color name="widget_text_primary">#FFECEEF2</color>
+    <color name="widget_text_secondary">#FF7A8499</color>
+    <color name="widget_track">#FF1E2D45</color>
 </resources>

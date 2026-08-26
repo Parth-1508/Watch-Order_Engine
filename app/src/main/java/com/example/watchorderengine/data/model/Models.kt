@@ -107,6 +107,41 @@ data class MediaSummary(
 )
 
 /**
+ * One row in the "Continue Watching" carousel/widget — up to a handful of
+ * actively-Watching titles, each resolved to its next unwatched episode.
+ */
+data class ContinueWatchingItem(
+    val mediaId: String,
+    val showTitle: String,
+    val episodeLabel: String,       // "S2 E5 — Title", or "Movie" for movies
+    val posterUrl: String?,
+    val backdropUrl: String?,
+    val progressPercent: Int,
+    val targetSeason: Int?,
+    /** The exact episode row to toggle for a "mark watched" quick action. Null for movies. */
+    val nextEpisodeId: String?
+)
+
+/**
+ * One row in the Release Calendar — a single upcoming episode for a show
+ * the user is actively Watching.
+ */
+data class UpcomingEpisode(
+    val mediaId: String,
+    val showTitle: String,
+    val posterUrl: String?,
+    val mediaCategory: String,       // "TV_SHOW" | "ANIME" — drives the small type chip in the UI
+    val seasonNumber: Int,
+    val episodeNumber: Int,
+    /** Falls back to "Episode N" when TMDB hasn't published a title yet. */
+    val episodeName: String,
+    /** ISO "yyyy-MM-dd". */
+    val airDate: String,
+) {
+    val seasonEpisodeLabel: String get() = "S%02dE%02d".format(seasonNumber, episodeNumber)
+}
+
+/**
  * Full rich detail shown on the Detail Screen.
  *
  * ERROR #5 additions:
@@ -320,7 +355,23 @@ data class MediaNode(
     val releaseYear: Int = 0,
     val episodeCount: Int = 0,
     val durationMin: Int = 0,
-    val posterUrl: String? = null
+    val posterUrl: String? = null,
+    /**
+     * The Room-compatible mediaId this node navigates to when tapped
+     * (e.g. "tmdb_t_12345") — the *show*, not this specific season/arc.
+     * Distinct from [id], which must be globally unique across every node
+     * in the universe (so e.g. every season of the same show gets its own
+     * Firestore document instead of overwriting each other — see
+     * WatchOrderRepository.publishSortedUniverse).
+     */
+    val parentMediaId: String = "",
+    /**
+     * Which season of [parentMediaId] this node represents, or -1 if this
+     * node isn't season-scoped (movies, specials, single-node shows).
+     * Used to deep-link taps to the right season via the same
+     * "?initialSeason=" mechanism Continue Watching's Resume button uses
+     */
+    val seasonNumber: Int = -1
 )
 
 @Serializable

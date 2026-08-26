@@ -221,6 +221,23 @@ fun TimelineNodeCard(
             fontWeight = if (displayNode.isCompleted) FontWeight.Bold else FontWeight.Medium,
             lineHeight = 13.sp
         )
+
+        // Season / episode-range subtitle — most useful for arc-granularity
+        // nodes (One Piece, Naruto, etc.) where the title alone doesn't convey
+        // where in the show this arc falls.
+        if (!displayNode.isSpoilerBlurred && node.episodeCount > 0) {
+            val subtitle = buildString {
+                if (node.seasonNumber >= 0) append("S${node.seasonNumber} · ")
+                append("${node.episodeCount} ep${if (node.episodeCount == 1) "" else "s"}")
+            }
+            Text(
+                text = subtitle,
+                fontSize = 8.sp,
+                color = theme.textSecondary.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 1.dp)
+            )
+        }
     }
 }
 

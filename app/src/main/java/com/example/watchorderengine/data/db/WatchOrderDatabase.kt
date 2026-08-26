@@ -186,6 +186,18 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE media ADD COLUMN nextAirDate TEXT")
+        db.execSQL("ALTER TABLE media ADD COLUMN nextEpisodeNumber INTEGER")
+        db.execSQL("ALTER TABLE media ADD COLUMN nextEpisodeSeasonNumber INTEGER")
+        db.execSQL("ALTER TABLE media ADD COLUMN nextEpisodeName TEXT")
+        // Speeds up the Release Calendar's "WHERE nextAirDate >= today ORDER BY
+        // nextAirDate" query once the Watching list grows past a handful of shows.
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_media_nextAirDate` ON `media` (`nextAirDate`)")
+    }
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
@@ -199,7 +211,7 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
         PendingSyncTaskEntity::class,
         ReviewEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -245,7 +257,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

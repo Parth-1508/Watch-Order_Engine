@@ -53,6 +53,7 @@ class MediaRepository @Inject constructor(
     private val moshi: Moshi,
     private val apiService: TmdbApiService,
     private val jikanApiService: JikanApiService,
+    private val anilistApi: com.example.watchorderengine.network.AnilistApiService,
     private val geminiService: GeminiService,
     private val watchOrderRepository: WatchOrderRepository,
     private val userPrefs: UserPreferencesRepository,
@@ -737,6 +738,23 @@ class MediaRepository @Inject constructor(
                 val uid = auth.currentUser?.uid ?: return@withContext "User not authenticated."
                 val uniqueUniverseId = "${uid}_$mediaId"
 
+                // Resolves a raw item back to its OWN show/movie's Room mediaId.
+                // Used both for Firestore node navigation targets and for locating
+                // the right local episodes to tag below — must stay the same
+                // function in both places, or cross-franchise items (raw.tmdbId !=
+                // entity.tmdbId) get episode-classified under the wrong show's
+                // season id (BUG FIX: this loop used to always rebuild seasonId
+                // from the currently-open show's mediaId, silently mis-tagging
+                // any related show pulled in via buildTvRawItems' cross-search).
+                fun resolveRawItemMediaId(raw: com.example.watchorderengine.network.gemini.RawMediaItem): Pair<String, String> {
+                    return if (raw.tmdbId == entity.tmdbId) {
+                        mediaId to (if (isMovie) "movie" else "tv")
+                    } else {
+                        val type = if (raw.contentType == "MOVIE") "movie" else "tv"
+                        buildMediaId(raw.tmdbId, type) to type
+                    }
+                }
+
                 watchOrderRepository.clearGeneratedUniverse(uniqueUniverseId)
                 val publishResult = watchOrderRepository.publishSortedUniverse(
                     universeId     = uniqueUniverseId,
@@ -745,14 +763,7 @@ class MediaRepository @Inject constructor(
                     rawItems       = rawItems,
                     sortedNodes    = sortedNodes,
                     sortedEdges    = sortedEdges,
-                    resolveMediaId = { raw ->
-                        if (raw.tmdbId == entity.tmdbId) {
-                            mediaId to (if (isMovie) "movie" else "tv")
-                        } else {
-                            val type = if (raw.contentType == "MOVIE") "movie" else "tv"
-                            buildMediaId(raw.tmdbId, type) to type
-                        }
-                    }
+                    resolveMediaId = ::resolveRawItemMediaId
                 )
                 if (publishResult.isFailure) {
                     return@withContext "Firestore push failed: ${publishResult.exceptionOrNull()?.message}"
@@ -761,12 +772,24 @@ class MediaRepository @Inject constructor(
                 supervisorScope {
                     sortedNodes.forEach { node ->
                         val raw = rawItems.find { it.itemId == node.itemId } ?: return@forEach
-                        val seasonNumber = raw.seasonNumber ?: return@forEach
                         val classification = if (node.filler) "FILLER" else "CANON"
-                        val seasonId = "${mediaId}_s$seasonNumber"
-                        val seasonEpisodes = db.episodeDao().getEpisodesBySeason(seasonId)
-                        if (seasonEpisodes.isNotEmpty()) {
-                            db.episodeDao().upsertAll(seasonEpisodes.map {
+                        val (rawMediaId, rawType) = resolveRawItemMediaId(raw)
+                        if (rawType != "tv") return@forEach // movies have no season/episode rows to tag
+
+                        val episodesToTag = if (raw.startAbsoluteEpisode != null && raw.endAbsoluteEpisode != null) {
+                            // Arc-segment item — its range may span a season boundary,
+                            // so tag by absolute episode number across the whole show
+                            // rather than by a single seasonId.
+                            db.episodeDao().getAllEpisodesByMedia(rawMediaId).filter {
+                                it.absoluteEpisodeNumber in raw.startAbsoluteEpisode..raw.endAbsoluteEpisode
+                            }
+                        } else {
+                            val seasonNumber = raw.seasonNumber ?: return@forEach
+                            db.episodeDao().getEpisodesBySeason("${rawMediaId}_s$seasonNumber")
+                        }
+
+                        if (episodesToTag.isNotEmpty()) {
+                            db.episodeDao().upsertAll(episodesToTag.map {
                                 it.copy(episodeType = classification, arcName = node.phase)
                             })
                         }
@@ -779,7 +802,42 @@ class MediaRepository @Inject constructor(
 
     // ─── Movie raw-item builder (franchise-anchor aware) ──────────────────────
 
+    /**
+     * Movie raw-item builder. TMDB's "collection" concept (used by
+     * [buildMovieRawItemsFromCollections] below) is movie-only — a collection
+     * can never contain a TV show, so a franchise's parent series or sibling
+     * TV-format entries can never surface from that path alone, no matter
+     * which of its three tiers succeeds. For anime movies with a known
+     * AniList ID, this supplements whatever the collection logic found with
+     * real relations (the parent TV series, other films, OVAs) — the same
+     * source used for the TV-first path in [buildTvRawItems].
+     */
     private suspend fun buildMovieRawItems(
+        entity: MediaEntity,
+        mediaId: String
+    ): List<com.example.watchorderengine.network.gemini.RawMediaItem> {
+        val baseItems = buildMovieRawItemsFromCollections(entity, mediaId)
+
+        if (entity.genres.contains("Animation") && entity.anilistId != null) {
+            val alreadyIncludedTmdbIds = baseItems.map { it.tmdbId }.toSet()
+            val relatedNodes = fetchAnimeFranchiseRelations(entity.anilistId)
+            Log.d(TAG, "AniList relations for movie '${entity.title}': ${relatedNodes.map { it.title?.english ?: it.title?.romaji }}")
+
+            val resolvedItems = supervisorScope {
+                relatedNodes.map { node -> async { resolveAnilistRelationToTmdb(node) } }.awaitAll()
+            }
+            val newItems = resolvedItems.filterNotNull().filter { it.tmdbId !in alreadyIncludedTmdbIds }
+
+            if (newItems.isNotEmpty()) {
+                Log.d(TAG, "Movie-first generation found ${newItems.size} additional entries via AniList (e.g. parent TV series)")
+                return baseItems + newItems
+            }
+        }
+
+        return baseItems
+    }
+
+    private suspend fun buildMovieRawItemsFromCollections(
         entity: MediaEntity,
         mediaId: String
     ): List<com.example.watchorderengine.network.gemini.RawMediaItem> {
@@ -910,6 +968,190 @@ class MediaRepository @Inject constructor(
 
     // ─── TV raw-item builder (cross-series season aggregation) ────────────────
 
+    /** Shows with at least this many total episodes get arc-level DAG nodes instead of season-level ones. */
+    private val ARC_SEGMENTATION_MIN_EPISODES = 30
+
+    /**
+     * Segments a long-running show's episodes into story arcs via
+     * [GeminiService.segmentIntoArcs] and converts each arc into a
+     * [RawMediaItem] carrying its absolute episode range — so the resulting
+     * DAG node can deep-link to the season it starts in (see [MediaNode.seasonNumber])
+     * and the classification loop in [generateWatchOrder] can tag exactly the
+     * right episodes, even when an arc spans a season boundary.
+     *
+     * Returns null (never throws) on any failure, so callers can fall back to
+     * plain season-level items rather than block generation entirely.
+     */
+    private suspend fun tryBuildArcRawItems(
+        showMediaId: String,
+        showTitle: String,
+        tmdbId: Int,
+        dbEntity: com.example.watchorderengine.data.db.entity.MediaEntity?,
+        seasons: List<com.example.watchorderengine.data.db.entity.SeasonEntity>
+    ): List<com.example.watchorderengine.network.gemini.RawMediaItem>? {
+        val episodes = db.episodeDao().getAllEpisodesByMedia(showMediaId)
+            .filter { it.seasonNumber > 0 }
+            .sortedBy { it.absoluteEpisodeNumber }
+        if (episodes.isEmpty()) return null
+
+        val episodeInputs = episodes.map {
+            com.example.watchorderengine.network.gemini.ArcSegmentEpisodeInput(
+                absoluteEpisode = it.absoluteEpisodeNumber,
+                title = it.title
+            )
+        }
+        val arcs = geminiService.segmentIntoArcs(showTitle, episodeInputs) ?: return null
+
+        val seasonByAbsoluteEpisode = episodes.associate { it.absoluteEpisodeNumber to it.seasonNumber }
+
+        return arcs.mapIndexed { index, arc ->
+            val startSeason = seasonByAbsoluteEpisode[arc.startAbsoluteEpisode] ?: seasons.first().seasonNumber
+            com.example.watchorderengine.network.gemini.RawMediaItem(
+                itemId               = "${showMediaId}_arc$index",
+                title                = "$showTitle — ${arc.arcName}",
+                overview             = "",
+                contentType          = "SERIES",
+                seasonNumber         = startSeason,
+                episodeCount         = arc.endAbsoluteEpisode - arc.startAbsoluteEpisode + 1,
+                releaseDate          = null,
+                tmdbId               = tmdbId,
+                source               = "ARC_SEGMENT",
+                posterPath           = dbEntity?.posterUrl,
+                startAbsoluteEpisode = arc.startAbsoluteEpisode,
+                endAbsoluteEpisode   = arc.endAbsoluteEpisode
+            )
+        }
+    }
+
+    /**
+     * AniList relation types worth pulling into a watch-order DAG. Deliberately
+     * excludes ADAPTATION/SOURCE/CHARACTER/OTHER/CONTAINS, which mostly point
+     * at manga/light-novel source material or loosely-related media that
+     * doesn't belong in a video watch order.
+     */
+    private val RELEVANT_RELATION_TYPES = setOf(
+        "SEQUEL", "PREQUEL", "SIDE_STORY", "ALTERNATIVE", "SPIN_OFF", "PARENT", "SUMMARY", "COMPILATION"
+    )
+
+    /**
+     * Fetches real franchise relations from AniList (movies, OVAs, spin-offs,
+     * sequels/prequels) for an anime, instead of guessing via TMDB title search.
+     *
+     * This is what actually finds Naruto's canon films and Shippuden split —
+     * TMDB's search/tv endpoint can't return movies at all, and title-stripping
+     * heuristics don't know a spin-off exists unless its title happens to be a
+     * substring match.
+     */
+    private suspend fun fetchAnimeFranchiseRelations(anilistId: Int): List<com.example.watchorderengine.network.AnilistMedia> {
+        val query = """
+            query (${'$'}id: Int) {
+              Media(id: ${'$'}id, type: ANIME) {
+                relations {
+                  edges {
+                    relationType
+                    node {
+                      id
+                      format
+                      title { romaji english }
+                      episodes
+                      coverImage { extraLarge large }
+                      startDate { year }
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        return try {
+            val response = anilistApi.query(
+                com.example.watchorderengine.network.AnilistRequest(query, mapOf("id" to anilistId))
+            )
+            val edges = response.body()?.data?.media?.relations?.edges.orEmpty()
+
+            Log.d(TAG, "AniList relations for anilistId=$anilistId (all, pre-filter): " +
+                edges.joinToString { "${it.relationType}:${it.node?.format}:${it.node?.title?.english ?: it.node?.title?.romaji}" })
+
+            edges.filter { edge ->
+                edge.relationType in RELEVANT_RELATION_TYPES ||
+                    // Long-running franchises (Pokémon, One Piece, Detective
+                    // Conan) routinely have their films tagged OTHER on AniList
+                    // rather than SIDE_STORY/SPIN_OFF — that's a real curation
+                    // pattern, not noise, so accept it specifically for movies.
+                    // Non-movie OTHER relations stay excluded — that catch-all
+                    // is too likely to be genuinely unrelated for anything else.
+                    (edge.relationType == "OTHER" && edge.node?.format == "MOVIE")
+            }.mapNotNull { it.node }
+        } catch (e: Exception) {
+            Log.w(TAG, "AniList relations fetch failed for anilistId=$anilistId: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Resolves an AniList relation node to a cached Room [MediaEntity] via TMDB
+     * title search — anchored to AniList's exact title/format (not a stripped
+     * guess), so this is a precise lookup rather than fuzzy matching. Movies
+     * search `search/movie`; TV/OVA/ONA/special formats search `search/tv`
+     * (TMDB has no distinct OVA type). Pre-caches a minimal entity on first
+     * resolution so timeline navigation is instant, same as the movie
+     * franchise-expansion path in [buildMovieRawItems].
+     */
+    private suspend fun resolveAnilistRelationToTmdb(
+        node: com.example.watchorderengine.network.AnilistMedia
+    ): com.example.watchorderengine.network.gemini.RawMediaItem? {
+        val title = node.title?.english ?: node.title?.romaji ?: return null
+        val isMovieFormat = node.format == "MOVIE"
+
+        val searchResult = try {
+            if (isMovieFormat) {
+                apiService.searchMovie(query = title).body()?.results?.firstOrNull()
+            } else {
+                apiService.searchTv(query = title).body()?.results?.firstOrNull()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "TMDB resolution failed for AniList relation '$title': ${e.message}")
+            null
+        } ?: return null
+
+        val resolvedType = if (isMovieFormat) "movie" else "tv"
+        val relatedMediaId = buildMediaId(searchResult.id, resolvedType)
+
+        if (db.mediaDao().getById(relatedMediaId) == null) {
+            db.mediaDao().upsert(
+                MediaEntity(
+                    id = relatedMediaId, tmdbId = searchResult.id, anilistId = node.id,
+                    title = title, originalTitle = title,
+                    overview = "", tagline = "", status = "",
+                    posterUrl   = node.coverImage?.extraLarge ?: node.coverImage?.large,
+                    backdropUrl = null,
+                    mediaCategory = if (isMovieFormat) "MOVIE" else "TV_SHOW",
+                    genres = emptyList(), ageRating = "NR",
+                    voteAverage = 0f, voteCount = 0, runtime = null,
+                    numberOfSeasons = null, numberOfEpisodes = node.episodes,
+                    releaseDate = node.startDate?.year?.let { "$it-01-01" },
+                    releaseYear = node.startDate?.year?.toString() ?: "",
+                    trailerKey = null,
+                    watchProvidersJson = "[]", castJson = "[]",
+                    recommendationsJson = "[]", arcsJson = "[]"
+                )
+            )
+        }
+
+        return com.example.watchorderengine.network.gemini.RawMediaItem(
+            itemId       = relatedMediaId,
+            title        = title,
+            overview     = "",
+            contentType  = if (isMovieFormat) "MOVIE" else "SERIES",
+            seasonNumber = null,
+            episodeCount = node.episodes,
+            releaseDate  = node.startDate?.year?.let { "$it-01-01" },
+            tmdbId       = searchResult.id,
+            source       = "ANILIST_RELATION",
+            posterPath   = node.coverImage?.extraLarge ?: node.coverImage?.large
+        )
+    }
+
     private suspend fun buildTvRawItems(
         entity: MediaEntity,
         mediaId: String
@@ -943,6 +1185,7 @@ class MediaRepository @Inject constructor(
 
         for ((tmdbId, showTitle) in showsToProcess) {
             val showMediaId = buildMediaId(tmdbId, "tv")
+            val isPrimaryShow = tmdbId == entity.tmdbId
 
             var dbEntity = db.mediaDao().getById(showMediaId)
             if (dbEntity == null) {
@@ -955,10 +1198,32 @@ class MediaRepository @Inject constructor(
                 dbEntity = db.mediaDao().getById(showMediaId)
             }
 
-            val seasons = db.seasonDao().getSeasonsByMedia(showMediaId).sortedBy { it.seasonNumber }
+            var seasons = db.seasonDao().getSeasonsByMedia(showMediaId).sortedBy { it.seasonNumber }
+            if (seasons.isEmpty() && isPrimaryShow) {
+                // BUG FIX: this show's own seasons must never be silently skipped —
+                // that previously let an unrelated cross-search result become the
+                // sole raw item, producing a degenerate single-node "watch order"
+                // for the show whose own Chronology tab this is.
+                Log.d(TAG, "Primary show '$showTitle' has no cached seasons — fetching now")
+                fetchAndCacheTv(tmdbId, showMediaId)
+                seasons = db.seasonDao().getSeasonsByMedia(showMediaId).sortedBy { it.seasonNumber }
+            }
             if (seasons.isEmpty()) {
                 Log.d(TAG, "No seasons cached for '$showTitle' — skipping")
                 continue
+            }
+
+            // ARC GRANULARITY: long-running shows (One Piece, Naruto) get one DAG
+            // node per story arc instead of one per TMDB season, which for these
+            // shows rarely lines up with anything a viewer would recognize.
+            val totalEpisodes = seasons.sumOf { it.episodeCount }
+            if (isPrimaryShow && totalEpisodes >= ARC_SEGMENTATION_MIN_EPISODES) {
+                val arcItems = tryBuildArcRawItems(showMediaId, showTitle, tmdbId, dbEntity, seasons)
+                if (arcItems != null) {
+                    allSeasonItems.addAll(arcItems)
+                    continue
+                }
+                Log.d(TAG, "Arc segmentation unavailable for '$showTitle' — falling back to season-level items")
             }
 
             for (season in seasons) {
@@ -976,6 +1241,34 @@ class MediaRepository @Inject constructor(
                         posterPath   = season.posterUrl ?: dbEntity?.posterUrl
                     )
                 )
+            }
+        }
+
+        // ANIME FRANCHISE RELATIONS: TMDB's search/tv endpoint above can only
+        // ever find other TV shows, and only by fuzzy title match — it will
+        // never surface a franchise's canon movies at all, and can miss spin-
+        // offs whose titles don't happen to contain the base keyword. For anime
+        // with a known AniList ID, pull real relations (SEQUEL, PREQUEL,
+        // SIDE_STORY, SPIN_OFF, etc.) instead — this is what actually finds
+        // Naruto's films and the Shippuden continuation.
+        if (entity.genres.contains("Animation") && entity.anilistId != null) {
+            val alreadyIncludedTmdbIds = showsToProcess.map { it.first }.toSet()
+            val relatedNodes = fetchAnimeFranchiseRelations(entity.anilistId)
+            Log.d(TAG, "AniList relations for '${entity.title}': ${relatedNodes.map { it.title?.english ?: it.title?.romaji }}")
+
+            // Each relation needs its own TMDB search round-trip to resolve —
+            // run them concurrently instead of one-by-one so a franchise with
+            // many relations (films, OVAs, spin-offs) doesn't serialize a dozen
+            // sequential network calls. supervisorScope so one failed lookup
+            // doesn't cancel the others.
+            val resolvedItems = supervisorScope {
+                relatedNodes.map { node -> async { resolveAnilistRelationToTmdb(node) } }.awaitAll()
+            }
+
+            for (item in resolvedItems) {
+                if (item == null) continue
+                if (item.tmdbId in alreadyIncludedTmdbIds) continue // avoid duplicating a show already found via TMDB search
+                allSeasonItems.add(item)
             }
         }
 
@@ -1072,6 +1365,8 @@ class MediaRepository @Inject constructor(
             db.userProgressDao().upsert(entity)
 
             val tmdbId = extractTmdbId(mediaId)
+            
+            com.example.watchorderengine.widget.WidgetUpdater.refreshAll(appContext)
 
             // SYNC TO FIRESTORE: Save watchlist progress
             if (userPrefs.cloudSyncEnabled.first()) {
@@ -1132,6 +1427,8 @@ class MediaRepository @Inject constructor(
             db.userProgressDao().deleteByMediaId(id)
             db.episodeWatchedDao().deleteByMediaId(id)
         }
+        
+        com.example.watchorderengine.widget.WidgetUpdater.refreshAll(appContext)
 
         // SYNC TO FIRESTORE: Remove from cloud watchlist
         if (userPrefs.cloudSyncEnabled.first()) {
@@ -1370,7 +1667,7 @@ class MediaRepository @Inject constructor(
             if (isMovieId(mediaId)) {
                 fetchAndCacheMovie(tmdbId, mediaId)
             } else {
-                val response = com.example.watchorderengine.util.retry { apiService.getTvShow(tmdbId) }
+                val response = retry { apiService.getTvShow(tmdbId) }
                 if (!response.isSuccessful || response.body() == null) return false
                 val body = response.body()!!
                 val entity = body.toMediaEntity(mediaId)
@@ -1452,6 +1749,218 @@ class MediaRepository @Inject constructor(
         getListByState(TrackingState.WATCHING, sortType)
     }
 
+    /**
+     * The "Continue Watching" carousel's exact data — up to [limit] most
+     * recently-updated Watching titles, each resolved to its next unwatched
+     * episode. This is the single source of truth for that carousel: both
+     * [com.example.watchorderengine.ui.viewmodel.HomeViewModel] (in-app) and
+     * the Continue Watching Glance widget call this same function, so they
+     * can never drift out of sync with each other.
+     */
+    suspend fun getContinueWatchingItems(limit: Int = 5): List<ContinueWatchingItem> = withContext(Dispatchers.IO) {
+        val watching = getWatchingList()
+        if (watching.isEmpty()) return@withContext emptyList()
+
+        watching.take(limit).mapNotNull { recent ->
+            val mediaId = recent.id
+            val isMovie = recent.mediaCategory == MediaCategory.MOVIE
+
+            if (isMovie) {
+                ContinueWatchingItem(
+                    mediaId         = mediaId,
+                    showTitle       = recent.title,
+                    episodeLabel    = "Movie",
+                    posterUrl       = recent.posterUrl,
+                    backdropUrl     = recent.backdropUrl,
+                    progressPercent = 0,
+                    targetSeason    = null,
+                    nextEpisodeId   = null
+                )
+            } else {
+                val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+                val watchedNormalized = getNormalizedWatchedIds(mediaId)
+
+                val nextEp = episodes
+                    .filter { it.seasonNumber > 0 }
+                    .find { ep ->
+                        val normalizedId = ep.id
+                            .removePrefix("tmdb_m_")
+                            .removePrefix("tmdb_t_")
+                            .removePrefix("tmdb_")
+                            .removePrefix("anilist_")
+                        normalizedId !in watchedNormalized
+                    }
+
+                nextEp?.let {
+                    val highResBackdrop = it.stillUrl?.replace("/w185/", "/w780/") ?: recent.backdropUrl
+                    ContinueWatchingItem(
+                        mediaId = mediaId,
+                        showTitle = recent.title,
+                        episodeLabel = "S${it.seasonNumber} E${it.episodeNumber} — ${it.title}",
+                        posterUrl = recent.posterUrl,
+                        backdropUrl = highResBackdrop,
+                        progressPercent = (watchedNormalized.size * 100 / episodes
+                            .filter { ep -> ep.seasonNumber > 0 }
+                            .size.coerceAtLeast(1)),
+                        targetSeason = it.seasonNumber,
+                        nextEpisodeId = it.id
+                    )
+                }
+            }
+        }
+    }
+
+    // ─── Release Calendar ───────────────────────────────────────────────────
+
+    /**
+     * For every WATCHING show, determines its currently-active season (via
+     * TMDB's next_episode_to_air / last_episode_to_air — one cheap call,
+     * already made elsewhere) and re-fetches THAT season's full episode list,
+     * writing every episode's airDate to Room — not just the next one.
+     *
+     * A show whose season already has 6 announced air dates will surface all
+     * 6 in the calendar after this runs, not just the soonest.
+     *
+     * Movies are skipped (movie/TV TMDB IDs are separate ID spaces and can collide).
+     *
+     * @return how many shows were successfully refreshed.
+     */
+    suspend fun refreshCurrentSeasonForWatchingShows(): Int = withContext(Dispatchers.IO) {
+        val watching = db.userProgressDao().getByState("WATCHING")
+        if (watching.isEmpty()) return@withContext 0
+
+        val tvShows = watching
+            .mapNotNull { db.mediaDao().getById(it.mediaId) }
+            .filter { it.mediaCategory != "MOVIE" }
+        if (tvShows.isEmpty()) return@withContext 0
+
+        val results = supervisorScope {
+            tvShows.map { entity ->
+                async {
+                    try {
+                        val showResponse = retry { apiService.getTvShow(entity.tmdbId) }
+                        if (!showResponse.isSuccessful) return@async false
+                        val body = showResponse.body() ?: return@async false
+
+                        // Still keep the quick-glance fields current — cheap,
+                        // same response, used by show cards elsewhere in the app.
+                        db.mediaDao().upsert(
+                            entity.copy(
+                                nextAirDate             = body.nextEpisodeToAir?.airDate,
+                                nextEpisodeNumber       = body.nextEpisodeToAir?.episodeNumber,
+                                nextEpisodeSeasonNumber = body.nextEpisodeToAir?.seasonNumber,
+                                nextEpisodeName         = body.nextEpisodeToAir?.name?.takeIf { it.isNotBlank() },
+                                lastUpdated             = System.currentTimeMillis(),
+                            )
+                        )
+
+                        // Which season is "active"? Prefer the season with an
+                        // unaired next episode; fall back to the season that
+                        // most recently aired (covers "between episodes, next
+                        // one just not announced yet"); fall back to the last
+                        // season TMDB knows about at all.
+                        val activeSeason = body.nextEpisodeToAir?.seasonNumber
+                            ?: body.lastEpisodeToAir?.seasonNumber
+                            ?: body.numberOfSeasons
+                            ?: return@async true   // no seasons at all — nothing to refresh, not an error
+
+                        refreshSeasonAirDatesOnly(entity.tmdbId, entity.id, activeSeason)
+                        true
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Calendar refresh failed for ${entity.title}: ${e.message}")
+                        false
+                    }
+                }
+            }.awaitAll()
+        }
+        com.example.watchorderengine.widget.WidgetUpdater.refreshUpcomingCalendar(appContext)
+        results.count { it }
+    }
+
+    /**
+     * Re-fetches ONE season's episode list and upserts airDate/title/overview
+     * for each — WITHOUT touching absoluteEpisodeNumber bookkeeping owned by
+     * the main fetchAndCacheTv() flow, and WITHOUT wiping episodeType/arcName
+     * (filler classification) that the Jikan enrichment pass may have already
+     * set on these rows.
+     *
+     * Offset derivation: if this season already has at least one cached
+     * episode, reuse ITS (absoluteEpisodeNumber - episodeNumber) as the
+     * offset for the whole season — exact, and avoids re-deriving from every
+     * prior season (the drift trap fetchAndCacheTv()'s own comments warn
+     * about for long-running shows). Only falls back to summing
+     * SeasonEntity.episodeCount when this exact season has never been cached
+     * before (a brand-new, never-opened season) — a rare case that
+     * self-corrects to exact the next time the user opens the Detail screen.
+     */
+    private suspend fun refreshSeasonAirDatesOnly(tmdbId: Int, mediaId: String, seasonNumber: Int) {
+        val seasonId  = "${mediaId}_s$seasonNumber"
+        val existing  = db.episodeDao().getEpisodesBySeason(seasonId)
+        val existingByNumber = existing.associateBy { it.episodeNumber }
+
+        val offset = existing.firstOrNull()?.let { it.absoluteEpisodeNumber - it.episodeNumber }
+            ?: db.seasonDao().getSeasonsByMedia(mediaId)
+                .filter { it.seasonNumber in 1 until seasonNumber }
+                .sumOf { it.episodeCount }
+
+        val response = retry { apiService.getTvSeason(tmdbId, seasonNumber) }
+        if (!response.isSuccessful) return
+        val episodes = response.body()?.episodes ?: return
+
+        val refreshed = episodes.map { ep ->
+            val prior = existingByNumber[ep.episodeNumber]
+            EpisodeEntity(
+                id = "${mediaId}_s${seasonNumber}e${ep.episodeNumber}",
+                seasonId = seasonId, mediaId = mediaId,
+                episodeNumber = ep.episodeNumber, seasonNumber = seasonNumber,
+                absoluteEpisodeNumber = offset + ep.episodeNumber,
+                title = ep.name?.takeIf { it.isNotBlank() } ?: "Episode ${ep.episodeNumber}",
+                overview = ep.overview ?: prior?.overview ?: "",
+                airDate = ep.airDate,
+                runtime = ep.runtime ?: prior?.runtime,
+                stillUrl = com.example.watchorderengine.network.TmdbConfig.buildImageUrl(ep.stillPath) ?: prior?.stillUrl,
+                voteAverage = ep.voteAverage?.toFloat() ?: prior?.voteAverage ?: 0f,
+                // Preserve filler classification — an @Upsert replaces the
+                // whole row, so without this a refresh would silently erase
+                // Jikan's CANON/FILLER tagging on every affected episode.
+                episodeType = prior?.episodeType ?: "CANON",
+                arcName = prior?.arcName,
+            )
+        }
+        db.episodeDao().upsertAll(refreshed)
+    }
+
+    /**
+     * Reads the current calendar from Room — fast, local, no network.
+     * Sources every future-dated episode already cached for any WATCHING
+     * show, across all seasons — not just "the next one." Call
+     * [refreshCurrentSeasonForWatchingShows] first (or after, then re-call
+     * this) to pick up dates announced since the last cache.
+     */
+    suspend fun getUpcomingEpisodes(): List<UpcomingEpisode> = withContext(Dispatchers.IO) {
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val episodes = db.episodeDao().getUpcomingForWatching(todayIso)
+        if (episodes.isEmpty()) return@withContext emptyList()
+
+        val mediaMap = db.mediaDao()
+            .getByIds(episodes.map { it.mediaId }.distinct())
+            .associateBy { it.id }
+
+        episodes.mapNotNull { ep ->
+            val media = mediaMap[ep.mediaId] ?: return@mapNotNull null
+            UpcomingEpisode(
+                mediaId       = ep.mediaId,
+                showTitle     = media.title,
+                posterUrl     = media.posterUrl,
+                mediaCategory = media.mediaCategory,
+                seasonNumber  = ep.seasonNumber,
+                episodeNumber = ep.episodeNumber,
+                episodeName   = ep.title.ifBlank { "Episode ${ep.episodeNumber}" },
+                airDate       = ep.airDate!!,   // safe — DAO query already filters airDate IS NOT NULL
+            )
+        }
+    }
+
     suspend fun getPlannedList(sortType: SortType = SortType.DATE_ADDED): List<MediaSummary> = withContext(Dispatchers.IO) {
         getListByState(TrackingState.PLANNED, sortType)
     }
@@ -1528,6 +2037,7 @@ class MediaRepository @Inject constructor(
             SyncWorker.enqueue(context)
         }
         
+        com.example.watchorderengine.widget.WidgetUpdater.refreshContinueWatching(appContext)
         nowWatched
     }
 
@@ -1872,7 +2382,7 @@ class MediaRepository @Inject constructor(
         }
     }
 
-    suspend fun syncProfileToCloud(isTasteDone: Boolean, lastActive: Long, streak: Int, genres: Set<String> = emptySet()) {
+    fun syncProfileToCloud(isTasteDone: Boolean, lastActive: Long, streak: Int, genres: Set<String> = emptySet()) {
         val uid = auth.currentUser?.uid ?: return
         try {
             val data = mutableMapOf<String, Any>(
@@ -2090,16 +2600,15 @@ class MediaRepository @Inject constructor(
         genres = genres
     )
 
-    private fun com.example.watchorderengine.network.model.TmdbDetailResponse.toMediaEntity(
+    private suspend fun com.example.watchorderengine.network.model.TmdbDetailResponse.toMediaEntity(
         mediaId: String
     ): MediaEntity {
+        val existing = db.mediaDao().getById(mediaId)
         val genresList = genres?.map { it.name } ?: emptyList()
         val isMovie    = if (isMovieId(mediaId)) true else if (isTvId(mediaId)) false else title != null
         val category   = if (isMovie) "MOVIE" else "TV_SHOW"
 
         // Always honour the typed prefix passed in — never compute a new ID here.
-        // The original sanitizedMediaId calculation that stripped _m_/_t_ to "tmdb_{id}"
-        // was removed as part of the collision fix.
         val trailerKey = videos?.results
             ?.filter { it.site == "YouTube" && it.type == "Trailer" && it.official }
             ?.maxByOrNull { it.publishedAt ?: "" }?.key
@@ -2109,14 +2618,17 @@ class MediaRepository @Inject constructor(
 
         return MediaEntity(
             id = mediaId, tmdbId = this.id,
-            anilistId = null,
+            anilistId = existing?.anilistId,
             title = title ?: name ?: "",
             originalTitle = originalTitle ?: originalName ?: "",
             overview = overview ?: "", tagline = tagline ?: "", status = status ?: "",
             posterUrl   = TmdbConfig.buildImageUrl(posterPath),
             backdropUrl = TmdbConfig.buildImageUrl(backdropPath, TmdbConfig.PosterSize.HD),
             mediaCategory = category,
-            genres = genresList, ageRating = "NR",
+            genres = genresList, 
+            ageRating = contentRatings?.results?.find { it.countryCode == "US" }?.rating
+                ?: releaseDates?.results?.find { it.countryCode == "US" }?.releaseDates?.firstOrNull()?.certification
+                ?: existing?.ageRating ?: "NR",
             voteAverage = voteAverage.toFloat(), voteCount = voteCount,
             runtime = runtime ?: episodeRunTime?.firstOrNull(),
             numberOfSeasons = numberOfSeasons, numberOfEpisodes = numberOfEpisodes,
@@ -2125,7 +2637,14 @@ class MediaRepository @Inject constructor(
             trailerKey = trailerKey,
             originalLanguage = originalLanguage,
             watchProvidersJson = providersJson,
-            castJson = "[]", recommendationsJson = "[]", arcsJson = "[]"
+            castJson = existing?.castJson ?: "[]",
+            recommendationsJson = existing?.recommendationsJson ?: "[]",
+            arcsJson = existing?.arcsJson ?: "[]",
+            jikanFillerSynced = existing?.jikanFillerSynced ?: false,
+            nextAirDate = this.nextEpisodeToAir?.airDate ?: existing?.nextAirDate,
+            nextEpisodeNumber = this.nextEpisodeToAir?.episodeNumber ?: existing?.nextEpisodeNumber,
+            nextEpisodeSeasonNumber = this.nextEpisodeToAir?.seasonNumber ?: existing?.nextEpisodeSeasonNumber,
+            nextEpisodeName = this.nextEpisodeToAir?.name?.takeIf { it.isNotBlank() } ?: existing?.nextEpisodeName
         )
     }
 

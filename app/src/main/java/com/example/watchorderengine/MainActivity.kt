@@ -26,12 +26,16 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var auth: FirebaseAuth
 
+    private var pendingTargetId by mutableStateOf<String?>(null)
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        pendingTargetId = intent.getStringExtra("targetId")
 
         checkAndRequestNotificationPermission()
         
@@ -58,8 +62,19 @@ class MainActivity : ComponentActivity() {
             }
 
             WatchOrderEngineTheme(mode = appThemeMode) {
-                AppNavigation()
+                AppNavigation(
+                    startTargetId = pendingTargetId,
+                    onTargetIdConsumed = { pendingTargetId = null }
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        val targetId = intent.getStringExtra("targetId")
+        if (targetId != null) {
+            pendingTargetId = targetId
         }
     }
 

@@ -331,15 +331,25 @@ class WatchOrderRepository @Inject constructor(
     ): Result<Unit> = runCatching {
         check(sortedNodes.isNotEmpty()) { "Cannot publish an empty universe." }
         val itemsById = rawItems.associateBy { it.itemId }
+        // Maps each Gemini itemId -> the unique Firestore node id it was published under.
         val resolvedIdByItemId = mutableMapOf<String, String>()
 
         val mediaNodes = sortedNodes.mapNotNull { node ->
             val raw = itemsById[node.itemId] ?: return@mapNotNull null
-            val (mediaId, tmdbMediaType) = resolveMediaId(raw)
-            resolvedIdByItemId[node.itemId] = mediaId
+            val (parentMediaId, tmdbMediaType) = resolveMediaId(raw)
+
+            // BUG FIX: raw.itemId (e.g. "{mediaId}_s2") is already unique per
+            // season/movie by construction (see buildTvRawItems/buildMovieRawItems).
+            // The *navigable* mediaId from resolveMediaId is NOT unique across a
+            // TV show's seasons — every season of the same show resolves to the
+            // same show-level mediaId, so using it as the node id previously
+            // caused every season past the first to silently overwrite the last
+            // one written to Firestore (same document id = same document).
+            val nodeId = raw.itemId
+            resolvedIdByItemId[node.itemId] = nodeId
 
             MediaNode(
-                id              = mediaId,
+                id              = nodeId,
                 title           = raw.title,
                 content_type    = raw.contentType,
                 type            = if (tmdbMediaType == "movie") MediaCategory.MOVIE else MediaCategory.TV_SHOW,
@@ -353,7 +363,9 @@ class WatchOrderRepository @Inject constructor(
                 posterUrl       = raw.posterPath?.let { 
                     if (it.startsWith("http")) it 
                     else TmdbConfig.buildImageUrl(it, TmdbConfig.PosterSize.LARGE) 
-                }
+                },
+                parentMediaId   = parentMediaId,
+                seasonNumber    = raw.seasonNumber ?: -1
             )
         }
 

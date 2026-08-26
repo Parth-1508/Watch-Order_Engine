@@ -45,16 +45,6 @@ import com.example.watchorderengine.data.model.TrackingState
 
 // ─── "Next Up" data model ─────────────────────────────────────────────────────
 
-data class NextUpItem(
-    val internalId: String,
-    val showTitle: String,
-    val episodeLabel: String,
-    val posterUrl: String?,
-    val backdropUrl: String?,
-    val progressPercent: Int = 0,
-    val targetSeason: Int? = null,
-)
-
 @Composable
 fun HomeScreen(
     state: HomeUiState,
@@ -64,11 +54,12 @@ fun HomeScreen(
     onSearchToggle: (Boolean) -> Unit,
     onShowClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
+    onCalendarClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     onDiscoverClick: () -> Unit = {},
     getAvatarModel: (String?) -> Any? = { it },
-    nextUpItems: List<NextUpItem> = emptyList(),
-    onResumeClick: (NextUpItem) -> Unit = {},
+    nextUpItems: List<com.example.watchorderengine.data.model.ContinueWatchingItem> = emptyList(),
+    onResumeClick: (com.example.watchorderengine.data.model.ContinueWatchingItem) -> Unit = {},
     recommendations: List<Recommendation> = emptyList(),
     trendingList: List<MediaSummary> = emptyList(),
     recentlyReleased: List<MediaSummary> = emptyList()
@@ -98,6 +89,7 @@ fun HomeScreen(
                         onQueryChanged = onSearchQueryChanged,
                         onToggleSearch = onSearchToggle,
                         onSettingsClick = onSettingsClick,
+                        onCalendarClick = onCalendarClick,
                         onProfileClick = onProfileClick,
                         getAvatarModel = getAvatarModel,
                         profilePictureUrl = state.profilePictureUrl
@@ -435,7 +427,7 @@ fun MediaCardPaged(
 
 @Composable
 fun NextUpCard(
-    item: NextUpItem,
+    item: com.example.watchorderengine.data.model.ContinueWatchingItem,
     onResume: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -592,6 +584,7 @@ fun Header(
     onQueryChanged: (String) -> Unit,
     onToggleSearch: (Boolean) -> Unit,
     onSettingsClick: () -> Unit,
+    onCalendarClick: () -> Unit,
     onProfileClick: () -> Unit,
     getAvatarModel: (String?) -> Any? = { it },
     profilePictureUrl: String? = null
@@ -704,6 +697,13 @@ fun Header(
                 )
             }
             if (!isSearchOpen) {
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = onCalendarClick,
+                    modifier = Modifier.size(48.dp).border(2.dp, theme.textPrimary, CircleShape)
+                ) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = "Release Calendar", tint = theme.textPrimary)
+                }
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = onSettingsClick,

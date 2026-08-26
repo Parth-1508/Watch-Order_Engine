@@ -43,8 +43,8 @@ class HomeViewModel @Inject constructor(
     private val _recommendations = MutableStateFlow<List<Recommendation>>(emptyList())
     val recommendations: StateFlow<List<Recommendation>> = _recommendations.asStateFlow()
 
-    private val _nextUpList = MutableStateFlow<List<com.example.watchorderengine.ui.screens.home.NextUpItem>>(emptyList())
-    val nextUpList: StateFlow<List<com.example.watchorderengine.ui.screens.home.NextUpItem>> = _nextUpList.asStateFlow()
+    private val _nextUpList = MutableStateFlow<List<com.example.watchorderengine.data.model.ContinueWatchingItem>>(emptyList())
+    val nextUpList: StateFlow<List<com.example.watchorderengine.data.model.ContinueWatchingItem>> = _nextUpList.asStateFlow()
 
     val watchingCount: StateFlow<Int> = repository.observeCountByState(com.example.watchorderengine.data.model.TrackingState.WATCHING)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -92,8 +92,7 @@ class HomeViewModel @Inject constructor(
     private fun observeNextUp() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.observeCountByState(com.example.watchorderengine.data.model.TrackingState.WATCHING).collect {
-                val watching = repository.getWatchingList()
-                updateNextUp(watching)
+                updateNextUp()
             }
         }
     }
@@ -160,8 +159,7 @@ class HomeViewModel @Inject constructor(
             _recentlyReleased.value = repository.getRecentlyReleased()
             generateRecommendations()
 
-            val watching = repository.getWatchingList()
-            if (!hasAttemptedSync && watching.isEmpty()) {
+            if (!hasAttemptedSync && repository.getWatchingList().isEmpty()) {
                 hasAttemptedSync = true
                 repository.syncAllFromCloud()
                 generateRecommendations()
@@ -211,62 +209,9 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun updateNextUp(watching: List<MediaSummary>) {
+    private fun updateNextUp() {
         viewModelScope.launch(Dispatchers.IO) {
-            if (watching.isEmpty()) {
-                _nextUpList.value = emptyList()
-                return@launch
-            }
-
-            // Process up to 5 most recently updated "Watching" items
-            val items = watching.take(5).mapNotNull { recent ->
-                val mediaId = recent.id
-                val isMovie = recent.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE
-
-                if (isMovie) {
-                    com.example.watchorderengine.ui.screens.home.NextUpItem(
-                        internalId      = mediaId,
-                        showTitle       = recent.title,
-                        episodeLabel    = "Movie",
-                        posterUrl       = recent.posterUrl,
-                        backdropUrl     = recent.backdropUrl,
-                        progressPercent = 0,
-                        targetSeason    = null
-                    )
-                } else {
-                    val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
-                    val watchedNormalized = repository.getNormalizedWatchedIds(mediaId)
-
-                    val nextEp = episodes
-                        .filter { it.seasonNumber > 0 }
-                        .find { ep ->
-                            val normalizedId = ep.id
-                                .removePrefix("tmdb_m_")
-                                .removePrefix("tmdb_t_")
-                                .removePrefix("tmdb_")
-                                .removePrefix("anilist_")
-                            normalizedId !in watchedNormalized
-                        }
-
-                    if (nextEp != null) {
-                        val highResBackdrop = nextEp.stillUrl?.replace("/w185/", "/w780/") 
-                            ?: recent.backdropUrl
-
-                        com.example.watchorderengine.ui.screens.home.NextUpItem(
-                            internalId = mediaId,
-                            showTitle = recent.title,
-                            episodeLabel = "S${nextEp.seasonNumber} E${nextEp.episodeNumber} — ${nextEp.title}",
-                            posterUrl = recent.posterUrl,
-                            backdropUrl = highResBackdrop,
-                            progressPercent = (watchedNormalized.size * 100 / episodes
-                                .filter { it.seasonNumber > 0 }
-                                .size.coerceAtLeast(1)),
-                            targetSeason = nextEp.seasonNumber
-                        )
-                    } else null
-                }
-            }
-            _nextUpList.value = items
+            _nextUpList.value = repository.getContinueWatchingItems()
         }
     }
 

@@ -11,7 +11,10 @@ import androidx.room.*
  * with a default of `'[]'` so the v4→v5 migration is a single ALTER TABLE
  * with no data loss.
  */
-@Entity(tableName = "media")
+@Entity(
+    tableName = "media",
+    indices = [Index("nextAirDate")]
+)
 data class MediaEntity(
     @PrimaryKey val id: String,          // "tmdb_{tmdbId}"
     val tmdbId: Int,
@@ -58,6 +61,22 @@ data class MediaEntity(
      * One Piece job on every app launch or ViewModel recreation.
      */
     val jikanFillerSynced: Boolean = false,
+
+    /**
+     * Schema version 15 adds these four columns — the "quick glance" next-
+     * episode fields for the Release Calendar, straight from TMDB's
+     * `next_episode_to_air`. Nullable with no default so the v14→v15
+     * migration is a plain ALTER TABLE; existing rows just read NULL until
+     * their next [MediaRepository.refreshCurrentSeasonForWatchingShows] pass.
+     *
+     * [nextAirDate] is stored as plain ISO "yyyy-MM-dd" text (not epoch
+     * millis) specifically so SQL string comparison (`nextAirDate >= :today`)
+     * sorts and filters correctly with no date-parsing UDF needed.
+     */
+    val nextAirDate: String? = null,
+    val nextEpisodeNumber: Int? = null,
+    val nextEpisodeSeasonNumber: Int? = null,
+    val nextEpisodeName: String? = null,
 
     val lastUpdated: Long = System.currentTimeMillis()
 )

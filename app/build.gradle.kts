@@ -52,6 +52,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -108,6 +109,9 @@ dependencies {
     // Palette (dynamic show-based theming)
     implementation(libs.androidx.palette.ktx)
 
+    // Glance (App Widgets)
+    implementation(libs.androidx.glance.appwidget)
+
     // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
@@ -122,6 +126,8 @@ dependencies {
 
     // Gemini
     implementation(libs.generativeai)
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)

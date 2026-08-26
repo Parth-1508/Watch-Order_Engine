@@ -45,6 +45,7 @@ sealed class Screen(val route: String) {
     object Login              : Screen("login")
     object TasteProfileSetup  : Screen("taste_profile_setup")
     object Home               : Screen("home")
+    object Calendar           : Screen("calendar")
     object Discovery          : Screen("discovery")
     object Search             : Screen("search")
     object Graph              : Screen("graph")
@@ -153,12 +154,23 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.appPopExitTransiti
     }
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    startTargetId: String? = null,
+    onTargetIdConsumed: () -> Unit = {}
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val navViewModel: com.example.watchorderengine.ui.viewmodel.NavViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
+
+    // Consume deep-links from widgets or notifications
+    LaunchedEffect(startTargetId) {
+        if (startTargetId != null) {
+            navController.navigate(Screen.Detail.route(safeMediaId(startTargetId)))
+            onTargetIdConsumed()
+        }
+    }
 
     var isSyncing by remember { mutableStateOf(false) }
     val syncProgress by navViewModel.syncProgress.collectAsState()
@@ -296,9 +308,17 @@ fun AppNavigation() {
                     HomeScreenWrapper(
                         onMediaClick    = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
                         onSearchClick   = { navigateTopLevel(Screen.Search.route) },
+                        onCalendarClick = { navController.navigate(Screen.Calendar.route) },
                         onSettingsClick = { navigateTopLevel(Screen.Settings.route) },
                         onProfileClick  = { navigateTopLevel(Screen.Profile.route) },
                         onDiscoverClick = { navigateTopLevel(Screen.Discovery.route) }
+                    )
+                }
+
+                composable(Screen.Calendar.route) {
+                    CalendarScreen(
+                        onBack = { navController.popBackStack() },
+                        onEpisodeClick = { mediaId -> navController.navigate(Screen.Detail.route(safeMediaId(mediaId))) }
                     )
                 }
 

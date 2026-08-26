@@ -42,6 +42,11 @@ data class TmdbDetailResponse(
     @Json(name = "keywords")             val keywords: TmdbKeywords?,
     @Json(name = "watch/providers")      val watchProviders: TmdbWatchProviderResults?,
     @Json(name = "belongs_to_collection") val belongsToCollection: TmdbBelongsToCollection? = null,
+    // TV-only: the next unaired / most recently aired episode. Used by the
+    // Release Calendar to identify which season is currently active without
+    // a separate lookup.
+    @Json(name = "next_episode_to_air")  val nextEpisodeToAir: TmdbEpisodeToAir? = null,
+    @Json(name = "last_episode_to_air")  val lastEpisodeToAir: TmdbEpisodeToAir? = null,
 ) {
     fun toDomainModel(): TmdbMediaDetail = TmdbMediaDetail(
         tmdbId = id,
@@ -78,6 +83,23 @@ data class TmdbSeasonSummary(
     @Json(name = "poster_path")    val posterPath: String?,
     @Json(name = "air_date")       val airDate: String?,
     @Json(name = "episode_count")  val episodeCount: Int,
+)
+
+/**
+ * Shape TMDB uses for both `next_episode_to_air` and `last_episode_to_air` on
+ * the TV detail endpoint — used by the Release Calendar to find each
+ * Watching show's currently-active season without a separate lookup.
+ */
+@JsonClass(generateAdapter = true)
+data class TmdbEpisodeToAir(
+    @Json(name = "id")             val id: Int,
+    @Json(name = "name")           val name: String?,
+    @Json(name = "overview")       val overview: String?,
+    @Json(name = "air_date")       val airDate: String?,       // "yyyy-MM-dd", ISO — lexicographically sortable
+    @Json(name = "episode_number") val episodeNumber: Int,
+    @Json(name = "season_number")  val seasonNumber: Int,
+    @Json(name = "runtime")        val runtime: Int?,
+    @Json(name = "still_path")     val stillPath: String?,
 )
 
 @JsonClass(generateAdapter = true)

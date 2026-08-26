@@ -11,6 +11,7 @@ fun HomeScreenWrapper(
     onMediaClick: (String) -> Unit,
     onSearchClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onCalendarClick: () -> Unit,
     onProfileClick: () -> Unit,
     onDiscoverClick: () -> Unit = {}
 ) {
@@ -58,17 +59,18 @@ fun HomeScreenWrapper(
         },
         onShowClick = { onMediaClick(it) },
         onSettingsClick = onSettingsClick,
+        onCalendarClick = onCalendarClick,
         onProfileClick = onProfileClick,
         onDiscoverClick = onDiscoverClick,
         getAvatarModel = { viewModel.getAvatarModel(it) },
         nextUpItems = nextUpList,
         onResumeClick = { item -> 
             val season = item.targetSeason
-            val internalId = item.internalId
+            val mediaId = item.mediaId
             if (season != null) {
-                onMediaClick(internalId + "?initialSeason=$season")
+                onMediaClick(mediaId + "?initialSeason=$season")
             } else {
-                onMediaClick(internalId)
+                onMediaClick(mediaId)
             }
         },
         recommendations = recommendations,

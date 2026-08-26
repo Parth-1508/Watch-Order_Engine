@@ -74,6 +74,32 @@
             </intent-filter>
         </service>
 
+        <!-- Continue Watching home screen widget -->
+        <receiver
+            android:name=".widget.ContinueWatchingWidgetReceiver"
+            android:exported="false"
+            android:label="@string/continue_watching_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/continue_watching_widget_info" />
+        </receiver>
+
+        <!-- Release Calendar / upcoming air dates home screen widget -->
+        <receiver
+            android:name=".widget.UpcomingCalendarWidgetReceiver"
+            android:exported="false"
+            android:label="@string/upcoming_calendar_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/upcoming_calendar_widget_info" />
+        </receiver>
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

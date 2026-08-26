@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/b3be8164-a33b-4a25-a625-f0d063dfe635
 
 *   **Chronology / Branching Timeline View:** Visualizes a universe as an interactive graph of connected entries.
 *   **Canon/Filler Tracking:** Flags filler episodes so long-running series (Naruto, One Piece, etc.) can be trimmed strictly to the canon path.
-*   **AI-Assisted DAG Generation:** Gemini 2.5 Flash generates watch-order structure and canon/filler data on demand.
+*   **AI-Assisted DAG Generation:** Gemini 3.6 Flash generates watch-order structure and canon/filler data on demand.
 *   **Unique Stylized Themes:** Includes custom UI modes like **Comic**, **Manga**, and **Funk** that redefine the app's visual identity.
 *   **Discovery & Search:** Browse and search the TMDB catalog seamlessly with swipable discovery decks.
 *   **Character Lore:** Pulls anime character bios from AniList and non-anime character lore from Wikipedia.
@@ -46,7 +46,7 @@ https://github.com/user-attachments/assets/b3be8164-a33b-4a25-a625-f0d063dfe635
 | :--- | :--- |
 | [TMDB](https://www.themoviedb.org/documentation/api) | Catalog data (titles, posters, metadata) |
 | [Tenrai](https://tenrai.org) | Anime episode / canon-filler data and reviews |
-| [Gemini 2.5 Flash](https://ai.google.dev/) | AI-triggered DAG generation and classification |
+| [Gemini 3.6 Flash](https://ai.google.dev/) | AI-triggered DAG generation and classification |
 | [AniList](https://anilist.co/graphiql) | Anime character bios |
 | [Wikipedia](https://en.wikipedia.org/api/rest_v1/) | Character lore for non-anime universes |
 

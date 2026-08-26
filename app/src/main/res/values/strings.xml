@@ -65,4 +65,10 @@
     <string name="login_reset_link_text">We found a password reset link in your clipboard. Would you like to use it now?</string>
     <string name="login_continue">CONTINUE</string>
     <string name="login_cancel">CANCEL</string>
+
+    <!-- Widgets -->
+    <string name="continue_watching_widget_label">Continue Watching</string>
+    <string name="continue_watching_widget_description">Quickly resume your most recent shows and mark episodes as watched.</string>
+    <string name="upcoming_calendar_widget_label">Release Calendar</string>
+    <string name="upcoming_calendar_widget_description">Track upcoming episode air dates for shows you are watching.</string>
 </resources>

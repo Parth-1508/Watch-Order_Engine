@@ -407,12 +407,21 @@ class TimelineViewModel @Inject constructor(
     }
 
     /**
-     * BUG FIX: Navigate using tmdb_id + tmdb_media_type, NOT node.id.
+     * BUG FIX: Navigate using tmdb_id + tmdb_media_type, NOT node.id — node.id
+     * is a unique per-node key (season/arc-scoped as of the Phase 1 identity
+     * fix), not a navigable Room mediaId.
+     *
+     * When the node carries a [MediaNode.seasonNumber] (arc/season-granularity
+     * nodes), the tap deep-links straight to that season using the same
+     * "?initialSeason=" mechanism Continue Watching's Resume button uses
+     * (see HomeScreenWrapper.onResumeClick), instead of always landing on the
+     * show's default first-loaded season.
      */
     fun onNodeClick(node: MediaNode) {
         val mediaId = resolveMediaId(node)
+        val target = if (node.seasonNumber >= 0) "$mediaId?initialSeason=${node.seasonNumber}" else mediaId
         viewModelScope.launch {
-            _events.send(TimelineEvent.NavigateToDetail(mediaId))
+            _events.send(TimelineEvent.NavigateToDetail(target))
         }
     }
 

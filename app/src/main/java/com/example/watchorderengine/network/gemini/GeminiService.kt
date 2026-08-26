@@ -28,8 +28,37 @@ data class RawMediaItem(
     @Json(name = "release_date")  val releaseDate: String? = null,
     @Json(name = "tmdb_id")       val tmdbId: Int = 0,
     @Json(name = "anilist_id")    val anilistId: Int? = null,
-    @Json(name = "source")        val source: String,            // "TMDB_SEASON" | "TMDB_MOVIE" | "ANILIST_RELATION"
-    @Json(name = "poster_path")   val posterPath: String? = null
+    @Json(name = "source")        val source: String,            // "TMDB_SEASON" | "TMDB_MOVIE" | "ANILIST_RELATION" | "ARC_SEGMENT"
+    @Json(name = "poster_path")   val posterPath: String? = null,
+    /**
+     * Absolute (show-wide, not per-season) episode range this item spans.
+     * Only populated for arc-granularity items (source = "ARC_SEGMENT") — see
+     * [com.example.watchorderengine.network.gemini.GeminiService.segmentIntoArcs].
+     * Null for season/movie-granularity items, which don't need it since a
+     * season's own local episode rows are looked up by seasonId instead.
+     */
+    @Json(name = "start_absolute_episode") val startAbsoluteEpisode: Int? = null,
+    @Json(name = "end_absolute_episode")   val endAbsoluteEpisode: Int? = null
+)
+
+/** Minimal per-episode input for arc segmentation — title only, no overview, to keep token cost bounded for 1000+ episode shows. */
+@JsonClass(generateAdapter = true)
+data class ArcSegmentEpisodeInput(
+    @Json(name = "absolute_episode") val absoluteEpisode: Int,
+    @Json(name = "title") val title: String
+)
+
+@JsonClass(generateAdapter = true)
+data class GeminiArcSegment(
+    @Json(name = "arc_name")               val arcName: String,
+    @Json(name = "start_absolute_episode") val startAbsoluteEpisode: Int,
+    @Json(name = "end_absolute_episode")   val endAbsoluteEpisode: Int,
+    @Json(name = "filler")                 val filler: Boolean
+)
+
+@JsonClass(generateAdapter = true)
+internal data class GeminiArcSegmentResponse(
+    @Json(name = "arcs") val arcs: List<GeminiArcSegment>
 )
 
 // ─── Gemini Response Models (SORTER output only) ──────────────────────────────
@@ -123,11 +152,14 @@ class GeminiService @Inject constructor(
     private val rawItemListAdapter =
         moshi.adapter<List<RawMediaItem>>(Types.newParameterizedType(List::class.java, RawMediaItem::class.java))
 
+    private val arcSegmentEpisodeListAdapter =
+        moshi.adapter<List<ArcSegmentEpisodeInput>>(Types.newParameterizedType(List::class.java, ArcSegmentEpisodeInput::class.java))
+
     private val mediaTypeJson = "application/json; charset=utf-8".toMediaType()
 
     companion object {
         private const val ENDPOINT =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
     }
 
     /**
@@ -218,6 +250,109 @@ class GeminiService @Inject constructor(
 
         GeminiResult.Error(lastError ?: "Failed to generate watch order after trying all API keys.")
     }
+
+    /**
+     * Segments a show's episodes into story arcs (e.g. "Arlong Park", "Alabasta")
+     * using only absolute episode numbers + titles — no overviews — to keep the
+     * prompt bounded even for 1000+ episode shows like One Piece.
+     *
+     * Used by [com.example.watchorderengine.data.repository.MediaRepository]'s
+     * arc-granularity watch-order path so long-running shows get one DAG node
+     * per story arc instead of one per (often meaningless) TMDB season.
+     *
+     * Returns null on any failure — callers should fall back to season-level
+     * raw items rather than block generation entirely.
+     */
+    suspend fun segmentIntoArcs(
+        showTitle: String,
+        episodes: List<ArcSegmentEpisodeInput>
+    ): List<GeminiArcSegment>? = withContext(Dispatchers.IO) {
+        if (episodes.isEmpty()) return@withContext null
+        val allKeys = getAllApiKeys()
+        if (allKeys.isEmpty()) return@withContext null
+
+        val episodesJson = arcSegmentEpisodeListAdapter.toJson(episodes)
+
+        val prompt = """
+            You are segmenting the episode list of "$showTitle" into its story arcs
+            (sagas), using ONLY the episode titles below — do not use outside
+            knowledge of the show's plot.
+
+            EPISODES (absolute episode number + title, ${episodes.size} total):
+            $episodesJson
+
+            YOUR ONLY JOB:
+            1. Group consecutive absolute episode numbers into named story arcs
+               based on title patterns (recurring location/character names,
+               "Part X" style titles, obvious tonal shifts).
+            2. Every episode number from ${episodes.first().absoluteEpisode} to
+               ${episodes.last().absoluteEpisode} must belong to EXACTLY ONE arc —
+               arcs must be contiguous and non-overlapping, covering the entire range.
+            3. Set filler=true only if the arc is clearly self-contained side content
+               not required to follow the main story; filler=false otherwise.
+            4. If you cannot confidently identify arc boundaries from titles alone,
+               return a single arc spanning the whole range rather than guessing.
+
+            FORMAT: Return ONLY valid JSON.
+        """.trimIndent()
+
+        val schemaAny = moshi.adapter(Any::class.java).fromJson(ARC_SEGMENT_SCHEMA_JSON)
+            ?: return@withContext null
+
+        val requestBody = GeminiRequestBody(
+            contents = listOf(GeminiRequestContent(parts = listOf(GeminiRequestPart(prompt)))),
+            generationConfig = GeminiGenerationConfig(responseMimeType = "application/json", responseSchema = schemaAny)
+        )
+        val requestJson = moshi.adapter(GeminiRequestBody::class.java).toJson(requestBody)
+
+        for (apiKey in allKeys) {
+            val request = Request.Builder()
+                .url("$ENDPOINT?key=$apiKey")
+                .post(requestJson.toRequestBody(mediaTypeJson))
+                .header("Content-Type", "application/json")
+                .build()
+
+            try {
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: continue
+                if (response.isSuccessful) {
+                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
+                    val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: continue
+                    val parsed = moshi.adapter(GeminiArcSegmentResponse::class.java).fromJson(rawJson)
+                    if (parsed != null && parsed.arcs.isNotEmpty()) return@withContext parsed.arcs
+                } else if (response.code == 401 || response.code == 429) {
+                    continue
+                } else {
+                    break
+                }
+            } catch (e: Exception) {
+                continue
+            }
+        }
+        null
+    }
+
+    private val ARC_SEGMENT_SCHEMA_JSON = """
+        {
+          "type": "object",
+          "properties": {
+            "arcs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "arc_name":               { "type": "string" },
+                  "start_absolute_episode": { "type": "integer" },
+                  "end_absolute_episode":   { "type": "integer" },
+                  "filler":                 { "type": "boolean" }
+                },
+                "required": ["arc_name", "start_absolute_episode", "end_absolute_episode", "filler"]
+              }
+            }
+          },
+          "required": ["arcs"]
+        }
+    """.trimIndent()
 
     /**
      * Fetches a character description from Gemini as a high-quality fallback
