@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** Search-sheet state for the "add a title" flow. */
 sealed interface AddNodeSearchState {
     object Idle : AddNodeSearchState
     object Loading : AddNodeSearchState
@@ -27,6 +28,10 @@ sealed interface AddNodeSearchState {
     data class Error(val message: String) : AddNodeSearchState
 }
 
+/**
+ * Everything GraphBuilderScreen needs to render the live DAG, in one place —
+ * recomputed reactively whenever nodes or edges change.
+ */
 data class GraphBuilderState(
     val nodes: List<MediaNode> = emptyList(),
     val edges: List<Edge> = emptyList(),
@@ -52,6 +57,8 @@ class GraphBuilderViewModel @Inject constructor(
     ) { nodes, edges, positions ->
         GraphBuilderState(nodes, edges, positions)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GraphBuilderState())
+
+    // ── Link mode (connect-two-nodes-by-tapping) ────────────────────────────
 
     private val _linkModeActive = MutableStateFlow(false)
     val linkModeActive: StateFlow<Boolean> = _linkModeActive.asStateFlow()
@@ -87,9 +94,31 @@ class GraphBuilderViewModel @Inject constructor(
         _edges.value = _edges.value - edge
     }
 
+    // ── Node positions (drag-to-arrange) ─────────────────────────────────────
+
     fun updateNodePosition(nodeId: String, offset: Offset) {
         _nodePositions.value = _nodePositions.value + (nodeId to offset)
     }
+
+    /**
+     * Applies one incremental drag step for [nodeId].
+     * Reads state fresh inside ViewModel to avoid stale captured closures.
+     */
+    fun applyNodeDrag(
+        nodeId: String,
+        delta: Offset,
+        canvasWidthPx: Float,
+        canvasHeightPx: Float,
+        nodeWidthPx: Float,
+        nodeHeightPx: Float,
+    ) {
+        val current = _nodePositions.value[nodeId] ?: Offset.Zero
+        val newX = (current.x + delta.x).coerceIn(0f, (canvasWidthPx - nodeWidthPx).coerceAtLeast(0f))
+        val newY = (current.y + delta.y).coerceIn(0f, (canvasHeightPx - nodeHeightPx).coerceAtLeast(0f))
+        _nodePositions.value = _nodePositions.value + (nodeId to Offset(newX, newY))
+    }
+
+    // ── Adding / removing nodes ───────────────────────────────────────────────
 
     private fun nextDefaultPosition(): Offset {
         val index = _nodes.value.size
@@ -131,6 +160,8 @@ class GraphBuilderViewModel @Inject constructor(
         _pendingFromNodeId.value = null
         _linkModeActive.value = false
     }
+
+    // ── Add-node search sheet ───────────────────────────────────────────────
 
     private val _searchState = MutableStateFlow<AddNodeSearchState>(AddNodeSearchState.Idle)
     val searchState: StateFlow<AddNodeSearchState> = _searchState.asStateFlow()

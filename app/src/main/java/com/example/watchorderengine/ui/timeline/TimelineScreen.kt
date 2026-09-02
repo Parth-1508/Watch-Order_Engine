@@ -30,6 +30,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.SharedTimelineCodec
+import com.example.watchorderengine.ui.components.ShareTimelineDialog
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.components.BranchingTimelineView
 import com.example.watchorderengine.ui.viewmodel.CommunityViewModel
@@ -53,6 +54,7 @@ fun TimelineScreen(
     val explanationState by viewModel.explanationState.collectAsStateWithLifecycle()
 
     var showShareDialog by remember { mutableStateOf(false) }
+    var showExportImageDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(universeId) { viewModel.initialize(universeId) }
 
@@ -118,7 +120,8 @@ fun TimelineScreen(
                 onBack = onBack,
                 onSpoilerToggle = { viewModel.toggleSpoilerShield() },
                 onAskAiClick = { viewModel.askAiAboutThisOrder() },
-                onShareCommunityClick = { showShareDialog = true }
+                onShareCommunityClick = { showShareDialog = true },
+                onExportImageClick = { showExportImageDialog = true }
             )
 
             CompletionBanner(visible = isUniverseComplete)
@@ -158,6 +161,18 @@ fun TimelineScreen(
             }
         }
 
+        if (showExportImageDialog) {
+            val success = uiState as? TimelineUiState.Success
+            if (success != null) {
+                ShareTimelineDialog(
+                    title     = success.universe.name,
+                    nodes     = success.nodes,
+                    edges     = success.edges,
+                    onDismiss = { showExportImageDialog = false }
+                )
+            }
+        }
+
         if (explanationState !is ExplanationState.Idle) {
             AskAiDialog(
                 state = explanationState,
@@ -174,7 +189,8 @@ private fun TimelineHeader(
     onBack: () -> Unit,
     onSpoilerToggle: () -> Unit,
     onAskAiClick: () -> Unit,
-    onShareCommunityClick: () -> Unit
+    onShareCommunityClick: () -> Unit,
+    onExportImageClick: () -> Unit
 ) {
     val theme = LocalAppTheme.current
     val context = LocalContext.current
@@ -256,6 +272,14 @@ private fun TimelineHeader(
                         onClick = {
                             showShareMenu = false
                             onShareCommunityClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Export as Image", color = theme.textPrimary) },
+                        leadingIcon = { Icon(Icons.Default.Image, null, tint = theme.accent) },
+                        onClick = {
+                            showShareMenu = false
+                            onExportImageClick()
                         }
                     )
                 }

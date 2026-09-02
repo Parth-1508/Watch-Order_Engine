@@ -20,6 +20,9 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE tmdbId = :tmdbId AND mediaCategory IN (:categories) LIMIT 1")
     suspend fun getByTmdbIdAndCategory(tmdbId: Int, categories: List<String>): MediaEntity?
 
+    @Query("SELECT * FROM media WHERE tmdbId = :tmdbId LIMIT 1")
+    suspend fun getByTmdbId(tmdbId: Int): MediaEntity?
+
     @Query("SELECT * FROM media ORDER BY lastUpdated DESC")
     suspend fun getAll(): List<MediaEntity>
 

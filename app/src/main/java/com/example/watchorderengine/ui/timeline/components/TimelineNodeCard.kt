@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,8 +139,18 @@ fun TimelineNodeCard(
                     .background(theme.surfaceHover)
                     .border(borderWidth, borderColor, shape)
             ) {
-                when (metadata) {
-                    is TmdbFetchState.Success -> {
+                val storedPosterUrl = displayNode.node.posterUrl?.takeIf { it.isNotBlank() }
+
+                when {
+                    storedPosterUrl != null -> {
+                        AsyncImage(
+                            model = storedPosterUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize().then(spoilerModifier),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    metadata is TmdbFetchState.Success -> {
                         AsyncImage(
                             model = metadata.detail.posterUrl,
                             contentDescription = null,
@@ -147,7 +158,7 @@ fun TimelineNodeCard(
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop
                         )
                     }
-                    is TmdbFetchState.Loading -> {
+                    metadata is TmdbFetchState.Loading -> {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),

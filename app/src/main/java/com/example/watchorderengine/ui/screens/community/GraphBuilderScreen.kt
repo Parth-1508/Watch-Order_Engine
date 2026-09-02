@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -53,6 +52,10 @@ import kotlin.math.sin
 
 private val NODE_WIDTH = 96.dp
 private val NODE_HEIGHT = 150.dp
+// The only part of GraphNodeCard with a truly FIXED height — the title text
+// below it grows to up to 2 lines depending on length, so NODE_HEIGHT itself
+// is not a reliable anchor point for where the poster actually ends on screen.
+private val POSTER_HEIGHT = NODE_HEIGHT * 0.72f
 private val CANVAS_HEIGHT = 1000.dp
 
 @Composable
@@ -134,6 +137,7 @@ fun GraphBuilderScreen(
                 val canvasWidthPx = with(density) { maxWidth.toPx() }
                 val nodeWidthPx = with(density) { NODE_WIDTH.toPx() }
                 val nodeHeightPx = with(density) { NODE_HEIGHT.toPx() }
+                val posterHeightPx = with(density) { POSTER_HEIGHT.toPx() }
                 val canvasHeightPx = with(density) { CANVAS_HEIGHT.toPx() }
 
                 Box(modifier = Modifier.fillMaxWidth().height(CANVAS_HEIGHT)) {
@@ -142,7 +146,7 @@ fun GraphBuilderScreen(
                         edges         = boardState.edges,
                         positions     = boardState.nodePositions,
                         nodeWidthPx   = nodeWidthPx,
-                        nodeHeightPx  = nodeHeightPx,
+                        posterHeightPx = posterHeightPx,
                         accentColor   = theme.accent,
                         isCycleDetected = boardState.layout.isCycleDetected,
                     )
@@ -158,7 +162,16 @@ fun GraphBuilderScreen(
                             canvasHeightPx     = canvasHeightPx,
                             nodeWidthPx        = nodeWidthPx,
                             nodeHeightPx       = nodeHeightPx,
-                            onPositionChange   = { viewModel.updateNodePosition(node.id, it) },
+                            onDrag             = { delta ->
+                                viewModel.applyNodeDrag(
+                                    nodeId = node.id,
+                                    delta = delta,
+                                    canvasWidthPx = canvasWidthPx,
+                                    canvasHeightPx = canvasHeightPx,
+                                    nodeWidthPx = nodeWidthPx,
+                                    nodeHeightPx = nodeHeightPx,
+                                )
+                            },
                             onLinkTap          = { viewModel.onNodeTappedForLink(node.id) },
                             onRemove           = { viewModel.removeNode(node.id) },
                         )
@@ -288,7 +301,7 @@ private fun EdgesCanvas(
     edges: List<Edge>,
     positions: Map<String, Offset>,
     nodeWidthPx: Float,
-    nodeHeightPx: Float,
+    posterHeightPx: Float,
     accentColor: Color,
     isCycleDetected: Boolean,
 ) {
@@ -297,7 +310,7 @@ private fun EdgesCanvas(
         edges.forEach { edge ->
             val fromPos = positions[edge.from_node_id] ?: return@forEach
             val toPos = positions[edge.to_node_id] ?: return@forEach
-            val start = Offset(fromPos.x + nodeWidthPx / 2f, fromPos.y + nodeHeightPx)
+            val start = Offset(fromPos.x + nodeWidthPx / 2f, fromPos.y + posterHeightPx)
             val end = Offset(toPos.x + nodeWidthPx / 2f, toPos.y)
             drawArrow(start = start, end = end, color = lineColor, strokeWidthPx = 3f)
         }
@@ -338,7 +351,7 @@ private fun GraphNodeCard(
     canvasHeightPx: Float,
     nodeWidthPx: Float,
     nodeHeightPx: Float,
-    onPositionChange: (Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
     onLinkTap: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -354,9 +367,7 @@ private fun GraphNodeCard(
                 } else {
                     detectDragGestures { change, drag ->
                         change.consume()
-                        val newX = (position.x + drag.x).coerceIn(0f, canvasWidthPx - nodeWidthPx)
-                        val newY = (position.y + drag.y).coerceIn(0f, canvasHeightPx - nodeHeightPx)
-                        onPositionChange(Offset(newX, newY))
+                        onDrag(drag)
                     }
                 }
             }

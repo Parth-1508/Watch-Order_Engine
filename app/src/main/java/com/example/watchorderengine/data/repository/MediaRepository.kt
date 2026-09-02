@@ -225,21 +225,17 @@ class MediaRepository @Inject constructor(
 
     private suspend fun refreshDetail(mediaId: String): Boolean {
         val tmdbId = extractTmdbId(mediaId) ?: return false
-        // Intentionally only look up the exact ID here, not legacy fallbacks.
-        // buildMediaDetail uses the fallback lookup; refreshDetail writes to
-        // the canonical typed-prefix ID, keeping the two concerns separate.
         val cachedEntity = db.mediaDao().getById(mediaId)
+            ?: db.mediaDao().getByTmdbId(tmdbId)
 
         return when (cachedEntity?.mediaCategory) {
             "MOVIE"   -> fetchAndCacheMovie(tmdbId, mediaId)
             "TV_SHOW",
             "ANIME"   -> fetchAndCacheTv(tmdbId, mediaId)
             else -> {
-                // Entity not yet in DB (first visit) or unknown category.
-                // Route by the typed prefix first; fall back to trying both.
                 when {
-                    isMovieId(mediaId) -> fetchAndCacheMovie(tmdbId, mediaId)
-                    isTvId(mediaId)    -> fetchAndCacheTv(tmdbId, mediaId)
+                    isMovieId(mediaId) -> fetchAndCacheMovie(tmdbId, mediaId) || fetchAndCacheTv(tmdbId, mediaId)
+                    isTvId(mediaId)    -> fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
                     else -> fetchAndCacheTv(tmdbId, mediaId) || fetchAndCacheMovie(tmdbId, mediaId)
                 }
             }
@@ -249,9 +245,6 @@ class MediaRepository @Inject constructor(
     private suspend fun buildMediaDetail(mediaId: String): MediaDetail? {
         val tmdbId = extractTmdbId(mediaId)
 
-        // Type-safe lookup — NEVER use the untyped "tmdb_{id}" key.
-        // Type-safe fallback: filter by category so movie #20 never
-        // collides with TV show #20 ("half the time" navigation bug).
         val typedCategories = when {
             isMovieId(mediaId) -> listOf("MOVIE")
             isTvId(mediaId)    -> listOf("TV_SHOW", "ANIME")
@@ -259,8 +252,8 @@ class MediaRepository @Inject constructor(
         }
         val entity = db.mediaDao().getById(mediaId)
             ?: tmdbId?.let { db.mediaDao().getByTmdbIdAndCategory(it, typedCategories) }
+            ?: tmdbId?.let { db.mediaDao().getByTmdbId(it) }
             ?: tmdbId?.let { 
-                // Legacy Fallback for very old IDs
                 db.mediaDao().getById("tmdb_$tmdbId") ?: db.mediaDao().getById(tmdbId.toString())
             }
 

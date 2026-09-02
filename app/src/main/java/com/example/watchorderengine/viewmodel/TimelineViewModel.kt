@@ -172,6 +172,10 @@ class TimelineViewModel @Inject constructor(
                             tmdbRepo.fetchAndCache(snapshot.nodes)
                             emit(computeUiState(snapshot))
                         }
+                        // Pre-seed Room metadata for all nodes in this timeline so detail screens open instantly
+                        snapshot.nodes.forEach { node ->
+                            mediaRepository.ensureMetadataCached(node)
+                        }
                     }
                 }
                 .catch { throwable ->
@@ -430,18 +434,16 @@ class TimelineViewModel @Inject constructor(
          * Builds the Room-compatible media ID from a MediaNode's TMDB fields.
          */
         fun resolveMediaId(node: MediaNode): String {
+            if (!node.parentMediaId.isNullOrBlank() && (node.parentMediaId.startsWith("tmdb_") || node.parentMediaId.startsWith("anilist_"))) {
+                return node.parentMediaId
+            }
             if (node.tmdb_id <= 0) return node.id
 
-            val prefix = when (node.tmdb_media_type.lowercase().trim()) {
-                "movie" -> "tmdb_m_"
-                "tv", "anime", "ova", "ona", "special" -> "tmdb_t_"
-                else -> {
-                    when (node.content_type.uppercase()) {
-                        "MOVIE", "SHORT" -> "tmdb_m_"
-                        else             -> "tmdb_t_"
-                    }
-                }
-            }
+            val isMovie = node.tmdb_media_type.equals("movie", ignoreCase = true) ||
+                    node.content_type.equals("MOVIE", ignoreCase = true) ||
+                    node.type == MediaCategory.MOVIE
+
+            val prefix = if (isMovie) "tmdb_m_" else "tmdb_t_"
             return "$prefix${node.tmdb_id}"
         }
     }
