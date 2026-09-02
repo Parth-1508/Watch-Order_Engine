@@ -39,6 +39,7 @@ class UserPreferencesRepository(private val context: Context) {
         val CURRENT_STREAK = intPreferencesKey("current_streak")
         val LAST_SMART_NOTIF_TRIGGER = longPreferencesKey("last_smart_notif_trigger")
         val AIRING_ALERTS_ENABLED = booleanPreferencesKey("airing_alerts_enabled")
+        val PREFERRED_HOME_LANGUAGES = stringSetPreferencesKey("preferred_home_languages")
     }
 
     val isTasteProfileCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -116,6 +117,14 @@ class UserPreferencesRepository(private val context: Context) {
 
     val selectedGenres: Flow<Set<String>> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.SELECTED_GENRES] ?: emptySet()
+    }
+
+    val preferredHomeLanguages: Flow<Set<String>> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.PREFERRED_HOME_LANGUAGES] ?: setOf("ja", "ko", "hi", "es")
+    }
+
+    suspend fun setPreferredHomeLanguages(languages: Set<String>) {
+        context.dataStore.edit { it[PreferencesKeys.PREFERRED_HOME_LANGUAGES] = languages }
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {

@@ -8,16 +8,17 @@ import com.example.watchorderengine.network.TmdbConfig
 class DiscoveryPagingSource(
     private val repository: MediaRepository,
     private val category: TmdbConfig.DiscoveryCategory?,
-    private val providerIds: Set<Int>
+    private val providerIds: Set<Int>,
+    private val originalLanguage: String? = null
 ) : PagingSource<Int, MediaSummary>() {
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaSummary> {
         val page = params.key ?: 1
         return try {
             val rawItems = if (category != null) {
-                repository.discoverByGenrePaged(category, providerIds, page)
+                repository.discoverByGenrePaged(category, providerIds, page, originalLanguage)
             } else {
-                repository.getTrendingPaged(providerIds, page)
+                repository.getTrendingPaged(providerIds, page, originalLanguage)
             }
 
             // Exclude already tracked or skipped items at the source

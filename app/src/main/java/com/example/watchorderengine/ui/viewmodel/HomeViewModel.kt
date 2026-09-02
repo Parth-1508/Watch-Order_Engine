@@ -13,6 +13,8 @@ import com.example.watchorderengine.data.repository.UserProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.supervisorScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import kotlinx.coroutines.launch
@@ -39,6 +41,12 @@ class HomeViewModel @Inject constructor(
 
     private val _recentlyReleased = MutableStateFlow<List<MediaSummary>>(emptyList())
     val recentlyReleased: StateFlow<List<MediaSummary>> = _recentlyReleased.asStateFlow()
+
+    /** One "trending in [language]" carousel — see [refreshLanguageSections]. */
+    data class LanguageSection(val code: String, val label: String, val items: List<MediaSummary>)
+
+    private val _languageSections = MutableStateFlow<List<LanguageSection>>(emptyList())
+    val languageSections: StateFlow<List<LanguageSection>> = _languageSections.asStateFlow()
 
     private val _recommendations = MutableStateFlow<List<Recommendation>>(emptyList())
     val recommendations: StateFlow<List<Recommendation>> = _recommendations.asStateFlow()
@@ -87,6 +95,36 @@ class HomeViewModel @Inject constructor(
         }
         observeTasteProfile()
         observeNextUp()
+        observeLanguagePreferences()
+    }
+
+    private fun observeLanguagePreferences() {
+        viewModelScope.launch {
+            userPrefs.preferredHomeLanguages.collect { codes ->
+                refreshLanguageSections(codes)
+            }
+        }
+    }
+
+    private suspend fun refreshLanguageSections(languages: Set<String>) {
+        try {
+            val sections = supervisorScope {
+                languages.map { code ->
+                    async {
+                        val items = try {
+                            repository.getTrendingByLanguage(code)
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                        val label = com.example.watchorderengine.network.TmdbConfig.labelForLanguage(code)
+                        LanguageSection(code = code, label = label, items = items)
+                    }
+                }.map { it.await() }
+            }
+            _languageSections.value = sections.filter { it.items.isNotEmpty() }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeViewModel", "Language sections refresh failed", e)
+        }
     }
 
     private fun observeNextUp() {

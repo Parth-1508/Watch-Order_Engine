@@ -71,7 +71,19 @@ class DiscoveryViewModel @Inject constructor(
     private val _platformFilter = MutableStateFlow(PlatformFilterState())
     val platformFilter: StateFlow<PlatformFilterState> = _platformFilter.asStateFlow()
 
+    /** Null = "All languages". Non-null = a language filter chip is active (ISO 639-1 code). */
+    private val _languageFilter = MutableStateFlow<String?>(null)
+    val languageFilter: StateFlow<String?> = _languageFilter.asStateFlow()
+
+    val languageOptions: List<TmdbConfig.LanguageOption> = TmdbConfig.LANGUAGE_OPTIONS
+
     init {
+        loadDiscovery()
+    }
+
+    fun selectLanguage(code: String?) {
+        if (_languageFilter.value == code) return
+        _languageFilter.value = code
         loadDiscovery()
     }
 
@@ -100,8 +112,9 @@ class DiscoveryViewModel @Inject constructor(
             _isLoading.value = true
 
             val selectedProviders = _platformFilter.value.selectedProviderIds
-            val raw = _activeCategory.value?.let { repository.discoverByGenre(it, selectedProviders) }
-                ?: repository.getTrending(selectedProviders)
+            val language = _languageFilter.value
+            val raw = _activeCategory.value?.let { repository.discoverByGenre(it, selectedProviders, language) }
+                ?: repository.getTrending(selectedProviders, language)
 
             val trackedIds = repository.getAllTrackedMediaIds()
             // Extract raw TMDB IDs to ensure legacy/prefixed IDs are caught

@@ -3,6 +3,7 @@ package com.example.watchorderengine.data
 import com.example.watchorderengine.data.model.*
 import com.example.watchorderengine.network.gemini.GeminiEdge
 import com.example.watchorderengine.network.gemini.GeminiNode
+import com.example.watchorderengine.network.gemini.GeminiArcSegment
 import com.example.watchorderengine.network.gemini.RawMediaItem
 import com.example.watchorderengine.network.TmdbConfig
 import com.example.watchorderengine.data.db.WatchOrderDatabase
@@ -310,6 +311,138 @@ class WatchOrderRepository @Inject constructor(
         batch.commit().await()
     }
 
+    // ─── Shared Gemini result caches (global, NOT per-user) ───────────────────
+
+    private val arcCacheCollection get() = firestore.collection("arc_segmentation_cache")
+    private val sortCacheCollection get() = firestore.collection("watch_order_sort_cache")
+
+    data class CachedArcSegment(
+        val arcName: String = "",
+        val startAbsoluteEpisode: Int = 0,
+        val endAbsoluteEpisode: Int = 0,
+        val filler: Boolean = false
+    )
+
+    data class ArcSegmentationCacheDoc(
+        val mediaId: String = "",
+        val episodeCountAtSegmentation: Int = 0,
+        val arcs: List<CachedArcSegment> = emptyList(),
+        @com.google.firebase.firestore.ServerTimestamp
+        val cachedAt: com.google.firebase.Timestamp? = null
+    )
+
+    suspend fun getCachedArcSegments(
+        mediaId: String,
+        currentEpisodeCount: Int
+    ): List<GeminiArcSegment>? = withContext(Dispatchers.IO) {
+        try {
+            val doc = arcCacheCollection.document(mediaId).get().await()
+            if (!doc.exists()) return@withContext null
+            val cached = doc.toObject(ArcSegmentationCacheDoc::class.java) ?: return@withContext null
+            if (cached.episodeCountAtSegmentation != currentEpisodeCount) {
+                Log.d("WatchOrderRepo", "Arc cache stale for $mediaId (cached=${cached.episodeCountAtSegmentation}, current=$currentEpisodeCount) — will re-segment")
+                return@withContext null
+            }
+            cached.arcs.map {
+                GeminiArcSegment(
+                    arcName = it.arcName,
+                    startAbsoluteEpisode = it.startAbsoluteEpisode,
+                    endAbsoluteEpisode = it.endAbsoluteEpisode,
+                    filler = it.filler
+                )
+            }.also { Log.d("WatchOrderRepo", "Arc cache HIT for $mediaId — skipped a Gemini call") }
+        } catch (e: Exception) {
+            Log.w("WatchOrderRepo", "Arc cache read failed for $mediaId (failing open — will call Gemini): ${e.message}")
+            null
+        }
+    }
+
+    suspend fun cacheArcSegments(
+        mediaId: String,
+        episodeCount: Int,
+        arcs: List<GeminiArcSegment>
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val doc = ArcSegmentationCacheDoc(
+                mediaId = mediaId,
+                episodeCountAtSegmentation = episodeCount,
+                arcs = arcs.map { CachedArcSegment(it.arcName, it.startAbsoluteEpisode, it.endAbsoluteEpisode, it.filler) }
+            )
+            arcCacheCollection.document(mediaId).set(doc).await()
+        } catch (e: Exception) {
+            Log.w("WatchOrderRepo", "Arc cache write failed for $mediaId (non-fatal): ${e.message}")
+        }
+    }
+
+    data class CachedGeminiNode(
+        val itemId: String = "",
+        val chronoOrder: Float = 0f,
+        val releaseOrder: Float = 0f,
+        val phase: String = "",
+        val filler: Boolean = false,
+        val isBranchPoint: Boolean = false,
+        val isMergePoint: Boolean = false
+    )
+
+    data class CachedGeminiEdge(
+        val fromItemId: String = "",
+        val toItemId: String = "",
+        val type: String = "",
+        val label: String = ""
+    )
+
+    data class SortCacheDoc(
+        val mediaId: String = "",
+        val rawItemsFingerprint: String = "",
+        val nodes: List<CachedGeminiNode> = emptyList(),
+        val edges: List<CachedGeminiEdge> = emptyList(),
+        @com.google.firebase.firestore.ServerTimestamp
+        val cachedAt: com.google.firebase.Timestamp? = null
+    )
+
+    suspend fun getCachedSortResult(
+        mediaId: String,
+        fingerprint: String
+    ): Pair<List<GeminiNode>, List<GeminiEdge>>? = withContext(Dispatchers.IO) {
+        try {
+            val doc = sortCacheCollection.document(mediaId).get().await()
+            if (!doc.exists()) return@withContext null
+            val cached = doc.toObject(SortCacheDoc::class.java) ?: return@withContext null
+            if (cached.rawItemsFingerprint != fingerprint) {
+                Log.d("WatchOrderRepo", "Sort cache stale for $mediaId — raw items changed, will re-sort")
+                return@withContext null
+            }
+            val nodes = cached.nodes.map {
+                GeminiNode(it.itemId, it.chronoOrder, it.releaseOrder, it.phase, it.filler, it.isBranchPoint, it.isMergePoint)
+            }
+            val edges = cached.edges.map { GeminiEdge(it.fromItemId, it.toItemId, it.type, it.label) }
+            Log.d("WatchOrderRepo", "Sort cache HIT for $mediaId — skipped a Gemini call")
+            nodes to edges
+        } catch (e: Exception) {
+            Log.w("WatchOrderRepo", "Sort cache read failed for $mediaId (failing open — will call Gemini): ${e.message}")
+            null
+        }
+    }
+
+    suspend fun cacheSortResult(
+        mediaId: String,
+        fingerprint: String,
+        nodes: List<GeminiNode>,
+        edges: List<GeminiEdge>
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val doc = SortCacheDoc(
+                mediaId = mediaId,
+                rawItemsFingerprint = fingerprint,
+                nodes = nodes.map { CachedGeminiNode(it.itemId, it.chronoOrder, it.releaseOrder, it.phase, it.filler, it.isBranchPoint, it.isMergePoint) },
+                edges = edges.map { CachedGeminiEdge(it.fromItemId, it.toItemId, it.type, it.label) }
+            )
+            sortCacheCollection.document(mediaId).set(doc).await()
+        } catch (e: Exception) {
+            Log.w("WatchOrderRepo", "Sort cache write failed for $mediaId (non-fatal): ${e.message}")
+        }
+    }
+
     suspend fun clearGeneratedUniverse(universeId: String): Result<Unit> = runCatching {
         val nodeDocs = nodesRef(universeId).get().await()
         val edgeDocs = edgesRef(universeId).get().await()
@@ -331,20 +464,12 @@ class WatchOrderRepository @Inject constructor(
     ): Result<Unit> = runCatching {
         check(sortedNodes.isNotEmpty()) { "Cannot publish an empty universe." }
         val itemsById = rawItems.associateBy { it.itemId }
-        // Maps each Gemini itemId -> the unique Firestore node id it was published under.
         val resolvedIdByItemId = mutableMapOf<String, String>()
 
         val mediaNodes = sortedNodes.mapNotNull { node ->
             val raw = itemsById[node.itemId] ?: return@mapNotNull null
             val (parentMediaId, tmdbMediaType) = resolveMediaId(raw)
 
-            // BUG FIX: raw.itemId (e.g. "{mediaId}_s2") is already unique per
-            // season/movie by construction (see buildTvRawItems/buildMovieRawItems).
-            // The *navigable* mediaId from resolveMediaId is NOT unique across a
-            // TV show's seasons — every season of the same show resolves to the
-            // same show-level mediaId, so using it as the node id previously
-            // caused every season past the first to silently overwrite the last
-            // one written to Firestore (same document id = same document).
             val nodeId = raw.itemId
             resolvedIdByItemId[node.itemId] = nodeId
 
@@ -407,7 +532,6 @@ class WatchOrderRepository @Inject constructor(
                     batch.commit().await()
                 }
             
-            // Delete user-specific progress for this universe
             progressDoc.delete().await()
         }
     }

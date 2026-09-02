@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ fun SearchScreen(
     val results by viewModel.searchResults.collectAsStateWithLifecycle()
     val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
     val activeFilter by viewModel.categoryFilter.collectAsStateWithLifecycle()
+    val languageFilter by viewModel.languageFilter.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -124,6 +126,27 @@ fun SearchScreen(
                         label = "ANIME",
                         isSelected = activeFilter == "ANIME",
                         onClick = { viewModel.setCategoryFilter("ANIME") }
+                    )
+                }
+            }
+
+            // Language filter chips
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    SearchFilterChip(
+                        label = "ALL LANGUAGES",
+                        isSelected = languageFilter == null,
+                        onClick = { viewModel.setLanguageFilter(null) }
+                    )
+                }
+                items(viewModel.languageOptions) { option ->
+                    SearchFilterChip(
+                        label = option.label.uppercase(),
+                        isSelected = languageFilter == option.code,
+                        onClick = { viewModel.setLanguageFilter(option.code) }
                     )
                 }
             }

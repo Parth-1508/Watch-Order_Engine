@@ -103,7 +103,8 @@ data class MediaSummary(
     val ageRating: String,
     val priorityTag: PriorityTag = PriorityTag.NONE,
     val genres: List<String> = emptyList(),
-    val releaseDate: String? = null
+    val releaseDate: String? = null,
+    val originalLanguage: String? = null
 )
 
 /**

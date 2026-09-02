@@ -49,6 +49,7 @@ fun DiscoveryScreen(
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val activeCategory by viewModel.activeCategory.collectAsStateWithLifecycle()
     val platformFilter by viewModel.platformFilter.collectAsStateWithLifecycle()
+    val languageFilter by viewModel.languageFilter.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         // Refresh deck if empty to ensure the user doesn't see a stuck empty screen
@@ -120,6 +121,40 @@ fun DiscoveryScreen(
                         platform = platform,
                         isSelected = isSelected,
                         onClick = { viewModel.togglePlatform(platform) }
+                    )
+                }
+            }
+
+            // Language filters
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                item {
+                    Text(
+                        "LANGUAGE",
+                        color = theme.textSecondary,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+                }
+                item {
+                    CategoryChip(
+                        label = "All",
+                        isSelected = languageFilter == null,
+                        onClick = { viewModel.selectLanguage(null) }
+                    )
+                }
+                items(viewModel.languageOptions) { option ->
+                    CategoryChip(
+                        label = option.label,
+                        isSelected = languageFilter == option.code,
+                        onClick = { viewModel.selectLanguage(option.code) }
                     )
                 }
             }

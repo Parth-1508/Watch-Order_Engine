@@ -63,6 +63,7 @@ fun SettingsScreen(
     val cloudSyncEnabled by viewModel.cloudSyncEnabled.collectAsStateWithLifecycle()
     val dynamicShowTheming by viewModel.dynamicShowTheming.collectAsStateWithLifecycle()
     val airingAlertsEnabled by viewModel.airingAlertsEnabled.collectAsStateWithLifecycle()
+    val preferredHomeLanguages by viewModel.preferredHomeLanguages.collectAsStateWithLifecycle()
     val wipeAccountState by viewModel.wipeAccountState.collectAsStateWithLifecycle()
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val changePasswordState by viewModel.changePasswordState.collectAsStateWithLifecycle()
@@ -445,6 +446,49 @@ fun SettingsScreen(
                         }
                     }
                 )
+            }
+        }
+
+        // Home Languages Section
+        SettingSectionTitle("HOME SCREEN LANGUAGES")
+        Surface(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .then(ThemeBorderModifier()),
+            color = theme.surface
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "CHOOSE REGIONAL LANGUAGE CAROUSELS FOR HOME",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                com.example.watchorderengine.network.TmdbConfig.HOME_LANGUAGE_SECTIONS.forEach { section ->
+                    val isSelected = section.code in preferredHomeLanguages
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.toggleHomeLanguage(section.code) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            section.label,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = theme.textPrimary
+                        )
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { viewModel.toggleHomeLanguage(section.code) },
+                            colors = CheckboxDefaults.colors(checkedColor = theme.accent)
+                        )
+                    }
+                }
             }
         }
 

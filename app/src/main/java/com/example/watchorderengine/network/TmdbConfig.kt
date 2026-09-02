@@ -170,4 +170,42 @@ object TmdbConfig {
         DiscoveryCategory("Fantasy", 14, 10765),
         DiscoveryCategory("Thriller", 53, 9648)
     )
+
+    // ─── Language Filters & Suggestions ────────────────────────────────────
+
+    /** One selectable language filter option — [code] is TMDB's `with_original_language` value (ISO 639-1). */
+    data class LanguageOption(val code: String, val label: String)
+
+    val LANGUAGE_OPTIONS: List<LanguageOption> = listOf(
+        LanguageOption("en", "English"),
+        LanguageOption("ja", "Japanese"),
+        LanguageOption("ko", "Korean"),
+        LanguageOption("hi", "Hindi"),
+        LanguageOption("es", "Spanish"),
+        LanguageOption("fr", "French"),
+        LanguageOption("zh", "Chinese"),
+        LanguageOption("de", "German"),
+        LanguageOption("th", "Thai"),
+    )
+
+    /** One Home screen "trending in [language]" carousel. */
+    data class HomeLanguageSection(val code: String, val label: String)
+
+    val HOME_LANGUAGE_SECTIONS: List<HomeLanguageSection> = listOf(
+        HomeLanguageSection("ja", "Japanese Anime"),
+        HomeLanguageSection("ko", "Korean Drama"),
+        HomeLanguageSection("hi", "Hindi Cinema"),
+        HomeLanguageSection("es", "Spanish Series"),
+        HomeLanguageSection("fr", "French Cinema"),
+        HomeLanguageSection("de", "German Series"),
+        HomeLanguageSection("zh", "Chinese Cinema"),
+        HomeLanguageSection("th", "Thai Cinema"),
+        HomeLanguageSection("en", "English Content"),
+    )
+
+    fun labelForLanguage(code: String): String {
+        return HOME_LANGUAGE_SECTIONS.find { it.code == code }?.label
+            ?: LANGUAGE_OPTIONS.find { it.code == code }?.let { "${it.label} Content" }
+            ?: "Trending in $code"
+    }
 }

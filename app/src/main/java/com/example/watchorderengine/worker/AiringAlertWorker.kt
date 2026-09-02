@@ -21,6 +21,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -50,19 +51,31 @@ class AiringAlertWorker @AssistedInject constructor(
         return try {
             mediaRepository.refreshCurrentSeasonForWatchingShows()
 
-            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-            val airingToday = mediaRepository.getUpcomingEpisodes().filter { it.airDate == today }
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val today = sdf.format(Date())
+            val cal = Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_MONTH, -7)
+            }
+            val sevenDaysAgo = sdf.format(cal.time)
 
-            if (airingToday.isEmpty()) {
-                Log.d(TAG, "No episodes airing today.")
+            // BUG FIX: Look for episodes airing today or up to 7 days in the past.
+            // If background tasks are deferred by battery constraints or Doze mode,
+            // this range check prevents missed alerts from being silently skipped.
+            // Deduplication via db.notifiedEpisodeDao() prevents duplicate notifications.
+            val airingRecentOrToday = mediaRepository.getUpcomingEpisodes().filter { 
+                it.airDate in sevenDaysAgo..today 
+            }
+
+            if (airingRecentOrToday.isEmpty()) {
+                Log.d(TAG, "No episodes airing today or in the recent 7-day window.")
                 return Result.success()
             }
 
             val alreadyNotified = db.notifiedEpisodeDao().getAllNotifiedIds().toSet()
-            val freshEpisodes = airingToday.filter { it.notificationKey() !in alreadyNotified }
+            val freshEpisodes = airingRecentOrToday.filter { it.notificationKey() !in alreadyNotified }
 
             if (freshEpisodes.isEmpty()) {
-                Log.d(TAG, "${airingToday.size} episode(s) airing today, already notified about all of them.")
+                Log.d(TAG, "${airingRecentOrToday.size} episode(s) in window, already notified about all of them.")
                 return Result.success()
             }
 

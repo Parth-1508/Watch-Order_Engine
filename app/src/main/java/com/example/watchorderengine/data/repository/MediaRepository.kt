@@ -1043,7 +1043,14 @@ class MediaRepository @Inject constructor(
      * heuristics don't know a spin-off exists unless its title happens to be a
      * substring match.
      */
-    private suspend fun fetchAnimeFranchiseRelations(anilistId: Int): List<com.example.watchorderengine.network.AnilistMedia> {
+    private suspend fun fetchAnimeFranchiseRelations(
+        anilistId: Int,
+        maxDepth: Int = 2,
+        visitedIds: MutableSet<Int> = mutableSetOf()
+    ): List<com.example.watchorderengine.network.AnilistMedia> {
+        if (anilistId in visitedIds || maxDepth <= 0) return emptyList()
+        visitedIds.add(anilistId)
+
         val query = """
             query (${'$'}id: Int) {
               Media(id: ${'$'}id, type: ANIME) {
@@ -1070,19 +1077,34 @@ class MediaRepository @Inject constructor(
             )
             val edges = response.body()?.data?.media?.relations?.edges.orEmpty()
 
-            Log.d(TAG, "AniList relations for anilistId=$anilistId (all, pre-filter): " +
+            Log.d(TAG, "AniList relations for anilistId=$anilistId (depth=$maxDepth, all, pre-filter): " +
                 edges.joinToString { "${it.relationType}:${it.node?.format}:${it.node?.title?.english ?: it.node?.title?.romaji}" })
 
-            edges.filter { edge ->
+            val directNodes = edges.filter { edge ->
                 edge.relationType in RELEVANT_RELATION_TYPES ||
-                    // Long-running franchises (Pokémon, One Piece, Detective
-                    // Conan) routinely have their films tagged OTHER on AniList
-                    // rather than SIDE_STORY/SPIN_OFF — that's a real curation
-                    // pattern, not noise, so accept it specifically for movies.
-                    // Non-movie OTHER relations stay excluded — that catch-all
-                    // is too likely to be genuinely unrelated for anything else.
                     (edge.relationType == "OTHER" && edge.node?.format == "MOVIE")
             }.mapNotNull { it.node }
+
+            val resultList = mutableListOf<com.example.watchorderengine.network.AnilistMedia>()
+            resultList.addAll(directNodes)
+
+            // Multi-hop traversal: for main structural relations (SEQUEL, PREQUEL, PARENT),
+            // fetch their relations as well so movies attached to subsequent generations (e.g. Pokémon AG, DP, BW, XY, SM)
+            // are brought into the raw items list.
+            if (maxDepth > 1) {
+                val nextHopEdges = edges.filter { edge ->
+                    edge.relationType in setOf("SEQUEL", "PREQUEL", "PARENT") &&
+                        edge.node?.id != null &&
+                        edge.node.id !in visitedIds
+                }
+                for (edge in nextHopEdges) {
+                    val nextId = edge.node?.id ?: continue
+                    val subNodes = fetchAnimeFranchiseRelations(nextId, maxDepth - 1, visitedIds)
+                    resultList.addAll(subNodes)
+                }
+            }
+
+            resultList.distinctBy { it.id }
         } catch (e: Exception) {
             Log.w(TAG, "AniList relations fetch failed for anilistId=$anilistId: ${e.message}")
             emptyList()
@@ -1107,8 +1129,10 @@ class MediaRepository @Inject constructor(
         val searchResult = try {
             if (isMovieFormat) {
                 apiService.searchMovie(query = title).body()?.results?.firstOrNull()
+                    ?: apiService.searchTv(query = title).body()?.results?.firstOrNull()
             } else {
                 apiService.searchTv(query = title).body()?.results?.firstOrNull()
+                    ?: apiService.searchMovie(query = title).body()?.results?.firstOrNull()
             }
         } catch (e: Exception) {
             Log.w(TAG, "TMDB resolution failed for AniList relation '$title': ${e.message}")
@@ -1201,10 +1225,6 @@ class MediaRepository @Inject constructor(
 
             var seasons = db.seasonDao().getSeasonsByMedia(showMediaId).sortedBy { it.seasonNumber }
             if (seasons.isEmpty() && isPrimaryShow) {
-                // BUG FIX: this show's own seasons must never be silently skipped —
-                // that previously let an unrelated cross-search result become the
-                // sole raw item, producing a degenerate single-node "watch order"
-                // for the show whose own Chronology tab this is.
                 Log.d(TAG, "Primary show '$showTitle' has no cached seasons — fetching now")
                 fetchAndCacheTv(tmdbId, showMediaId)
                 seasons = db.seasonDao().getSeasonsByMedia(showMediaId).sortedBy { it.seasonNumber }
@@ -1214,9 +1234,6 @@ class MediaRepository @Inject constructor(
                 continue
             }
 
-            // ARC GRANULARITY: long-running shows (One Piece, Naruto) get one DAG
-            // node per story arc instead of one per TMDB season, which for these
-            // shows rarely lines up with anything a viewer would recognize.
             val totalEpisodes = seasons.sumOf { it.episodeCount }
             if (isPrimaryShow && totalEpisodes >= ARC_SEGMENTATION_MIN_EPISODES) {
                 val arcItems = tryBuildArcRawItems(showMediaId, showTitle, tmdbId, dbEntity, seasons)
@@ -1245,31 +1262,80 @@ class MediaRepository @Inject constructor(
             }
         }
 
-        // ANIME FRANCHISE RELATIONS: TMDB's search/tv endpoint above can only
-        // ever find other TV shows, and only by fuzzy title match — it will
-        // never surface a franchise's canon movies at all, and can miss spin-
-        // offs whose titles don't happen to contain the base keyword. For anime
-        // with a known AniList ID, pull real relations (SEQUEL, PREQUEL,
-        // SIDE_STORY, SPIN_OFF, etc.) instead — this is what actually finds
-        // Naruto's films and the Shippuden continuation.
-        if (entity.genres.contains("Animation") && entity.anilistId != null) {
-            val alreadyIncludedTmdbIds = showsToProcess.map { it.first }.toSet()
-            val relatedNodes = fetchAnimeFranchiseRelations(entity.anilistId)
-            Log.d(TAG, "AniList relations for '${entity.title}': ${relatedNodes.map { it.title?.english ?: it.title?.romaji }}")
+        // ANIME FRANCHISE RELATIONS & TMDB MOVIE CROSS-SEARCH:
+        // TMDB's search/tv endpoint above can only ever find other TV shows,
+        // and only by fuzzy title match — it will never surface a franchise's canon
+        // movies at all, and can miss spin-offs whose titles don't happen to
+        // contain the base keyword. For anime/animation with a known AniList ID or category:
+        // 1. Pull real relations from AniList (with multi-hop traversal for sequels/prequels)
+        // 2. Perform a TMDB movie search for baseTitle to catch franchise feature films on TMDB.
+        if (entity.genres.contains("Animation") || entity.mediaCategory == "ANIME" || entity.anilistId != null) {
+            val alreadyIncludedTmdbIds = showsToProcess.map { it.first }.toMutableSet()
 
-            // Each relation needs its own TMDB search round-trip to resolve —
-            // run them concurrently instead of one-by-one so a franchise with
-            // many relations (films, OVAs, spin-offs) doesn't serialize a dozen
-            // sequential network calls. supervisorScope so one failed lookup
-            // doesn't cancel the others.
-            val resolvedItems = supervisorScope {
-                relatedNodes.map { node -> async { resolveAnilistRelationToTmdb(node) } }.awaitAll()
+            if (entity.anilistId != null) {
+                val relatedNodes = fetchAnimeFranchiseRelations(entity.anilistId)
+                Log.d(TAG, "AniList relations for '${entity.title}': ${relatedNodes.map { it.title?.english ?: it.title?.romaji }}")
+
+                val resolvedItems = supervisorScope {
+                    relatedNodes.map { node -> async { resolveAnilistRelationToTmdb(node) } }.awaitAll()
+                }
+
+                for (item in resolvedItems) {
+                    if (item == null) continue
+                    if (item.tmdbId in alreadyIncludedTmdbIds) continue // avoid duplicating a show already found
+                    alreadyIncludedTmdbIds.add(item.tmdbId)
+                    allSeasonItems.add(item)
+                }
             }
 
-            for (item in resolvedItems) {
-                if (item == null) continue
-                if (item.tmdbId in alreadyIncludedTmdbIds) continue // avoid duplicating a show already found via TMDB search
-                allSeasonItems.add(item)
+            // Supplement with TMDB movie search for baseTitle
+            try {
+                val tmdbMovies = apiService.searchMovie(query = baseTitle).body()?.results?.take(10).orEmpty()
+                for (movie in tmdbMovies) {
+                    if (movie.id !in alreadyIncludedTmdbIds) {
+                        val movieTitle = movie.title ?: movie.name ?: continue
+                        if (isTitleMatch(movieTitle, baseTitle) || movieTitle.contains(baseTitle, ignoreCase = true)) {
+                            alreadyIncludedTmdbIds.add(movie.id)
+                            val movieMediaId = buildMediaId(movie.id, "movie")
+                            if (db.mediaDao().getById(movieMediaId) == null) {
+                                db.mediaDao().upsert(
+                                    MediaEntity(
+                                        id = movieMediaId, tmdbId = movie.id, anilistId = null,
+                                        title = movieTitle, originalTitle = movieTitle,
+                                        overview = "", tagline = "", status = "",
+                                        posterUrl   = TmdbConfig.buildImageUrl(movie.posterPath),
+                                        backdropUrl = null, mediaCategory = "MOVIE",
+                                        genres = emptyList(), ageRating = "NR",
+                                        voteAverage = movie.voteAverage?.toFloat() ?: 0f,
+                                        voteCount = 0, runtime = null,
+                                        numberOfSeasons = null, numberOfEpisodes = 1,
+                                        releaseDate = movie.releaseDate,
+                                        releaseYear = movie.releaseDate?.take(4) ?: "",
+                                        trailerKey = null,
+                                        watchProvidersJson = "[]", castJson = "[]",
+                                        recommendationsJson = "[]", arcsJson = "[]"
+                                    )
+                                )
+                            }
+                            allSeasonItems.add(
+                                com.example.watchorderengine.network.gemini.RawMediaItem(
+                                    itemId       = movieMediaId,
+                                    title        = movieTitle,
+                                    overview     = "",
+                                    contentType  = "MOVIE",
+                                    seasonNumber = null,
+                                    episodeCount = 1,
+                                    releaseDate  = movie.releaseDate,
+                                    tmdbId       = movie.id,
+                                    source       = "TMDB_RELATED_MOVIE",
+                                    posterPath   = movie.posterPath
+                                )
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "TMDB movie cross-search failed for '$baseTitle': ${e.message}")
             }
         }
 
@@ -2289,25 +2355,34 @@ class MediaRepository @Inject constructor(
 
     fun getDiscoveryStream(
         category: TmdbConfig.DiscoveryCategory?,
-        providerIds: Set<Int>
+        providerIds: Set<Int>,
+        originalLanguage: String? = null
     ): Flow<PagingData<MediaSummary>> {
         return Pager(
             config = PagingConfig(pageSize = 20, enablePlaceholders = false),
-            pagingSourceFactory = { DiscoveryPagingSource(this, category, providerIds) }
+            pagingSourceFactory = { DiscoveryPagingSource(this, category, providerIds, originalLanguage) }
         ).flow
     }
 
-    suspend fun getTrendingPaged(providerIds: Set<Int> = emptySet(), page: Int = 1): List<MediaSummary> = withContext(Dispatchers.IO) {
+    suspend fun getTrendingPaged(
+        providerIds: Set<Int> = emptySet(),
+        page: Int = 1,
+        originalLanguage: String? = null
+    ): List<MediaSummary> = withContext(Dispatchers.IO) {
         try {
             val results = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
             
-            if (providerIds.isEmpty()) {
+            // TMDB's /trending endpoint has no language-filter param at all — only
+            // discover/movie and discover/tv support with_original_language — so
+            // a language filter forces the discover-endpoint path even when no
+            // provider filter is active, same as the existing provider-filter branch.
+            if (providerIds.isEmpty() && originalLanguage == null) {
                 val response = apiService.getTrending(page = page)
                 if (response.isSuccessful) response.body()?.results?.let { results.addAll(it) }
             } else {
-                val providersStr = providerIds.joinToString("|")
-                val mResp = apiService.discoverMovies(providerIds = providersStr, page = page)
-                val tResp = apiService.discoverTvShows(providerIds = providersStr, page = page)
+                val providersStr = providerIds.joinToString("|").takeIf { it.isNotEmpty() }
+                val mResp = apiService.discoverMovies(providerIds = providersStr, originalLanguage = originalLanguage, page = page)
+                val tResp = apiService.discoverTvShows(providerIds = providersStr, originalLanguage = originalLanguage, page = page)
                 
                 mResp.body()?.results?.forEach { results.add(it.copy(mediaType = "movie")) }
                 tResp.body()?.results?.forEach { results.add(it.copy(mediaType = "tv")) }
@@ -2336,7 +2411,8 @@ class MediaRepository @Inject constructor(
     suspend fun discoverByGenrePaged(
         category: TmdbConfig.DiscoveryCategory,
         providerIds: Set<Int> = emptySet(),
-        page: Int = 1
+        page: Int = 1,
+        originalLanguage: String? = null
     ): List<MediaSummary> = withContext(Dispatchers.IO) {
         try {
             val providersStr = providerIds.joinToString("|").takeIf { it.isNotBlank() }
@@ -2344,10 +2420,10 @@ class MediaRepository @Inject constructor(
             val movieResults = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
             val tvResults = mutableListOf<com.example.watchorderengine.network.model.TmdbMediaResult>()
             
-            val mResp = apiService.discoverMovies(genreId = category.movieGenreId.toString(), providerIds = providersStr, page = page)
+            val mResp = apiService.discoverMovies(genreId = category.movieGenreId.toString(), providerIds = providersStr, originalLanguage = originalLanguage, page = page)
             if (mResp.isSuccessful) mResp.body()?.results?.let { movieResults.addAll(it) }
             
-            val tResp = apiService.discoverTvShows(genreId = category.tvGenreId.toString(), providerIds = providersStr, page = page)
+            val tResp = apiService.discoverTvShows(genreId = category.tvGenreId.toString(), providerIds = providersStr, originalLanguage = originalLanguage, page = page)
             if (tResp.isSuccessful) tResp.body()?.results?.let { tvResults.addAll(it) }
 
             movieResults.forEach { result ->
@@ -2372,9 +2448,28 @@ class MediaRepository @Inject constructor(
         }
     }
 
-    suspend fun getTrending(providerIds: Set<Int> = emptySet()): List<MediaSummary> = withContext(Dispatchers.IO) {
+    suspend fun getTrending(providerIds: Set<Int> = emptySet(), originalLanguage: String? = null): List<MediaSummary> = withContext(Dispatchers.IO) {
         // Legacy fallback for 3 pages
-        (1..3).flatMap { getTrendingPaged(providerIds, it) }.distinctBy { it.id }
+        (1..3).flatMap { getTrendingPaged(providerIds, it, originalLanguage) }.distinctBy { it.id }
+    }
+
+    /**
+     * "Trending, filtered to one original-production language" — backs the
+     * Home screen's language carousels (Japanese Anime, Korean Drama, ...)
+     * and reuses the exact same discover-endpoint path Language Filters uses
+     * elsewhere.
+     */
+    suspend fun getTrendingByLanguage(languageCode: String): List<MediaSummary> = withContext(Dispatchers.IO) {
+        getTrendingPaged(originalLanguage = languageCode, page = 1)
+    }
+
+    suspend fun discoverByGenre(
+        category: TmdbConfig.DiscoveryCategory,
+        providerIds: Set<Int> = emptySet(),
+        originalLanguage: String? = null
+    ): List<MediaSummary> = withContext(Dispatchers.IO) {
+        // Legacy fallback for 2 pages
+        (1..2).flatMap { discoverByGenrePaged(category, providerIds, it, originalLanguage) }.distinctBy { it.id }.take(40)
     }
 
     suspend fun getRecentlyReleased(): List<MediaSummary> = withContext(Dispatchers.IO) {
@@ -2837,7 +2932,8 @@ class MediaRepository @Inject constructor(
             voteAverage = voteAverage?.toFloat() ?: 0f,
             releaseYear = (releaseDate ?: firstAirDate)?.take(4) ?: "",
             trackingState = null, ageRating = "NR",
-            genres = genresList, releaseDate = releaseDate ?: firstAirDate
+            genres = genresList, releaseDate = releaseDate ?: firstAirDate,
+            originalLanguage = originalLanguage
         )
     }
 }

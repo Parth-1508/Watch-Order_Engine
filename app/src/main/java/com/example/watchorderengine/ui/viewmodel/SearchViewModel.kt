@@ -26,6 +26,13 @@ class SearchViewModel @Inject constructor(
     private val _categoryFilter = MutableStateFlow<String?>(null)
     val categoryFilter: StateFlow<String?> = _categoryFilter
 
+    /** Null = "All languages". Non-null = ISO 639-1 code, e.g. "ja". Filtered client-side — see [triggerSearch]. */
+    private val _languageFilter = MutableStateFlow<String?>(null)
+    val languageFilter: StateFlow<String?> = _languageFilter
+
+    val languageOptions: List<com.example.watchorderengine.network.TmdbConfig.LanguageOption> =
+        com.example.watchorderengine.network.TmdbConfig.LANGUAGE_OPTIONS
+
     private var lastQuery = ""
     private var searchJob: Job? = null
 
@@ -36,6 +43,11 @@ class SearchViewModel @Inject constructor(
 
     fun setCategoryFilter(category: String?) {
         _categoryFilter.value = category
+        triggerSearch()
+    }
+
+    fun setLanguageFilter(code: String?) {
+        _languageFilter.value = code
         triggerSearch()
     }
 
@@ -51,12 +63,15 @@ class SearchViewModel @Inject constructor(
             delay(500) // Debounce
             try {
                 val results = repository.searchMedia(lastQuery)
-                val filtered = when (_categoryFilter.value) {
+                val categoryFiltered = when (_categoryFilter.value) {
                     "MOVIE" -> results.filter { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE }
                     "TV" -> results.filter { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.TV_SHOW }
                     "ANIME" -> results.filter { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.ANIME }
                     else -> results
                 }
+                val filtered = _languageFilter.value?.let { lang ->
+                    categoryFiltered.filter { it.originalLanguage == lang }
+                } ?: categoryFiltered
                 _searchResults.value = filtered
             } finally {
                 _isSearching.value = false

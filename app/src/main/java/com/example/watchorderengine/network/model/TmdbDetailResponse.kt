@@ -218,7 +218,8 @@ data class TmdbMediaResult(
     @Json(name = "vote_count")   val voteCount: Int? = 0,
     @Json(name = "genre_ids")    val genreIds: List<Int>?,
     @Json(name = "release_date") val releaseDate: String? = null,
-    @Json(name = "first_air_date") val firstAirDate: String? = null
+    @Json(name = "first_air_date") val firstAirDate: String? = null,
+    @Json(name = "original_language") val originalLanguage: String? = null
 )
 
 @JsonClass(generateAdapter = true)

@@ -79,6 +79,9 @@ class SettingsViewModel @Inject constructor(
     val airingAlertsEnabled: StateFlow<Boolean> = prefsRepository.airingAlertsEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val preferredHomeLanguages: StateFlow<Set<String>> = prefsRepository.preferredHomeLanguages
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), setOf("ja", "ko", "hi", "es"))
+
     private val _wipeAccountState = MutableStateFlow<WipeAccountState>(WipeAccountState.Idle)
     val wipeAccountState: StateFlow<WipeAccountState> = _wipeAccountState.asStateFlow()
 
@@ -114,6 +117,18 @@ class SettingsViewModel @Inject constructor(
 
     fun setAiringAlertsEnabled(enabled: Boolean) {
         viewModelScope.launch { prefsRepository.setAiringAlertsEnabled(enabled) }
+    }
+
+    fun toggleHomeLanguage(code: String) {
+        viewModelScope.launch {
+            val current = preferredHomeLanguages.value
+            val updated = if (code in current) {
+                if (current.size > 1) current - code else current
+            } else {
+                current + code
+            }
+            prefsRepository.setPreferredHomeLanguages(updated)
+        }
     }
 
     fun exportBackup(destinationUri: Uri) {

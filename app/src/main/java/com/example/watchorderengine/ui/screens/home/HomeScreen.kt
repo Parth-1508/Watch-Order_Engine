@@ -62,7 +62,8 @@ fun HomeScreen(
     onResumeClick: (com.example.watchorderengine.data.model.ContinueWatchingItem) -> Unit = {},
     recommendations: List<Recommendation> = emptyList(),
     trendingList: List<MediaSummary> = emptyList(),
-    recentlyReleased: List<MediaSummary> = emptyList()
+    recentlyReleased: List<MediaSummary> = emptyList(),
+    languageSections: List<com.example.watchorderengine.ui.viewmodel.HomeViewModel.LanguageSection> = emptyList()
 ) {
     val theme = LocalAppTheme.current
     val scope = rememberCoroutineScope()
@@ -316,6 +317,15 @@ fun HomeScreen(
                             onShowClick = onShowClick
                         )
                     }
+                }
+
+                // LANGUAGE-BASED SUGGESTIONS
+                items(languageSections, key = { it.code }) { section ->
+                    HorizontalMediaSection(
+                        title = section.label.uppercase(),
+                        items = section.items,
+                        onShowClick = onShowClick
+                    )
                 }
             }
         }
