@@ -64,7 +64,8 @@ fun CommunityScreen(
     viewModel: CommunityViewModel = hiltViewModel(),
     onMediaClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit = {},
-    onNotificationsClick: () -> Unit = {}
+    onNotificationsClick: () -> Unit = {},
+    onCreateGraphClick: () -> Unit = {}
 ) {
     val theme         = LocalAppTheme.current
     val uiState       by viewModel.uiState.collectAsStateWithLifecycle()
@@ -95,7 +96,15 @@ fun CommunityScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = theme.background
+        containerColor = theme.background,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onCreateGraphClick,
+                containerColor = theme.accent
+            ) {
+                Icon(Icons.Default.AccountTree, "Build a timeline")
+            }
+        }
     ) { padding ->
         Column(
             modifier = Modifier

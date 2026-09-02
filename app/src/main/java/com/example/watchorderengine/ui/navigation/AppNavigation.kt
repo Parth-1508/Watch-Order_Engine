@@ -30,6 +30,7 @@ import androidx.navigation.*
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.example.watchorderengine.ui.screens.*
+import com.example.watchorderengine.ui.screens.community.GraphBuilderScreen
 import com.example.watchorderengine.ui.screens.home.HomeScreenWrapper
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.TimelineScreen
@@ -50,6 +51,7 @@ sealed class Screen(val route: String) {
     object Search             : Screen("search")
     object Graph              : Screen("graph")
     object Community          : Screen("community")
+    object GraphBuilder       : Screen("graph_builder")
     object Notifications      : Screen("notifications")
     object Profile            : Screen("profile")
     object EditProfile        : Screen("edit_profile")
@@ -361,7 +363,15 @@ fun AppNavigation(
                     CommunityScreen(
                         onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
                         onAuthorClick = { userId -> navController.navigate(Screen.PublicProfile.route(userId)) },
-                        onNotificationsClick = { navController.navigate(Screen.Notifications.route) }
+                        onNotificationsClick = { navController.navigate(Screen.Notifications.route) },
+                        onCreateGraphClick = { navController.navigate(Screen.GraphBuilder.route) }
+                    )
+                }
+
+                composable(Screen.GraphBuilder.route) {
+                    GraphBuilderScreen(
+                        onBack = { navController.popBackStack() },
+                        onPublished = { navController.popBackStack() }
                     )
                 }
 

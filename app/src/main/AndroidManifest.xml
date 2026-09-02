@@ -100,6 +100,22 @@
                 android:resource="@xml/upcoming_calendar_widget_info" />
         </receiver>
 
+        <!--
+          Secure file sharing for social media export cards.
+          Enables ShareCardExporter.kt to share Bitmaps from the internal cache
+          directory with external apps (Discord, Twitter, etc) without
+          requiring dangerous broad storage permissions.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
