@@ -1886,10 +1886,10 @@ class MediaRepository @Inject constructor(
      * @return how many shows were successfully refreshed.
      */
     suspend fun refreshCurrentSeasonForWatchingShows(): Int = withContext(Dispatchers.IO) {
-        val watching = db.userProgressDao().getByState("WATCHING")
-        if (watching.isEmpty()) return@withContext 0
+        val tracked = db.userProgressDao().getAll().filter { it.trackingState != "DROPPED" }
+        if (tracked.isEmpty()) return@withContext 0
 
-        val tvShows = watching
+        val tvShows = tracked
             .mapNotNull { db.mediaDao().getById(it.mediaId) }
             .filter { it.mediaCategory != "MOVIE" }
         if (tvShows.isEmpty()) return@withContext 0
@@ -2032,8 +2032,8 @@ class MediaRepository @Inject constructor(
             )
         }
 
-        // 2. Trending Shows (TMDB)
-        val trendingTmdb = runCatching { getTrending() }.getOrDefault(emptyList())
+        // 2. Trending & Recently Released Shows (TMDB)
+        val trendingTmdb = runCatching { (getTrending() + getRecentlyReleased()).distinctBy { it.id } }.getOrDefault(emptyList())
         val trendingTmdbEpisodes = trendingTmdb.mapNotNull { summary ->
             val date = summary.releaseDate
             if (date != null && date >= startDateIso) {
