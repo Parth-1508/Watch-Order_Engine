@@ -120,7 +120,7 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     val preferredHomeLanguages: Flow<Set<String>> = context.dataStore.data.map { preferences ->
-        preferences[PreferencesKeys.PREFERRED_HOME_LANGUAGES] ?: setOf("ja", "ko", "hi", "es")
+        preferences[PreferencesKeys.PREFERRED_HOME_LANGUAGES] ?: setOf("ja", "ko", "hi", "ta", "te", "mr", "es")
     }
 
     suspend fun setPreferredHomeLanguages(languages: Set<String>) {
