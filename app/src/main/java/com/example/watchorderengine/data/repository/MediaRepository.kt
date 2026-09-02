@@ -2455,7 +2455,7 @@ class MediaRepository @Inject constructor(
 
     /**
      * "Trending, filtered to one original-production language" — backs the
-     * Home screen's language carousels (Japanese Anime, Korean Drama, ...)
+     * Home screen's language carousels (Japanese Shows & Anime, Korean Dramas & Movies, ...)
      * and reuses the exact same discover-endpoint path Language Filters uses
      * elsewhere.
      */

@@ -192,20 +192,20 @@ object TmdbConfig {
     data class HomeLanguageSection(val code: String, val label: String)
 
     val HOME_LANGUAGE_SECTIONS: List<HomeLanguageSection> = listOf(
-        HomeLanguageSection("ja", "Japanese Anime"),
-        HomeLanguageSection("ko", "Korean Drama"),
-        HomeLanguageSection("hi", "Hindi Cinema"),
-        HomeLanguageSection("es", "Spanish Series"),
-        HomeLanguageSection("fr", "French Cinema"),
-        HomeLanguageSection("de", "German Series"),
-        HomeLanguageSection("zh", "Chinese Cinema"),
-        HomeLanguageSection("th", "Thai Cinema"),
-        HomeLanguageSection("en", "English Content"),
+        HomeLanguageSection("ja", "Japanese Shows & Anime"),
+        HomeLanguageSection("ko", "Korean Dramas & Movies"),
+        HomeLanguageSection("hi", "Hindi Cinema & Shows"),
+        HomeLanguageSection("es", "Spanish Series & Movies"),
+        HomeLanguageSection("fr", "French Cinema & TV"),
+        HomeLanguageSection("de", "German Series & Film"),
+        HomeLanguageSection("zh", "Chinese Cinema & Shows"),
+        HomeLanguageSection("th", "Thai Cinema & TV"),
+        HomeLanguageSection("en", "English Shows & Movies"),
     )
 
     fun labelForLanguage(code: String): String {
         return HOME_LANGUAGE_SECTIONS.find { it.code == code }?.label
-            ?: LANGUAGE_OPTIONS.find { it.code == code }?.let { "${it.label} Content" }
+            ?: LANGUAGE_OPTIONS.find { it.code == code }?.let { "${it.label} Shows & Movies" }
             ?: "Trending in $code"
     }
 }
