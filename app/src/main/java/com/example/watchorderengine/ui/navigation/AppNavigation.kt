@@ -52,6 +52,7 @@ sealed class Screen(val route: String) {
     object Graph              : Screen("graph")
     object Community          : Screen("community")
     object GraphBuilder       : Screen("graph_builder")
+    object FriendActivity     : Screen("friend_activity")
     object Notifications      : Screen("notifications")
     object Profile            : Screen("profile")
     object EditProfile        : Screen("edit_profile")
@@ -503,6 +504,15 @@ fun AppNavigation(
                         },
                         onBack = {
                             navController.popBackStack()
+                        }
+                    )
+                }
+
+                composable(Screen.FriendActivity.route) {
+                    FriendActivityScreen(
+                        onBack = { navController.popBackStack() },
+                        onMediaClick = { mediaId ->
+                            navController.navigate(Screen.Detail.route(mediaId))
                         }
                     )
                 }

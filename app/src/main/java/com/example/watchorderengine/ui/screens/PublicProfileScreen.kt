@@ -76,6 +76,7 @@ fun PublicProfileScreen(
                     )
                 }
                 is PublicProfileUiState.Loaded -> {
+                    val isFollowing by viewModel.isFollowing.collectAsStateWithLifecycle()
                     PublicProfileContent(
                         displayName = state.profile.displayName,
                         avatarUrl = state.profile.avatarUrl,
@@ -83,6 +84,9 @@ fun PublicProfileScreen(
                         isFavoritesPublic = state.profile.isFavoritesPublic,
                         watchStats = state.profile.watchStats,
                         favoriteShows = state.profile.favoriteShows,
+                        isOwnProfile = viewModel.isOwnProfile,
+                        isFollowing = isFollowing,
+                        onToggleFollow = { viewModel.toggleFollow(state.profile.displayName, state.profile.avatarUrl) },
                         onMediaClick = onMediaClick,
                         getAvatarModel = { viewModel.getAvatarModel(it) }
                     )
@@ -100,6 +104,9 @@ private fun PublicProfileContent(
     isFavoritesPublic: Boolean,
     watchStats: UserStats?,
     favoriteShows: List<MediaSummary>,
+    isOwnProfile: Boolean,
+    isFollowing: Boolean,
+    onToggleFollow: () -> Unit,
     onMediaClick: (String) -> Unit,
     getAvatarModel: (String?) -> Any?
 ) {
@@ -111,7 +118,7 @@ private fun PublicProfileContent(
             .verticalScroll(rememberScrollState())
     ) {
         // Header
-        Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(230.dp)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -130,18 +137,43 @@ private fun PublicProfileContent(
                     model = getAvatarModel(avatarUrl) ?: "https://ui-avatars.com/api/?name=${displayName.ifBlank { "User" }}&background=random&color=fff",
                     contentDescription = "Profile Picture",
                     modifier = Modifier
-                        .size(96.dp)
+                        .size(88.dp)
                         .clip(CircleShape)
                         .border(3.dp, theme.accent, CircleShape),
                     contentScale = ContentScale.Crop
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     displayName.ifBlank { "Explorer" }.uppercase(),
                     color = theme.textPrimary,
-                    fontSize = 22.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Black
                 )
+
+                if (!isOwnProfile) {
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = onToggleFollow,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isFollowing) theme.surface else theme.accent,
+                            contentColor = if (isFollowing) theme.textPrimary else Color.Black
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.height(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFollowing) Icons.Default.Check else Icons.Default.PersonAdd,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (isFollowing) "FOLLOWING" else "FOLLOW",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
                 
                 if (watchStats?.profileRank != null) {
                     Surface(

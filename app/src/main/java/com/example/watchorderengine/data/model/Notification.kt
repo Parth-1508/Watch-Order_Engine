@@ -8,7 +8,8 @@ enum class NotificationType {
     IMPORT,        // Someone imported your timeline
     RECOMMENDATION, // Personalized recommendation
     STREAK,        // Daily streak reminder
-    SYSTEM         // System updates
+    SYSTEM,        // System updates
+    TIMELINE_SHARE // Someone sent you a timeline
 }
 
 @Serializable

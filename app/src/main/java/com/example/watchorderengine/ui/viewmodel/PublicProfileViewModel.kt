@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.UserProfile
+import com.example.watchorderengine.data.repository.FriendActivityRepository
 import com.example.watchorderengine.data.repository.UserProfileRepository
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,6 +24,7 @@ sealed interface PublicProfileUiState {
 @HiltViewModel
 class PublicProfileViewModel @Inject constructor(
     private val repository: UserProfileRepository,
+    private val friendActivityRepository: FriendActivityRepository,
     private val auth: FirebaseAuth,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -38,8 +40,35 @@ class PublicProfileViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<PublicProfileUiState>(PublicProfileUiState.Loading)
     val uiState: StateFlow<PublicProfileUiState> = _uiState.asStateFlow()
 
+    private val _isFollowing = MutableStateFlow(false)
+    val isFollowing: StateFlow<Boolean> = _isFollowing.asStateFlow()
+
     init {
         load()
+        checkFollowStatus()
+    }
+
+    private fun checkFollowStatus() {
+        val currentUid = auth.currentUser?.uid ?: return
+        if (isOwnProfile) return
+        viewModelScope.launch {
+            val following = friendActivityRepository.observeFollowingOnce(currentUid)
+            _isFollowing.value = following.any { it.followedUserId == userId }
+        }
+    }
+
+    fun toggleFollow(displayName: String, avatarUrl: String?) {
+        val currentUid = auth.currentUser?.uid ?: return
+        if (isOwnProfile) return
+        viewModelScope.launch {
+            if (_isFollowing.value) {
+                friendActivityRepository.unfollowUser(currentUid, userId)
+                _isFollowing.value = false
+            } else {
+                friendActivityRepository.followUser(currentUid, userId, displayName, avatarUrl)
+                _isFollowing.value = true
+            }
+        }
     }
 
     fun load() {

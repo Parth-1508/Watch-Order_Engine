@@ -65,6 +65,7 @@ fun CommunityScreen(
     onMediaClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit = {},
     onNotificationsClick: () -> Unit = {},
+    onFriendActivityClick: () -> Unit = {},
     onCreateGraphClick: () -> Unit = {}
 ) {
     val theme         = LocalAppTheme.current
@@ -116,6 +117,7 @@ fun CommunityScreen(
                 searchQuery = searchQuery,
                 onSearchChange = { viewModel.onSearchQueryChanged(it) },
                 onNotificationsClick = onNotificationsClick,
+                onFriendActivityClick = onFriendActivityClick,
                 hasUnreadNotifications = hasUnreadNotifs,
                 isLoading = uiState is CommunityUiState.Loading
             )
@@ -436,6 +438,7 @@ fun CommunityHeader(
     searchQuery: String,
     onSearchChange: (String) -> Unit,
     onNotificationsClick: () -> Unit = {},
+    onFriendActivityClick: () -> Unit = {},
     hasUnreadNotifications: Boolean = false,
     isLoading: Boolean = false
 ) {
@@ -473,6 +476,13 @@ fun CommunityHeader(
                 modifier = Modifier.size(52.dp)
             )
             Spacer(Modifier.weight(1f))
+            IconButton(
+                onClick = onFriendActivityClick,
+                modifier = Modifier.background(theme.surface, CircleShape).size(40.dp)
+            ) {
+                Icon(Icons.Default.People, "Friend Activity", tint = theme.textSecondary, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(8.dp))
             Box {
                 IconButton(
                     onClick = onNotificationsClick,

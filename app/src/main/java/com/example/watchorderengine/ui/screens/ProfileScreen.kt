@@ -53,6 +53,7 @@ fun ProfileScreen(
     onRateMediaClick: () -> Unit = {},
     onImportClick: () -> Unit = {},
     onEditProfileClick: () -> Unit = {},
+    onFriendActivityClick: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -94,11 +95,15 @@ fun ProfileScreen(
                                 )
                         )
 
-                        IconButton(
-                            onClick = onEditProfileClick,
+                        Row(
                             modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)
                         ) {
-                            Icon(Icons.Default.ManageAccounts, "Edit public profile & privacy", tint = theme.textPrimary)
+                            IconButton(onClick = onFriendActivityClick) {
+                                Icon(Icons.Default.People, "Friend Activity", tint = theme.textPrimary)
+                            }
+                            IconButton(onClick = onEditProfileClick) {
+                                Icon(Icons.Default.ManageAccounts, "Edit public profile & privacy", tint = theme.textPrimary)
+                            }
                         }
 
                         Column(
