@@ -365,6 +365,7 @@ fun AppNavigation(
                         onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
                         onAuthorClick = { userId -> navController.navigate(Screen.PublicProfile.route(userId)) },
                         onNotificationsClick = { navController.navigate(Screen.Notifications.route) },
+                        onFriendActivityClick = { navController.navigate(Screen.FriendActivity.route) },
                         onCreateGraphClick = { navController.navigate(Screen.GraphBuilder.route) }
                     )
                 }
@@ -402,7 +403,8 @@ fun AppNavigation(
                         onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
                         onRateMediaClick = { navController.navigate(Screen.Discovery.route) },
                         onImportClick = { navController.navigate(Screen.ImportList.route) },
-                        onEditProfileClick = { navController.navigate(Screen.EditProfile.route) }
+                        onEditProfileClick = { navController.navigate(Screen.EditProfile.route) },
+                        onFriendActivityClick = { navController.navigate(Screen.FriendActivity.route) }
                     )
                 }
 

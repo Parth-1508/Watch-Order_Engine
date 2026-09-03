@@ -46,6 +46,7 @@ import com.example.watchorderengine.data.cache.TmdbFetchState
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
 import com.example.watchorderengine.network.model.TmdbMediaDetail
 import com.example.watchorderengine.network.model.TmdbMediaType
+import com.example.watchorderengine.ui.components.TimelineCommentsSheet
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.components.BranchingTimelineView
@@ -896,6 +897,7 @@ fun CommunityPostDetailSheet(
 
     val isOwner = currentUserId != null && currentUserId == post.userId
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showCommentsSheet by remember { mutableStateOf(false) }
 
     if (showDeleteConfirm) {
         AlertDialog(
@@ -1000,7 +1002,26 @@ fun CommunityPostDetailSheet(
                             }
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Discussion Comments Button
+                            Surface(
+                                onClick = { showCommentsSheet = true },
+                                modifier = Modifier.size(44.dp),
+                                shape = CircleShape,
+                                color = theme.surface.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, theme.border.copy(alpha = 0.3f)),
+                                tonalElevation = 2.dp
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Forum,
+                                        contentDescription = "Discussion",
+                                        tint = theme.accent,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
                             // Import Button
                             Surface(
                                 onClick = onImport,
@@ -1110,6 +1131,13 @@ fun CommunityPostDetailSheet(
                     }
                 }
             }
+        }
+
+        if (showCommentsSheet) {
+            TimelineCommentsSheet(
+                universeId = post.postId,
+                onDismiss = { showCommentsSheet = false }
+            )
         }
     }
 }

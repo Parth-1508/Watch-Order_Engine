@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.watchorderengine.data.model.SharedTimelineCodec
 import com.example.watchorderengine.ui.components.ShareTimelineDialog
+import com.example.watchorderengine.ui.components.TimelineCommentsSheet
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.components.BranchingTimelineView
 import com.example.watchorderengine.ui.viewmodel.CommunityViewModel
@@ -55,6 +56,7 @@ fun TimelineScreen(
 
     var showShareDialog by remember { mutableStateOf(false) }
     var showExportImageDialog by remember { mutableStateOf(false) }
+    var showCommentsSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(universeId) { viewModel.initialize(universeId) }
 
@@ -118,6 +120,7 @@ fun TimelineScreen(
             TimelineHeader(
                 uiState = uiState,
                 onBack = onBack,
+                onCommentsClick = { showCommentsSheet = true },
                 onSpoilerToggle = { viewModel.toggleSpoilerShield() },
                 onAskAiClick = { viewModel.askAiAboutThisOrder() },
                 onShareCommunityClick = { showShareDialog = true },
@@ -173,6 +176,13 @@ fun TimelineScreen(
             }
         }
 
+        if (showCommentsSheet) {
+            TimelineCommentsSheet(
+                universeId = universeId,
+                onDismiss = { showCommentsSheet = false }
+            )
+        }
+
         if (explanationState !is ExplanationState.Idle) {
             AskAiDialog(
                 state = explanationState,
@@ -187,6 +197,7 @@ fun TimelineScreen(
 private fun TimelineHeader(
     uiState: TimelineUiState,
     onBack: () -> Unit,
+    onCommentsClick: () -> Unit,
     onSpoilerToggle: () -> Unit,
     onAskAiClick: () -> Unit,
     onShareCommunityClick: () -> Unit,
@@ -281,6 +292,24 @@ private fun TimelineHeader(
                             showShareMenu = false
                             onExportImageClick()
                         }
+                    )
+                }
+            }
+
+            Surface(
+                onClick = onCommentsClick,
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = theme.surface,
+                border = BorderStroke(1.dp, theme.border.copy(alpha = 0.1f)),
+                tonalElevation = 2.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Forum, 
+                        contentDescription = "Discussion Comments", 
+                        tint = theme.accent,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
