@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.example.watchorderengine.data.model.ActorSummary
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.UserStats
 import com.example.watchorderengine.ui.screens.home.ThemeBorderModifier
@@ -37,6 +39,7 @@ import com.example.watchorderengine.ui.viewmodel.PublicProfileViewModel
 fun PublicProfileScreen(
     onBack: () -> Unit,
     onMediaClick: (String) -> Unit,
+    onActorClick: (Int) -> Unit = {},
     viewModel: PublicProfileViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -82,12 +85,15 @@ fun PublicProfileScreen(
                         avatarUrl = state.profile.avatarUrl,
                         isStatsPublic = state.profile.isStatsPublic,
                         isFavoritesPublic = state.profile.isFavoritesPublic,
+                        isFavoriteActorsPublic = state.profile.isFavoriteActorsPublic,
                         watchStats = state.profile.watchStats,
                         favoriteShows = state.profile.favoriteShows,
+                        favoriteActors = state.profile.favoriteActors,
                         isOwnProfile = viewModel.isOwnProfile,
                         isFollowing = isFollowing,
                         onToggleFollow = { viewModel.toggleFollow() },
                         onMediaClick = onMediaClick,
+                        onActorClick = onActorClick,
                         getAvatarModel = { viewModel.getAvatarModel(it) }
                     )
                 }
@@ -102,12 +108,15 @@ private fun PublicProfileContent(
     avatarUrl: String?,
     isStatsPublic: Boolean,
     isFavoritesPublic: Boolean,
+    isFavoriteActorsPublic: Boolean = true,
     watchStats: UserStats?,
     favoriteShows: List<MediaSummary>,
+    favoriteActors: List<ActorSummary> = emptyList(),
     isOwnProfile: Boolean,
     isFollowing: Boolean,
     onToggleFollow: () -> Unit,
     onMediaClick: (String) -> Unit,
+    onActorClick: (Int) -> Unit = {},
     getAvatarModel: (String?) -> Any?
 ) {
     val theme = LocalAppTheme.current
@@ -291,6 +300,46 @@ private fun PublicProfileContent(
                     fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
+            }
+        }
+
+        // Favorite Actors
+        if (isFavoriteActorsPublic && favoriteActors.isNotEmpty()) {
+            SectionHeader("FAVORITE ACTORS")
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(bottom = 24.dp)
+            ) {
+                items(favoriteActors, key = { it.id }) { actor ->
+                    Column(
+                        modifier = Modifier
+                            .width(76.dp)
+                            .clickable { onActorClick(actor.id) },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        AsyncImage(
+                            model = actor.profilePath,
+                            contentDescription = actor.name,
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .background(theme.surface)
+                                .border(2.dp, theme.accent, CircleShape),
+                            contentScale = ContentScale.Crop,
+                            error = rememberVectorPainter(Icons.Default.AccountCircle)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            actor.name,
+                            color = theme.textPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         }
 

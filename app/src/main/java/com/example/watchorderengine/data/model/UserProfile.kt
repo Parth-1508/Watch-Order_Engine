@@ -19,6 +19,7 @@ data class UserProfile(
 
     var isStatsPublic: Boolean = false,
     var isFavoritesPublic: Boolean = false,
+    var isFavoriteActorsPublic: Boolean = true,
     var isActivityPublic: Boolean = true,
 
     var followersCount: Long = 0L,
@@ -27,6 +28,9 @@ data class UserProfile(
     /** kotlinx.serialization-encoded `List<MediaSummary>`. Decode via [favoriteShows]. */
     var favoriteShowsJson: String = "",
 
+    /** kotlinx.serialization-encoded `List<ActorSummary>`. Decode via [favoriteActors]. */
+    var favoriteActorsJson: String = "",
+
     /** kotlinx.serialization-encoded [UserStats], or "" if never computed. Decode via [watchStats]. */
     var watchStatsJson: String = "",
 ) {
@@ -34,6 +38,11 @@ data class UserProfile(
     @get:Exclude
     val favoriteShows: List<MediaSummary>
         get() = FavoriteShowsCodec.decode(favoriteShowsJson)
+
+    /** Decoded [favoriteActorsJson]. Returns an empty list if malformed or unset. */
+    @get:Exclude
+    val favoriteActors: List<ActorSummary>
+        get() = FavoriteActorsCodec.decode(favoriteActorsJson)
 
     /** Decoded [watchStatsJson]. Returns null if malformed or unset. */
     @get:Exclude
@@ -57,6 +66,23 @@ object FavoriteShowsCodec {
         if (json.isBlank()) return emptyList()
         return try {
             userProfileJson.decodeFromString<List<MediaSummary>>(json)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+}
+
+/**
+ * Encode/decode helpers for [UserProfile.favoriteActorsJson].
+ */
+object FavoriteActorsCodec {
+    fun encode(actors: List<ActorSummary>): String =
+        userProfileJson.encodeToString(actors)
+
+    fun decode(json: String): List<ActorSummary> {
+        if (json.isBlank()) return emptyList()
+        return try {
+            userProfileJson.decodeFromString<List<ActorSummary>>(json)
         } catch (e: Exception) {
             emptyList()
         }

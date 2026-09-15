@@ -415,6 +415,7 @@ fun AppNavigation(
                 composable(Screen.Profile.route) {
                     ProfileScreen(
                         onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                        onActorClick = { personId -> navController.navigate(Screen.ActorDetail.route(personId)) },
                         onRateMediaClick = { navController.navigate(Screen.Discovery.route) },
                         onImportClick = { navController.navigate(Screen.ImportList.route) },
                         onEditProfileClick = { navController.navigate(Screen.EditProfile.route) },
@@ -434,7 +435,8 @@ fun AppNavigation(
                 ) {
                     PublicProfileScreen(
                         onBack       = { navController.popBackStack() },
-                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) }
+                        onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                        onActorClick = { personId -> navController.navigate(Screen.ActorDetail.route(personId)) }
                     )
                 }
 
