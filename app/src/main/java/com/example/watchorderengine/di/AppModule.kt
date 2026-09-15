@@ -2,6 +2,7 @@ package com.example.watchorderengine.di
 
 import android.content.Context
 import com.example.watchorderengine.data.db.WatchOrderDatabase
+import com.example.watchorderengine.data.db.dao.FavoriteActorDao
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -53,6 +54,10 @@ object AppModule {
     @Provides
     fun provideMediaDao(db: WatchOrderDatabase): com.example.watchorderengine.data.db.dao.MediaDao =
         db.mediaDao()
+
+    @Provides
+    fun provideFavoriteActorDao(db: WatchOrderDatabase): FavoriteActorDao =
+        db.favoriteActorDao()
 
     @Provides
     @Singleton

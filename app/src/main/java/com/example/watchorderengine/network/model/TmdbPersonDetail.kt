@@ -4,6 +4,23 @@ import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
+data class TmdbPersonSearchResponse(
+    @Json(name = "page")          val page: Int,
+    @Json(name = "results")       val results: List<TmdbPersonSearchResult>?,
+    @Json(name = "total_pages")   val totalPages: Int,
+    @Json(name = "total_results") val totalResults: Int
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbPersonSearchResult(
+    @Json(name = "id")                   val id: Int,
+    @Json(name = "name")                 val name: String,
+    @Json(name = "profile_path")         val profilePath: String?,
+    @Json(name = "known_for_department") val knownForDepartment: String?,
+    @Json(name = "popularity")           val popularity: Double?
+)
+
+@JsonClass(generateAdapter = true)
 data class TmdbPersonDetail(
     @Json(name = "id")                  val id: Int,
     @Json(name = "name")                val name: String,

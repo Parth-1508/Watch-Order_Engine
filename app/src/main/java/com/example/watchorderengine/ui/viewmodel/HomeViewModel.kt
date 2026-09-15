@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import com.example.watchorderengine.data.repository.ActorRepository
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import java.util.Calendar
@@ -27,7 +28,8 @@ class HomeViewModel @Inject constructor(
     private val db: WatchOrderDatabase,
     private val userPrefs: UserPreferencesRepository,
     private val userProfileRepository: UserProfileRepository,
-    private val notificationRepository: NotificationRepository
+    private val notificationRepository: NotificationRepository,
+    private val actorRepository: ActorRepository
 ) : ViewModel() {
 
     private val _selectedCategory = MutableStateFlow("Watching")
@@ -47,6 +49,9 @@ class HomeViewModel @Inject constructor(
 
     private val _languageSections = MutableStateFlow<List<LanguageSection>>(emptyList())
     val languageSections: StateFlow<List<LanguageSection>> = _languageSections.asStateFlow()
+
+    private val _favoriteActorsSection = MutableStateFlow<List<MediaSummary>>(emptyList())
+    val favoriteActorsSection: StateFlow<List<MediaSummary>> = _favoriteActorsSection.asStateFlow()
 
     private val _recommendations = MutableStateFlow<List<Recommendation>>(emptyList())
     val recommendations: StateFlow<List<Recommendation>> = _recommendations.asStateFlow()
@@ -90,12 +95,26 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
+            actorRepository.syncFavoriteActorsFromCloud()
             refreshData()
             updateDailyStreak()
         }
         observeTasteProfile()
         observeNextUp()
         observeLanguagePreferences()
+        observeFavoriteActors()
+    }
+
+    private fun observeFavoriteActors() {
+        viewModelScope.launch(Dispatchers.IO) {
+            userPrefs.showFavoriteActorsRow.collect { enabled ->
+                if (enabled) {
+                    _favoriteActorsSection.value = actorRepository.getTitlesForFavoriteActors()
+                } else {
+                    _favoriteActorsSection.value = emptyList()
+                }
+            }
+        }
     }
 
     private fun observeLanguagePreferences() {

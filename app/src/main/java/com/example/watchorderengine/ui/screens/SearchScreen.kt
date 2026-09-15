@@ -13,20 +13,27 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import com.example.watchorderengine.data.model.ActorSummary
 import com.example.watchorderengine.ui.components.MediaGridItem
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.SearchViewModel
@@ -36,11 +43,13 @@ import com.example.watchorderengine.ui.viewmodel.SearchViewModel
 fun SearchScreen(
     onMediaClick: (String) -> Unit,
     onBack: () -> Unit,
+    onActorClick: (Int) -> Unit = {},
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
     var query by remember { mutableStateOf("") }
     val results by viewModel.searchResults.collectAsStateWithLifecycle()
+    val actors by viewModel.actorResults.collectAsStateWithLifecycle()
     val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
     val activeFilter by viewModel.categoryFilter.collectAsStateWithLifecycle()
     val languageFilter by viewModel.languageFilter.collectAsStateWithLifecycle()
@@ -55,7 +64,7 @@ fun SearchScreen(
                             query = it
                             viewModel.search(it)
                         },
-                        placeholder = { Text("Search Movies, TV, Anime...", fontSize = 14.sp) },
+                        placeholder = { Text("Search Movies, TV, Actors...", fontSize = 14.sp) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(end = 16.dp)
@@ -128,26 +137,35 @@ fun SearchScreen(
                         onClick = { viewModel.setCategoryFilter("ANIME") }
                     )
                 }
+                item {
+                    SearchFilterChip(
+                        label = "PEOPLE",
+                        isSelected = activeFilter == "PEOPLE",
+                        onClick = { viewModel.setCategoryFilter("PEOPLE") }
+                    )
+                }
             }
 
             // Language filter chips
-            LazyRow(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    SearchFilterChip(
-                        label = "ALL LANGUAGES",
-                        isSelected = languageFilter == null,
-                        onClick = { viewModel.setLanguageFilter(null) }
-                    )
-                }
-                items(viewModel.languageOptions) { option ->
-                    SearchFilterChip(
-                        label = option.label.uppercase(),
-                        isSelected = languageFilter == option.code,
-                        onClick = { viewModel.setLanguageFilter(option.code) }
-                    )
+            if (activeFilter != "PEOPLE") {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        SearchFilterChip(
+                            label = "ALL LANGUAGES",
+                            isSelected = languageFilter == null,
+                            onClick = { viewModel.setLanguageFilter(null) }
+                        )
+                    }
+                    items(viewModel.languageOptions) { option ->
+                        SearchFilterChip(
+                            label = option.label.uppercase(),
+                            isSelected = languageFilter == option.code,
+                            onClick = { viewModel.setLanguageFilter(option.code) }
+                        )
+                    }
                 }
             }
 
@@ -155,22 +173,134 @@ fun SearchScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = theme.accent)
             }
 
-            if (results.isEmpty() && query.isNotEmpty() && !isSearching) {
+            if (results.isEmpty() && actors.isEmpty() && query.isNotEmpty() && !isSearching) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No results found for \"$query\"", color = theme.textSecondary)
                 }
             }
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(1f).fillMaxWidth()
-            ) {
-                items(results, key = { it.id }) { media ->
-                    MediaGridItem(media = media, onClick = { onMediaClick(media.id) })
+            if (activeFilter == "PEOPLE") {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                ) {
+                    items(actors, key = { it.id }) { actor ->
+                        ActorGridCard(actor = actor, onClick = { onActorClick(actor.id) })
+                    }
                 }
+            } else {
+                Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    // Show top actors row on ALL tab if matching actors exist
+                    if (activeFilter == null && actors.isNotEmpty()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                            Text(
+                                "PEOPLE",
+                                color = theme.textSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(start = 16.dp, bottom = 6.dp)
+                            )
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(actors.take(6), key = { it.id }) { actor ->
+                                    ActorAvatarCard(actor = actor, onClick = { onActorClick(actor.id) })
+                                }
+                            }
+                        }
+                    }
+
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(results, key = { it.id }) { media ->
+                            MediaGridItem(media = media, onClick = { onMediaClick(media.id) })
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActorAvatarCard(
+    actor: ActorSummary,
+    onClick: () -> Unit
+) {
+    val theme = LocalAppTheme.current
+    Column(
+        modifier = Modifier.width(70.dp).clickable { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        AsyncImage(
+            model = actor.profilePath,
+            contentDescription = actor.name,
+            modifier = Modifier.size(56.dp).clip(CircleShape).background(theme.surface),
+            contentScale = ContentScale.Crop,
+            error = rememberVectorPainter(Icons.Default.AccountCircle)
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            actor.name,
+            color = theme.textPrimary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun ActorGridCard(
+    actor: ActorSummary,
+    onClick: () -> Unit
+) {
+    val theme = LocalAppTheme.current
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        color = theme.surface,
+        border = BorderStroke(1.dp, theme.border.copy(alpha = 0.1f))
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            AsyncImage(
+                model = actor.profilePath,
+                contentDescription = actor.name,
+                modifier = Modifier.size(64.dp).clip(CircleShape).background(theme.background),
+                contentScale = ContentScale.Crop,
+                error = rememberVectorPainter(Icons.Default.AccountCircle)
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                actor.name,
+                color = theme.textPrimary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!actor.knownForDepartment.isNullOrBlank()) {
+                Text(
+                    actor.knownForDepartment,
+                    color = theme.textSecondary,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

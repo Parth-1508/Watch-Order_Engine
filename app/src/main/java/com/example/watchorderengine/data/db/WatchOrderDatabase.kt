@@ -209,6 +209,19 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
     }
 }
 
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `favorite_actors` (
+                `id`          INTEGER NOT NULL PRIMARY KEY,
+                `name`        TEXT NOT NULL,
+                `profilePath` TEXT,
+                `addedAt`     INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(
@@ -221,9 +234,10 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
         DiscoverySkippedEntity::class,
         PendingSyncTaskEntity::class,
         ReviewEntity::class,
-        NotifiedEpisodeEntity::class
+        NotifiedEpisodeEntity::class,
+        FavoriteActorEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -238,6 +252,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
     abstract fun pendingSyncTaskDao(): PendingSyncTaskDao
     abstract fun reviewDao(): ReviewDao
     abstract fun notifiedEpisodeDao(): NotifiedEpisodeDao
+    abstract fun favoriteActorDao(): FavoriteActorDao
 
     /**
      * Surgically clears only the cached metadata (shows, seasons, episodes)
@@ -270,7 +285,7 @@ abstract class WatchOrderDatabase : RoomDatabase() {
                     WatchOrderDatabase::class.java,
                     "watchorder.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

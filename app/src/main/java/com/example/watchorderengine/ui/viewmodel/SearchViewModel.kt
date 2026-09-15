@@ -2,7 +2,9 @@ package com.example.watchorderengine.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.watchorderengine.data.model.ActorSummary
 import com.example.watchorderengine.data.model.MediaSummary
+import com.example.watchorderengine.data.repository.ActorRepository
 import com.example.watchorderengine.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -14,11 +16,15 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val repository: MediaRepository
+    private val repository: MediaRepository,
+    private val actorRepository: ActorRepository
 ) : ViewModel() {
 
     private val _searchResults = MutableStateFlow<List<MediaSummary>>(emptyList())
     val searchResults: StateFlow<List<MediaSummary>> = _searchResults
+
+    private val _actorResults = MutableStateFlow<List<ActorSummary>>(emptyList())
+    val actorResults: StateFlow<List<ActorSummary>> = _actorResults
 
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
@@ -55,6 +61,7 @@ class SearchViewModel @Inject constructor(
         searchJob?.cancel()
         if (lastQuery.isBlank()) {
             _searchResults.value = emptyList()
+            _actorResults.value = emptyList()
             return
         }
 
@@ -63,6 +70,9 @@ class SearchViewModel @Inject constructor(
             delay(500) // Debounce
             try {
                 val results = repository.searchMedia(lastQuery)
+                val actors = actorRepository.searchActors(lastQuery)
+                _actorResults.value = actors
+
                 val categoryFiltered = when (_categoryFilter.value) {
                     "MOVIE" -> results.filter { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE }
                     "TV" -> results.filter { it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.TV_SHOW }

@@ -40,6 +40,7 @@ class UserPreferencesRepository(private val context: Context) {
         val LAST_SMART_NOTIF_TRIGGER = longPreferencesKey("last_smart_notif_trigger")
         val AIRING_ALERTS_ENABLED = booleanPreferencesKey("airing_alerts_enabled")
         val PREFERRED_HOME_LANGUAGES = stringSetPreferencesKey("preferred_home_languages")
+        val SHOW_FAVORITE_ACTORS_ROW = booleanPreferencesKey("show_favorite_actors_row")
     }
 
     val isTasteProfileCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -121,6 +122,14 @@ class UserPreferencesRepository(private val context: Context) {
 
     val preferredHomeLanguages: Flow<Set<String>> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.PREFERRED_HOME_LANGUAGES] ?: setOf("ja", "ko", "hi", "ta", "te", "mr", "es")
+    }
+
+    val showFavoriteActorsRow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.SHOW_FAVORITE_ACTORS_ROW] ?: true
+    }
+
+    suspend fun setShowFavoriteActorsRow(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.SHOW_FAVORITE_ACTORS_ROW] = enabled }
     }
 
     suspend fun setPreferredHomeLanguages(languages: Set<String>) {

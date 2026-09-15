@@ -183,6 +183,15 @@ data class DiscoverySkippedEntity(
     val skippedAt: Long = System.currentTimeMillis()
 )
 
+@Serializable
+@Entity(tableName = "favorite_actors")
+data class FavoriteActorEntity(
+    @PrimaryKey val id: Int,
+    val name: String,
+    val profilePath: String?,
+    val addedAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "notified_episodes")
 data class NotifiedEpisodeEntity(
     /** Matches EpisodeEntity.id exactly: "{mediaId}_s{seasonNumber}e{episodeNumber}". */

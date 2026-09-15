@@ -392,3 +392,32 @@ interface NotifiedEpisodeDao {
     @Query("DELETE FROM notified_episodes WHERE notifiedAt < :cutoffMillis")
     suspend fun deleteOlderThan(cutoffMillis: Long)
 }
+
+// ─── FavoriteActorDao ────────────────────────────────────────────────────────
+
+@Dao
+interface FavoriteActorDao {
+    @Query("SELECT * FROM favorite_actors ORDER BY addedAt DESC")
+    fun observeAll(): Flow<List<FavoriteActorEntity>>
+
+    @Query("SELECT * FROM favorite_actors ORDER BY addedAt DESC")
+    suspend fun getAll(): List<FavoriteActorEntity>
+
+    @Query("SELECT * FROM favorite_actors WHERE id = :id")
+    suspend fun getById(id: Int): FavoriteActorEntity?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM favorite_actors WHERE id = :id)")
+    fun observeIsFavorite(id: Int): Flow<Boolean>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM favorite_actors WHERE id = :id)")
+    suspend fun isFavorite(id: Int): Boolean
+
+    @Upsert
+    suspend fun upsert(entity: FavoriteActorEntity)
+
+    @Upsert
+    suspend fun upsertAll(entities: List<FavoriteActorEntity>)
+
+    @Query("DELETE FROM favorite_actors WHERE id = :id")
+    suspend fun deleteById(id: Int)
+}

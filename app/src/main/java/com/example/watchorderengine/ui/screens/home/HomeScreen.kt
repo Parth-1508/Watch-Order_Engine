@@ -42,6 +42,7 @@ import com.example.watchorderengine.data.recommendation.Recommendation
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.TrackingState
+import com.example.watchorderengine.ui.viewmodel.HomeViewModel
 
 // ─── "Next Up" data model ─────────────────────────────────────────────────────
 
@@ -63,7 +64,8 @@ fun HomeScreen(
     recommendations: List<Recommendation> = emptyList(),
     trendingList: List<MediaSummary> = emptyList(),
     recentlyReleased: List<MediaSummary> = emptyList(),
-    languageSections: List<com.example.watchorderengine.ui.viewmodel.HomeViewModel.LanguageSection> = emptyList()
+    languageSections: List<HomeViewModel.LanguageSection> = emptyList(),
+    favoriteActorsSection: List<MediaSummary> = emptyList()
 ) {
     val theme = LocalAppTheme.current
     val scope = rememberCoroutineScope()
@@ -314,6 +316,17 @@ fun HomeScreen(
                         HorizontalMediaSection(
                             title = "TRENDING NOW",
                             items = trendingList,
+                            onShowClick = onShowClick
+                        )
+                    }
+                }
+
+                // FAVORITE ACTORS Section
+                if (favoriteActorsSection.isNotEmpty()) {
+                    item {
+                        HorizontalMediaSection(
+                            title = "STARRING YOUR FAVORITE ACTORS",
+                            items = favoriteActorsSection,
                             onShowClick = onShowClick
                         )
                     }

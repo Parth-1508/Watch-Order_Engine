@@ -70,6 +70,9 @@ sealed class Screen(val route: String) {
         fun route(mediaId: String, initialSeason: Int? = null) = 
             "detail/$mediaId" + (initialSeason?.let { "?initialSeason=$it" } ?: "")
     }
+    object ActorDetail        : Screen("actor/{tmdbPersonId}") {
+        fun route(tmdbPersonId: Int) = "actor/$tmdbPersonId"
+    }
     object CharacterDetail : Screen("character/{tmdbPersonId}/{characterName}/{showTitle}/{isAnime}/{anilistId}?mediaId={mediaId}") {
         fun route(tmdbPersonId: Int, characterName: String, showTitle: String, isAnime: Boolean, anilistId: Int? = null, mediaId: String? = null): String {
             val encodedName = java.net.URLEncoder.encode(characterName, "UTF-8")
@@ -328,7 +331,18 @@ fun AppNavigation(
                 composable(Screen.Search.route) {
                     SearchScreen(
                         onMediaClick = { navController.navigate(Screen.Detail.route(safeMediaId(it))) },
+                        onActorClick = { personId -> navController.navigate(Screen.ActorDetail.route(personId)) },
                         onBack       = { navController.popBackStack() }
+                    )
+                }
+
+                composable(
+                    route = Screen.ActorDetail.route,
+                    arguments = listOf(navArgument("tmdbPersonId") { type = NavType.IntType })
+                ) {
+                    ActorDetailScreen(
+                        onBack = { navController.popBackStack() },
+                        onMediaClick = { mediaId -> navController.navigate(Screen.Detail.route(safeMediaId(mediaId))) }
                     )
                 }
 

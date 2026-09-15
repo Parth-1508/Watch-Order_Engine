@@ -82,6 +82,9 @@ class SettingsViewModel @Inject constructor(
     val preferredHomeLanguages: StateFlow<Set<String>> = prefsRepository.preferredHomeLanguages
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), setOf("ja", "ko", "hi", "es"))
 
+    val showFavoriteActorsRow: StateFlow<Boolean> = prefsRepository.showFavoriteActorsRow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     private val _wipeAccountState = MutableStateFlow<WipeAccountState>(WipeAccountState.Idle)
     val wipeAccountState: StateFlow<WipeAccountState> = _wipeAccountState.asStateFlow()
 
@@ -117,6 +120,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setAiringAlertsEnabled(enabled: Boolean) {
         viewModelScope.launch { prefsRepository.setAiringAlertsEnabled(enabled) }
+    }
+
+    fun setShowFavoriteActorsRow(enabled: Boolean) {
+        viewModelScope.launch { prefsRepository.setShowFavoriteActorsRow(enabled) }
     }
 
     fun toggleHomeLanguage(code: String) {

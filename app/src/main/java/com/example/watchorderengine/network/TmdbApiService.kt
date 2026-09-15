@@ -1,6 +1,9 @@
 package com.example.watchorderengine.network
 
 import com.example.watchorderengine.network.model.TmdbDetailResponse
+import com.example.watchorderengine.network.model.TmdbPersonCredits
+import com.example.watchorderengine.network.model.TmdbPersonImages
+import com.example.watchorderengine.network.model.TmdbPersonSearchResponse
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
@@ -101,6 +104,34 @@ interface TmdbApiService {
         @Query("language") language: String = "en-US",
         @Query("append_to_response") appendToResponse: String = "combined_credits,images,external_ids"
     ): Response<com.example.watchorderengine.network.model.TmdbPersonDetail>
+
+    /**
+     * Searches specifically for people / actors.
+     */
+    @GET("search/person")
+    suspend fun searchPerson(
+        @Query("query") query: String,
+        @Query("language") language: String = "en-US",
+        @Query("page") page: Int = 1,
+        @Query("include_adult") includeAdult: Boolean = false
+    ): Response<TmdbPersonSearchResponse>
+
+    /**
+     * Fetches an actor's combined credits (movies + TV shows).
+     */
+    @GET("person/{personId}/combined_credits")
+    suspend fun getPersonCombinedCredits(
+        @Path("personId") personId: Int,
+        @Query("language") language: String = "en-US"
+    ): Response<TmdbPersonCredits>
+
+    /**
+     * Fetches an actor's profile images gallery.
+     */
+    @GET("person/{personId}/images")
+    suspend fun getPersonImages(
+        @Path("personId") personId: Int
+    ): Response<TmdbPersonImages>
 
     /**
      * Fetches person details (for character biographies).

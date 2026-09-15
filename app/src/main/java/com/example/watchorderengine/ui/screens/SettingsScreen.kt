@@ -64,6 +64,7 @@ fun SettingsScreen(
     val dynamicShowTheming by viewModel.dynamicShowTheming.collectAsStateWithLifecycle()
     val airingAlertsEnabled by viewModel.airingAlertsEnabled.collectAsStateWithLifecycle()
     val preferredHomeLanguages by viewModel.preferredHomeLanguages.collectAsStateWithLifecycle()
+    val showFavoriteActorsRow by viewModel.showFavoriteActorsRow.collectAsStateWithLifecycle()
     val wipeAccountState by viewModel.wipeAccountState.collectAsStateWithLifecycle()
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val changePasswordState by viewModel.changePasswordState.collectAsStateWithLifecycle()
@@ -416,6 +417,17 @@ fun SettingsScreen(
                     subtitle = if (cloudSyncEnabled) "PROGRESS SYNCED TO FIRESTORE" else "LOCAL ONLY — DATA STAYS ON DEVICE",
                     checked = cloudSyncEnabled,
                     onCheckedChange = { viewModel.setCloudSyncEnabled(it) }
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = theme.textPrimary.copy(alpha = 0.05f)
+                )
+                PreferenceToggleRow(
+                    icon = Icons.Default.Star,
+                    title = "FAVORITE ACTORS IN HOME FEED",
+                    subtitle = if (showFavoriteActorsRow) "SHOWING TITLES STARRING FAVORITE ACTORS" else "CAROUSEL HIDDEN",
+                    checked = showFavoriteActorsRow,
+                    onCheckedChange = { viewModel.setShowFavoriteActorsRow(it) }
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 16.dp),
