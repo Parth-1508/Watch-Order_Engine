@@ -166,20 +166,50 @@ class FriendRepository @Inject constructor(
 
             if (publicIds.isEmpty()) return@withContext Result.success(emptyList())
 
-            val activitySnapshot = firestore.collectionGroup(COLLECTION_ACTIVITY)
-                .whereIn("userId", publicIds)
-                .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(50)
-                .get().await()
+            val activities = mutableListOf<UserActivity>()
 
-            activitySnapshot.documents.mapNotNull { doc ->
-                try {
-                    doc.toObject<UserActivity>()?.apply { activityId = doc.id }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse activity ${doc.id}: ${e.message}")
-                    null
+            // Try collectionGroup first
+            val collectionGroupResult = runCatching {
+                firestore.collectionGroup(COLLECTION_ACTIVITY)
+                    .whereIn("userId", publicIds)
+                    .orderBy("timestamp", Query.Direction.DESCENDING)
+                    .limit(50)
+                    .get().await()
+            }
+
+            if (collectionGroupResult.isSuccess) {
+                activities += collectionGroupResult.getOrThrow().documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject<UserActivity>()?.apply { activityId = doc.id }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse activity ${doc.id}: ${e.message}")
+                        null
+                    }
+                }
+            } else {
+                Log.w(TAG, "Collection group activity query failed; falling back to direct user activity subcollections: ${collectionGroupResult.exceptionOrNull()?.message}")
+                for (followedUid in publicIds) {
+                    try {
+                        val subSnap = firestore.collection(COLLECTION_USER_PROFILES)
+                            .document(followedUid)
+                            .collection(COLLECTION_ACTIVITY)
+                            .orderBy("timestamp", Query.Direction.DESCENDING)
+                            .limit(10)
+                            .get().await()
+                        activities += subSnap.documents.mapNotNull { doc ->
+                            try {
+                                doc.toObject<UserActivity>()?.apply { activityId = doc.id }
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed reading activity subcollection for $followedUid: ${e.message}")
+                    }
                 }
             }
+
+            activities.sortedByDescending { it.timestamp }.take(50)
         }.onFailure { e ->
             Log.w(TAG, "getFriendActivity failed: ${e.message}")
         }

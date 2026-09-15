@@ -500,6 +500,7 @@ private fun DetailContent(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
                         .background(theme.background)
                         .drawBehind {
                             drawLine(
@@ -530,13 +531,15 @@ private fun DetailContent(
                                 color = if (isSelected) theme.textPrimary else theme.textSecondary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(vertical = 12.dp)
                             )
                             if (isSelected) {
                                 Box(
                                     modifier = Modifier
                                         .height(2.dp)
-                                        .width(40.dp)
+                                        .fillMaxWidth()
                                         .background(theme.accent)
                                 )
                             }
