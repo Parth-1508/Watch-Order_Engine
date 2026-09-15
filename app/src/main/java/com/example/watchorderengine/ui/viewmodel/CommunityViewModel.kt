@@ -10,6 +10,7 @@ import com.example.watchorderengine.data.repository.NotificationRepository
 import com.example.watchorderengine.data.repository.TmdbRepository
 import com.example.watchorderengine.data.repository.UserProfileRepository
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
+import com.example.watchorderengine.data.model.CommunityComment
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -76,6 +77,18 @@ class CommunityViewModel @Inject constructor(
     /** Currently selected post for the detail bottom sheet. */
     private val _selectedPost = MutableStateFlow<CommunityPost?>(null)
     val selectedPost: StateFlow<CommunityPost?> = _selectedPost.asStateFlow()
+
+    // ─── Comments ───────────────────────────────────────────────────────────
+    private val _comments = MutableStateFlow<List<CommunityComment>>(emptyList())
+    val comments: StateFlow<List<CommunityComment>> = _comments.asStateFlow()
+
+    private val _commentsLoading = MutableStateFlow(false)
+    val commentsLoading: StateFlow<Boolean> = _commentsLoading.asStateFlow()
+
+    private val _commentsPost = MutableStateFlow<CommunityPost?>(null)
+    val commentsPost: StateFlow<CommunityPost?> = _commentsPost.asStateFlow()
+
+    private var commentsJob: Job? = null
 
     private var allPosts = listOf<CommunityPost>()
 
@@ -269,4 +282,73 @@ class CommunityViewModel @Inject constructor(
     fun getAvatarModel(url: String?): Any? = userProfileRepository.getAvatarModel(url)
 
     fun getCache() = tmdbCache
+
+    // ─── Comments ───────────────────────────────────────────────────────────
+
+    fun openComments(post: CommunityPost) {
+        _commentsPost.value = post
+        _commentsLoading.value = true
+        commentsJob?.cancel()
+        commentsJob = viewModelScope.launch {
+            repository.observeComments(post.postId).collect { result ->
+                _commentsLoading.value = false
+                result.onSuccess { _comments.value = it }
+                    .onFailure { _comments.value = emptyList() }
+            }
+        }
+    }
+
+    fun closeComments() {
+        commentsJob?.cancel()
+        _commentsPost.value = null
+        _comments.value = emptyList()
+    }
+
+    fun postComment(text: String, parentCommentId: String? = null) {
+        val post = _commentsPost.value ?: return
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            repository.addComment(post.postId, text, parentCommentId).onSuccess {
+                if (parentCommentId == null) {
+                    allPosts = allPosts.map {
+                        if (it.postId == post.postId) it.copy(commentsCount = it.commentsCount + 1) else it
+                    }
+                    filterPosts(_searchQuery.value, _selectedTag.value)
+                }
+            }
+        }
+    }
+
+    fun deleteComment(comment: CommunityComment) {
+        val post = _commentsPost.value ?: return
+        viewModelScope.launch {
+            repository.deleteComment(post.postId, comment).onSuccess {
+                if (comment.parentCommentId == null) {
+                    allPosts = allPosts.map {
+                        if (it.postId == post.postId) it.copy(commentsCount = (it.commentsCount - 1).coerceAtLeast(0L)) else it
+                    }
+                    filterPosts(_searchQuery.value, _selectedTag.value)
+                }
+            }
+        }
+    }
+
+    fun likeComment(commentId: String) {
+        val post = _commentsPost.value ?: return
+        val uid = currentUserId ?: return
+
+        _comments.value = _comments.value.map { c ->
+            if (c.commentId != commentId) c
+            else {
+                val alreadyLiked = uid in c.likedByUsers
+                c.copy(
+                    likedByUsers = if (alreadyLiked) c.likedByUsers - uid else c.likedByUsers + uid,
+                    likesCount   = if (alreadyLiked) (c.likesCount - 1).coerceAtLeast(0L) else c.likesCount + 1L
+                )
+            }
+        }
+        viewModelScope.launch {
+            repository.toggleLikeComment(post.postId, commentId, uid)
+        }
+    }
 }

@@ -19,6 +19,10 @@ data class UserProfile(
 
     var isStatsPublic: Boolean = false,
     var isFavoritesPublic: Boolean = false,
+    var isActivityPublic: Boolean = true,
+
+    var followersCount: Long = 0L,
+    var followingCount: Long = 0L,
 
     /** kotlinx.serialization-encoded `List<MediaSummary>`. Decode via [favoriteShows]. */
     var favoriteShowsJson: String = "",

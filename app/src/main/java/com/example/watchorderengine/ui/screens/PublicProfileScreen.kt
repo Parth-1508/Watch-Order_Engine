@@ -86,7 +86,7 @@ fun PublicProfileScreen(
                         favoriteShows = state.profile.favoriteShows,
                         isOwnProfile = viewModel.isOwnProfile,
                         isFollowing = isFollowing,
-                        onToggleFollow = { viewModel.toggleFollow(state.profile.displayName, state.profile.avatarUrl) },
+                        onToggleFollow = { viewModel.toggleFollow() },
                         onMediaClick = onMediaClick,
                         getAvatarModel = { viewModel.getAvatarModel(it) }
                     )

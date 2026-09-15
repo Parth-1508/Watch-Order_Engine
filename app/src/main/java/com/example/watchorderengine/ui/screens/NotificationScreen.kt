@@ -265,6 +265,8 @@ private fun typeIcon(type: NotificationType): ImageVector = when (type) {
     NotificationType.STREAK -> Icons.Default.Whatshot
     NotificationType.SYSTEM -> Icons.Default.Notifications
     NotificationType.TIMELINE_SHARE -> Icons.Default.Share
+    NotificationType.COMMENT -> Icons.Default.Comment
+    NotificationType.FOLLOW -> Icons.Default.PersonAdd
 }
 
 private fun typeColor(type: NotificationType, theme: com.example.watchorderengine.ui.theme.AppThemeConfig): Color = when (type) {
@@ -274,6 +276,8 @@ private fun typeColor(type: NotificationType, theme: com.example.watchorderengin
     NotificationType.STREAK -> Color(0xFFF59E0B)
     NotificationType.SYSTEM -> theme.textSecondary
     NotificationType.TIMELINE_SHARE -> theme.accent
+    NotificationType.COMMENT -> Color(0xFF60A5FA)
+    NotificationType.FOLLOW -> Color(0xFF10B981)
 }
 
 private fun formatTime(timestamp: Long): String {

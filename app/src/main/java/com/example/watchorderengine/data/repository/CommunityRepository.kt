@@ -1,7 +1,10 @@
 package com.example.watchorderengine.data.repository
 
 import android.util.Log
+import com.example.watchorderengine.data.model.CommunityComment
 import com.example.watchorderengine.data.model.CommunityPost
+import com.example.watchorderengine.data.model.Notification
+import com.example.watchorderengine.data.model.NotificationType
 import com.example.watchorderengine.data.model.PredefinedTimelines
 import com.example.watchorderengine.data.model.SharedTimelineCodec
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
@@ -24,6 +27,7 @@ import javax.inject.Singleton
 
 private const val TAG = "CommunityRepository"
 private const val COLLECTION_GLOBAL_FEED = "global_feed"
+private const val COLLECTION_COMMENTS = "comments"
 private const val FEED_LIMIT = 50L
 
 /**
@@ -274,18 +278,194 @@ class CommunityRepository @Inject constructor(
     }
 
     /**
-     * Deletes a post the current user authored.
+     * Deletes a post the current user authored — including its `comments`
+     * subcollection first.
      */
     suspend fun deletePost(postId: String, authorUserId: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val uid = auth.currentUser?.uid ?: throw IllegalStateException("Not authenticated")
             if (uid != authorUserId) throw IllegalStateException("You are not the author of this post.")
-            
-            firestore.collection(COLLECTION_GLOBAL_FEED).document(postId).delete().await()
-            Log.d(TAG, "Deleted post $postId")
+
+            val postRef = firestore.collection(COLLECTION_GLOBAL_FEED).document(postId)
+
+            val commentDocs = postRef.collection(COLLECTION_COMMENTS).get().await().documents
+            if (commentDocs.isNotEmpty()) {
+                commentDocs.chunked(450).forEach { chunk ->
+                    val batch = firestore.batch()
+                    chunk.forEach { batch.delete(it.reference) }
+                    batch.commit().await()
+                }
+            }
+
+            postRef.delete().await()
+            Log.d(TAG, "Deleted post $postId (and ${commentDocs.size} comments)")
             Unit
         }.onFailure { e ->
             Log.w(TAG, "deletePost failed for $postId: ${e.message}")
+        }
+    }
+
+    // ─── Comments ───────────────────────────────────────────────────────────
+
+    fun observeComments(postId: String): Flow<Result<List<CommunityComment>>> =
+        callbackFlow<Result<List<CommunityComment>>> {
+            val registration = firestore.collection(COLLECTION_GLOBAL_FEED).document(postId)
+                .collection(COLLECTION_COMMENTS)
+                .orderBy("timestamp", Query.Direction.ASCENDING)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w(TAG, "Comments listener error for $postId: ${error.message}")
+                        trySend(Result.failure(error))
+                        return@addSnapshotListener
+                    }
+                    val comments = snapshot?.documents?.mapNotNull { doc ->
+                        try {
+                            doc.toObject<CommunityComment>()?.apply { commentId = doc.id }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to parse comment ${doc.id}: ${e.message}")
+                            null
+                        }
+                    } ?: emptyList()
+                    trySend(Result.success(comments))
+                }
+            awaitClose { registration.remove() }
+        }.flowOn(Dispatchers.IO)
+
+    suspend fun addComment(
+        postId: String,
+        text: String,
+        parentCommentId: String? = null,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val uid = auth.currentUser?.uid
+                ?: throw IllegalStateException("Not authenticated — cannot comment.")
+            val trimmed = text.trim()
+            if (trimmed.isEmpty()) throw IllegalArgumentException("Comment can't be empty.")
+
+            val usernameFromPrefs = userPrefs.username.first()
+            val firebaseUser = auth.currentUser
+            val username = when {
+                usernameFromPrefs != "Player One" && usernameFromPrefs != "Guest" && usernameFromPrefs.isNotBlank() -> usernameFromPrefs
+                !firebaseUser?.displayName.isNullOrBlank() -> firebaseUser?.displayName ?: "Explorer"
+                else -> "Explorer"
+            }
+            val avatarUrl = userPrefs.avatarUrl.first() ?: firebaseUser?.photoUrl?.toString()
+
+            val postRef = firestore.collection(COLLECTION_GLOBAL_FEED).document(postId)
+            val commentsRef = postRef.collection(COLLECTION_COMMENTS)
+            val newCommentRef = commentsRef.document()
+
+            var postAuthorId: String? = null
+            var universeTitle = ""
+
+            firestore.runTransaction { transaction ->
+                val postSnapshot = transaction.get(postRef)
+                postAuthorId = postSnapshot.getString("userId")
+                universeTitle = postSnapshot.getString("universeTitle") ?: "your timeline"
+
+                val comment = CommunityComment(
+                    postId = postId,
+                    userId = uid,
+                    authorName = username,
+                    authorAvatarUrl = avatarUrl,
+                    text = trimmed.take(1000),
+                    parentCommentId = parentCommentId,
+                    timestamp = System.currentTimeMillis()
+                )
+                transaction.set(newCommentRef, comment)
+
+                if (parentCommentId == null) {
+                    transaction.update(postRef, "commentsCount", FieldValue.increment(1L))
+                } else {
+                    transaction.update(commentsRef.document(parentCommentId), "replyCount", FieldValue.increment(1L))
+                }
+                null
+            }.await()
+
+            val finalAuthorId = postAuthorId
+            if (finalAuthorId != null && uid != finalAuthorId) {
+                runCatching {
+                    val notif = Notification(
+                        userId = finalAuthorId,
+                        type = NotificationType.COMMENT,
+                        title = "New comment on your timeline!",
+                        message = "$username commented on '$universeTitle'.",
+                        senderId = uid,
+                        senderName = username,
+                        senderAvatarUrl = avatarUrl,
+                        targetId = postId
+                    )
+                    firestore.collection("notifications").add(notif).await()
+                }
+            }
+            Unit
+        }.onFailure { e ->
+            Log.w(TAG, "addComment failed for $postId: ${e.message}")
+        }
+    }
+
+    suspend fun deleteComment(postId: String, comment: CommunityComment): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val uid = auth.currentUser?.uid ?: throw IllegalStateException("Not authenticated")
+            if (uid != comment.userId) throw IllegalStateException("You didn't write this comment.")
+
+            val postRef = firestore.collection(COLLECTION_GLOBAL_FEED).document(postId)
+            val commentsRef = postRef.collection(COLLECTION_COMMENTS)
+            val commentRef = commentsRef.document(comment.commentId)
+            val parentId = comment.parentCommentId
+
+            firestore.runTransaction { transaction ->
+                transaction.delete(commentRef)
+                if (parentId == null) {
+                    transaction.update(postRef, "commentsCount", FieldValue.increment(-1L))
+                } else {
+                    transaction.update(commentsRef.document(parentId), "replyCount", FieldValue.increment(-1L))
+                }
+                null
+            }.await()
+            Unit
+        }.onFailure { e ->
+            Log.w(TAG, "deleteComment failed for ${comment.commentId}: ${e.message}")
+        }
+    }
+
+    suspend fun toggleLikeComment(
+        postId: String,
+        commentId: String,
+        currentUserId: String,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val commentRef = firestore.collection(COLLECTION_GLOBAL_FEED).document(postId)
+                .collection(COLLECTION_COMMENTS).document(commentId)
+
+            firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(commentRef)
+                @Suppress("UNCHECKED_CAST")
+                val likedBy = snapshot.get("likedByUsers") as? List<String> ?: emptyList()
+                val alreadyLiked = currentUserId in likedBy
+
+                if (alreadyLiked) {
+                    transaction.update(
+                        commentRef,
+                        mapOf(
+                            "likedByUsers" to FieldValue.arrayRemove(currentUserId),
+                            "likesCount"   to FieldValue.increment(-1L)
+                        )
+                    )
+                } else {
+                    transaction.update(
+                        commentRef,
+                        mapOf(
+                            "likedByUsers" to FieldValue.arrayUnion(currentUserId),
+                            "likesCount"   to FieldValue.increment(1L)
+                        )
+                    )
+                }
+                null
+            }.await()
+            Unit
+        }.onFailure { e ->
+            Log.w(TAG, "toggleLikeComment failed for $commentId: ${e.message}")
         }
     }
 

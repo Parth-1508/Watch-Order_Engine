@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.watchorderengine.data.model.UserProfile
 import com.example.watchorderengine.data.repository.FriendActivityRepository
+import com.example.watchorderengine.data.repository.FriendRepository
 import com.example.watchorderengine.data.repository.UserProfileRepository
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,7 +25,7 @@ sealed interface PublicProfileUiState {
 @HiltViewModel
 class PublicProfileViewModel @Inject constructor(
     private val repository: UserProfileRepository,
-    private val friendActivityRepository: FriendActivityRepository,
+    private val friendRepository: FriendRepository,
     private val auth: FirebaseAuth,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -49,23 +50,20 @@ class PublicProfileViewModel @Inject constructor(
     }
 
     private fun checkFollowStatus() {
-        val currentUid = auth.currentUser?.uid ?: return
         if (isOwnProfile) return
         viewModelScope.launch {
-            val following = friendActivityRepository.observeFollowingOnce(currentUid)
-            _isFollowing.value = following.any { it.followedUserId == userId }
+            _isFollowing.value = friendRepository.isFollowing(userId)
         }
     }
 
-    fun toggleFollow(displayName: String, avatarUrl: String?) {
-        val currentUid = auth.currentUser?.uid ?: return
+    fun toggleFollow() {
         if (isOwnProfile) return
         viewModelScope.launch {
             if (_isFollowing.value) {
-                friendActivityRepository.unfollowUser(currentUid, userId)
+                friendRepository.unfollowUser(userId)
                 _isFollowing.value = false
             } else {
-                friendActivityRepository.followUser(currentUid, userId, displayName, avatarUrl)
+                friendRepository.followUser(userId)
                 _isFollowing.value = true
             }
         }

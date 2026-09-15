@@ -9,7 +9,9 @@ enum class NotificationType {
     RECOMMENDATION, // Personalized recommendation
     STREAK,        // Daily streak reminder
     SYSTEM,        // System updates
-    TIMELINE_SHARE // Someone sent you a timeline
+    TIMELINE_SHARE, // Someone sent you a timeline
+    COMMENT,       // Someone commented on your post
+    FOLLOW         // Someone started following you
 }
 
 @Serializable

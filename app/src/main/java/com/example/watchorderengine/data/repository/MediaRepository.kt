@@ -58,6 +58,7 @@ class MediaRepository @Inject constructor(
     private val geminiService: GeminiService,
     private val watchOrderRepository: WatchOrderRepository,
     private val friendActivityRepository: FriendActivityRepository,
+    private val friendRepository: FriendRepository,
     private val userPrefs: UserPreferencesRepository,
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
@@ -1463,6 +1464,12 @@ class MediaRepository @Inject constructor(
                                 mediaPosterUrl = mediaEntity.posterUrl,
                                 episodeCount = mediaEntity.numberOfEpisodes ?: 1
                             )
+                            friendRepository.recordActivity(
+                                type = ActivityType.COMPLETED,
+                                mediaId = mediaId,
+                                mediaTitle = mediaEntity.title,
+                                mediaPosterUrl = mediaEntity.posterUrl
+                            )
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to record friend activity completion: ${e.message}")
@@ -2590,7 +2597,7 @@ class MediaRepository @Inject constructor(
             ))
         }
 
-        // SYNC TO FIRESTORE
+        // SYNC TO FIRESTORE & RECORD ACTIVITY
         if (userPrefs.cloudSyncEnabled.first()) {
             try {
                 val uid = auth.currentUser?.uid ?: return@withContext
@@ -2603,6 +2610,21 @@ class MediaRepository @Inject constructor(
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to sync rating to cloud: ${e.message}")
             }
+        }
+
+        try {
+            val mediaEntity = db.mediaDao().getById(mediaId)
+            if (mediaEntity != null) {
+                friendRepository.recordActivity(
+                    type = ActivityType.RATED,
+                    mediaId = mediaId,
+                    mediaTitle = mediaEntity.title,
+                    mediaPosterUrl = mediaEntity.posterUrl,
+                    rating = rating
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to record rating activity: ${e.message}")
         }
     }
 

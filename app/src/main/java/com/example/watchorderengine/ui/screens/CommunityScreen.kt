@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -44,6 +45,7 @@ import com.example.watchorderengine.data.model.SharedTimelineCodec
 import com.example.watchorderengine.data.model.SharedTimelinePayload
 import com.example.watchorderengine.data.cache.TmdbFetchState
 import com.example.watchorderengine.data.cache.TmdbMetadataCache
+import com.example.watchorderengine.data.model.CommunityComment
 import com.example.watchorderengine.network.model.TmdbMediaDetail
 import com.example.watchorderengine.network.model.TmdbMediaType
 import com.example.watchorderengine.ui.components.TimelineCommentsSheet
@@ -234,11 +236,28 @@ fun CommunityScreen(
                 viewModel.deletePost(selectedPost!!.postId, selectedPost!!.userId)
                 viewModel.selectPost(null)
             },
+            onCommentsClick = { viewModel.openComments(selectedPost!!) },
             importState = importState,
             onMediaClick = onMediaClick,
             onAuthorClick = onAuthorClick,
             getAvatarModel = { viewModel.getAvatarModel(it) },
             tmdbCache = viewModel.getCache()
+        )
+    }
+
+    val commentsPost by viewModel.commentsPost.collectAsStateWithLifecycle()
+    if (commentsPost != null) {
+        CommentsSheet(
+            post = commentsPost!!,
+            currentUserId = currentUserId,
+            comments = viewModel.comments.collectAsStateWithLifecycle().value,
+            isLoading = viewModel.commentsLoading.collectAsStateWithLifecycle().value,
+            getAvatarModel = { viewModel.getAvatarModel(it) },
+            onDismiss = { viewModel.closeComments() },
+            onSend = { text, parentId -> viewModel.postComment(text, parentId) },
+            onDeleteComment = { viewModel.deleteComment(it) },
+            onLikeComment = { viewModel.likeComment(it) },
+            onAuthorClick = onAuthorClick
         )
     }
 }
@@ -881,6 +900,7 @@ fun CommunityPostDetailSheet(
     onDismiss: () -> Unit,
     onImport: () -> Unit,
     onDelete: () -> Unit,
+    onCommentsClick: () -> Unit = {},
     importState: ImportState,
     onMediaClick: (String) -> Unit,
     onAuthorClick: (String) -> Unit = {},
@@ -1005,7 +1025,7 @@ fun CommunityPostDetailSheet(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             // Discussion Comments Button
                             Surface(
-                                onClick = { showCommentsSheet = true },
+                                onClick = onCommentsClick,
                                 modifier = Modifier.size(44.dp),
                                 shape = CircleShape,
                                 color = theme.surface.copy(alpha = 0.5f),
@@ -1286,6 +1306,270 @@ private fun CommunityPullToRefresh(
                     color = theme.accent,
                     strokeWidth = 2.5.dp
                 )
+            }
+        }
+    }
+}
+
+// ─── Comments ───────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CommentsSheet(
+    post: CommunityPost,
+    currentUserId: String?,
+    comments: List<CommunityComment>,
+    isLoading: Boolean,
+    getAvatarModel: (String?) -> Any?,
+    onDismiss: () -> Unit,
+    onSend: (text: String, parentCommentId: String?) -> Unit,
+    onDeleteComment: (CommunityComment) -> Unit,
+    onLikeComment: (String) -> Unit,
+    onAuthorClick: (String) -> Unit
+) {
+    val theme = LocalAppTheme.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var inputText by remember { mutableStateOf("") }
+    var replyingTo by remember { mutableStateOf<CommunityComment?>(null) }
+
+    val topLevel = remember(comments) { comments.filter { it.parentCommentId == null } }
+    val repliesByParent = remember(comments) { comments.filter { it.parentCommentId != null }.groupBy { it.parentCommentId } }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = theme.background,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = theme.textSecondary.copy(0.3f)) },
+        modifier = Modifier.fillMaxHeight(0.9f)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Text(
+                if (post.commentsCount > 0) "${post.commentsCount} Comments" else "Comments",
+                color = theme.textPrimary,
+                fontWeight = FontWeight.Black,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+            )
+            HorizontalDivider(color = theme.border.copy(alpha = 0.1f))
+
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    isLoading && comments.isEmpty() -> CircularProgressIndicator(
+                        color = theme.accent,
+                        modifier = Modifier.align(Alignment.Center).size(28.dp)
+                    )
+                    topLevel.isEmpty() -> Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.ChatBubbleOutline, null,
+                            tint = theme.textSecondary.copy(alpha = 0.4f),
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("No comments yet", color = theme.textPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            "Be the first to say something",
+                            color = theme.textSecondary.copy(alpha = 0.6f),
+                            fontSize = 11.sp
+                        )
+                    }
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(topLevel, key = { it.commentId }) { comment ->
+                            Column {
+                                CommentRow(
+                                    comment = comment,
+                                    currentUserId = currentUserId,
+                                    getAvatarModel = getAvatarModel,
+                                    onLike = { onLikeComment(comment.commentId) },
+                                    onDelete = { onDeleteComment(comment) },
+                                    onReply = { replyingTo = comment },
+                                    onAuthorClick = onAuthorClick
+                                )
+                                val replies = repliesByParent[comment.commentId].orEmpty()
+                                if (replies.isNotEmpty()) {
+                                    Column(
+                                        modifier = Modifier.padding(start = 40.dp, top = 10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        replies.forEach { reply ->
+                                            CommentRow(
+                                                comment = reply,
+                                                currentUserId = currentUserId,
+                                                getAvatarModel = getAvatarModel,
+                                                onLike = { onLikeComment(reply.commentId) },
+                                                onDelete = { onDeleteComment(reply) },
+                                                onReply = null,
+                                                onAuthorClick = onAuthorClick,
+                                                compact = true
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = theme.border.copy(alpha = 0.1f))
+
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                replyingTo?.let { parent ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Replying to ${parent.authorName}",
+                            color = theme.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Cancel reply",
+                            tint = theme.textSecondary,
+                            modifier = Modifier.size(16.dp).clickable { replyingTo = null }
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { if (it.length <= 1000) inputText = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = {
+                            Text(
+                                if (replyingTo != null) "Write a reply..." else "Add a comment...",
+                                color = theme.textSecondary
+                            )
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = theme.accent,
+                            unfocusedBorderColor = theme.border.copy(alpha = 0.3f),
+                            focusedTextColor = theme.textPrimary,
+                            unfocusedTextColor = theme.textPrimary,
+                        ),
+                        maxLines = 4
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        onClick = {
+                            if (inputText.isNotBlank()) {
+                                onSend(inputText, replyingTo?.commentId)
+                                inputText = ""
+                                replyingTo = null
+                            }
+                        },
+                        shape = CircleShape,
+                        color = if (inputText.isNotBlank()) theme.accent else theme.surface,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = if (inputText.isNotBlank()) Color.Black else theme.textSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentRow(
+    comment: CommunityComment,
+    currentUserId: String?,
+    getAvatarModel: (String?) -> Any?,
+    onLike: () -> Unit,
+    onDelete: () -> Unit,
+    onReply: (() -> Unit)?,
+    onAuthorClick: (String) -> Unit,
+    compact: Boolean = false
+) {
+    val theme = LocalAppTheme.current
+    val isOwner = currentUserId != null && currentUserId == comment.userId
+    val isLikedByMe = currentUserId != null && currentUserId in comment.likedByUsers
+
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Surface(
+            modifier = Modifier
+                .size(if (compact) 28.dp else 36.dp)
+                .clickable(enabled = comment.userId.isNotBlank()) { onAuthorClick(comment.userId) },
+            shape = CircleShape,
+            color = theme.surface
+        ) {
+            AsyncImage(
+                model = getAvatarModel(comment.authorAvatarUrl) ?: "https://ui-avatars.com/api/?name=${comment.authorName}",
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = ContentScale.Crop
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                comment.authorName,
+                color = theme.textPrimary, fontWeight = FontWeight.Bold,
+                fontSize = if (compact) 12.sp else 13.sp
+            )
+            Text(
+                comment.text,
+                color = theme.textSecondary,
+                fontSize = if (compact) 12.sp else 13.sp,
+                lineHeight = 18.sp
+            )
+            Row(
+                modifier = Modifier.padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    relativeTimeLabel(comment.timestamp),
+                    color = theme.textSecondary.copy(alpha = 0.6f), fontSize = 10.sp
+                )
+                if (onReply != null) {
+                    Text(
+                        "Reply", color = theme.textSecondary, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+                        modifier = Modifier.clickable { onReply() }
+                    )
+                }
+                if (isOwner) {
+                    Text(
+                        "Delete", color = theme.statusFiller.copy(alpha = 0.8f), fontWeight = FontWeight.Bold, fontSize = 10.sp,
+                        modifier = Modifier.clickable { onDelete() }
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onLike() }
+                ) {
+                    Icon(
+                        if (isLikedByMe) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = "Like comment",
+                        tint = if (isLikedByMe) Color(0xFFFF4B6E) else theme.textSecondary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    if (comment.likesCount > 0) {
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            "${comment.likesCount}",
+                            color = theme.textSecondary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
             }
         }
     }
