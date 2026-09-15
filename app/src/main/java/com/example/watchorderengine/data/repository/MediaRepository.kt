@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -2035,9 +2036,9 @@ class MediaRepository @Inject constructor(
         val today = java.util.Calendar.getInstance()
         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
         
-        // 14 days in past
-        val startCal = today.clone() as java.util.Calendar
-        startCal.add(java.util.Calendar.DATE, -14)
+        // 30 days in past
+        val startCal = today.clone() as Calendar
+        startCal.add(Calendar.DATE, -30)
         val startDateIso = sdf.format(startCal.time)
 
         // 1. My Tracked Shows (expanded)

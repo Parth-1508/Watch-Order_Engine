@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -50,6 +51,7 @@ import kotlin.math.roundToInt
 @Composable
 fun ProfileScreen(
     onMediaClick: (String) -> Unit,
+    onActorClick: (Int) -> Unit = {},
     onRateMediaClick: () -> Unit = {},
     onImportClick: () -> Unit = {},
     onEditProfileClick: () -> Unit = {},
@@ -62,6 +64,7 @@ fun ProfileScreen(
     val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val userReviews by viewModel.userReviews.collectAsStateWithLifecycle()
+    val favoriteActors by viewModel.favoriteActors.collectAsStateWithLifecycle()
 
     val stats = statsState
     val listState = rememberLazyListState()
@@ -222,6 +225,64 @@ fun ProfileScreen(
                         ) {
                             items(stats.recentlyWatched) { media ->
                                 RecentlyWatchedItem(media, onClick = { onMediaClick(media.id) })
+                            }
+                        }
+                    }
+                }
+
+                // Favorite Actors
+                if (favoriteActors.isNotEmpty()) {
+                    item {
+                        Column(modifier = Modifier.padding(vertical = 12.dp)) {
+                            SectionHeader("FAVORITE ACTORS")
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(favoriteActors, key = { it.id }) { actor ->
+                                    Box(modifier = Modifier.width(80.dp)) {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth().clickable { onActorClick(actor.id) },
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            AsyncImage(
+                                                model = actor.profilePath,
+                                                contentDescription = actor.name,
+                                                modifier = Modifier
+                                                    .size(64.dp)
+                                                    .clip(CircleShape)
+                                                    .background(theme.surface)
+                                                    .border(2.dp, theme.accent, CircleShape),
+                                                contentScale = ContentScale.Crop,
+                                                error = rememberVectorPainter(Icons.Default.AccountCircle)
+                                            )
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(
+                                                actor.name,
+                                                color = theme.textPrimary,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = { viewModel.removeFavoriteActor(actor) },
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .align(Alignment.TopEnd)
+                                                .background(theme.surface, CircleShape)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Remove actor",
+                                                tint = theme.statusFiller,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

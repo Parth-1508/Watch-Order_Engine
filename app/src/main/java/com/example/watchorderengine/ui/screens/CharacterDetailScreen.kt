@@ -64,6 +64,7 @@ fun CharacterDetailScreen(
     isAnime: Boolean,
     onBack: () -> Unit,
     onMediaClick: (String) -> Unit,
+    onActorClick: (Int) -> Unit = {},
     anilistId: Int? = null,
     mediaId: String? = null,
     viewModel: CharacterDetailViewModel = hiltViewModel()
@@ -91,6 +92,7 @@ fun CharacterDetailScreen(
                 onPhotoSelect = viewModel::setPhotoIndex,
                 onBack = onBack,
                 onMediaClick = onMediaClick,
+                onActorClick = onActorClick,
                 isAnime = isAnime,
                 spoilerShieldActive = spoilerShieldActive
             )
@@ -189,6 +191,7 @@ private fun CharacterDetailBody(
     onPhotoSelect: (Int) -> Unit,
     onBack: () -> Unit,
     onMediaClick: (String) -> Unit,
+    onActorClick: (Int) -> Unit = {},
     isAnime: Boolean,
     spoilerShieldActive: Boolean = false
 ) {
@@ -299,7 +302,13 @@ private fun CharacterDetailBody(
             }
 
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.clickable(enabled = detail.actorTmdbId > 0) {
+                    onActorClick(detail.actorTmdbId)
+                },
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 val byVoice = detail.voiceActorName != null
                 Text(
                     if (byVoice) "Voiced by " else "Played by ",
@@ -393,7 +402,7 @@ private fun CharacterDetailBody(
         Crossfade(targetState = activeTab, label = "character_tab") { tab ->
             when (tabs.getOrNull(tab)) {
                 "Character" -> CharacterTab(detail, isAnime, spoilerShieldActive)
-                "Actor" -> ActorTab(detail)
+                "Actor" -> ActorTab(detail, onActorClick)
                 "Appearances" -> AppearancesTab(detail)
                 "Filmography" -> FilmographyTab(detail, onMediaClick)
                 else -> Unit
@@ -547,9 +556,22 @@ private fun CharacterTab(detail: CharacterDetail, isAnime: Boolean, spoilerShiel
  * Tab content showing the actor's biography and personal details.
  */
 @Composable
-private fun ActorTab(detail: CharacterDetail) {
+private fun ActorTab(detail: CharacterDetail, onActorClick: (Int) -> Unit = {}) {
     val theme = LocalAppTheme.current
     Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+        if (detail.actorTmdbId > 0) {
+            Button(
+                onClick = { onActorClick(detail.actorTmdbId) },
+                colors = ButtonDefaults.buttonColors(containerColor = theme.accent, contentColor = Color.Black),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("View ${detail.actorName}'s Profile & Filmography", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
 
         if (detail.actorBiography.isNotBlank()) {
             SectionHeader("Biography")

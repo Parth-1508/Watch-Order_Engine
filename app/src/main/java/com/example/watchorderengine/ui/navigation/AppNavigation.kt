@@ -587,6 +587,9 @@ fun AppNavigation(
                         onBack        = { navController.popBackStack() },
                         onMediaClick  = { mediaId ->
                             navController.navigate(Screen.Detail.route(safeMediaId(mediaId)))
+                        },
+                        onActorClick  = { personId ->
+                            navController.navigate(Screen.ActorDetail.route(personId))
                         }
                     )
                 }

@@ -41,6 +41,7 @@ class UserPreferencesRepository(private val context: Context) {
         val AIRING_ALERTS_ENABLED = booleanPreferencesKey("airing_alerts_enabled")
         val PREFERRED_HOME_LANGUAGES = stringSetPreferencesKey("preferred_home_languages")
         val SHOW_FAVORITE_ACTORS_ROW = booleanPreferencesKey("show_favorite_actors_row")
+        val IS_FAVORITE_ACTORS_PUBLIC = booleanPreferencesKey("is_favorite_actors_public")
     }
 
     val isTasteProfileCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -126,6 +127,14 @@ class UserPreferencesRepository(private val context: Context) {
 
     val showFavoriteActorsRow: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.SHOW_FAVORITE_ACTORS_ROW] ?: true
+    }
+
+    val isFavoriteActorsPublic: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.IS_FAVORITE_ACTORS_PUBLIC] ?: false
+    }
+
+    suspend fun setIsFavoriteActorsPublic(public: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.IS_FAVORITE_ACTORS_PUBLIC] = public }
     }
 
     suspend fun setShowFavoriteActorsRow(enabled: Boolean) {

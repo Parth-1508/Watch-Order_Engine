@@ -8,6 +8,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.toBitmapOrNull
 import androidx.palette.graphics.Palette
 import coil.imageLoader
@@ -82,10 +83,18 @@ private fun Palette.toShowPalette(): ShowPalette? {
 
     val secondarySwatch = darkMutedSwatch ?: mutedSwatch ?: lightMutedSwatch ?: accentSwatch
 
+    // Refine accent color for WCAG contrast & dark-mode elegance:
+    // Convert to HSL, clamp lightness and saturation for crisp readability.
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(accentSwatch.rgb, hsl)
+    
+    hsl[1] = hsl[1].coerceIn(0.40f, 0.85f)
+    hsl[2] = hsl[2].coerceIn(0.45f, 0.70f)
+    
+    val refinedAccentRgb = ColorUtils.HSLToColor(hsl)
+
     return ShowPalette(
-        accent = Color(accentSwatch.rgb),
-        // Palette computes body/title text color based on the swatch's own luminance,
-        // so this is already contrast-safe against `accent` without any math on our end.
+        accent = Color(refinedAccentRgb),
         onAccent = Color(accentSwatch.bodyTextColor),
         muted = Color(secondarySwatch.rgb)
     )

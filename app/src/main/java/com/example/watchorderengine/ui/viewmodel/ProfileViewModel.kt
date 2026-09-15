@@ -2,11 +2,15 @@ package com.example.watchorderengine.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.watchorderengine.data.db.dao.FavoriteActorDao
+import com.example.watchorderengine.data.db.entity.FavoriteActorEntity
 import com.example.watchorderengine.data.model.MediaSummary
 import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.model.UserStats
 import com.example.watchorderengine.data.db.entity.ReviewEntity
+import com.example.watchorderengine.data.model.ActorSummary
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
+import com.example.watchorderengine.data.repository.ActorRepository
 import com.example.watchorderengine.data.repository.MediaRepository
 import com.example.watchorderengine.data.repository.ReviewRepository
 import com.example.watchorderengine.data.repository.UserProfileRepository
@@ -22,6 +26,8 @@ class ProfileViewModel @Inject constructor(
     private val repository: MediaRepository,
     private val reviewRepository: ReviewRepository,
     private val userProfileRepository: UserProfileRepository,
+    private val favoriteActorDao: FavoriteActorDao,
+    private val actorRepository: ActorRepository,
     private val userPrefs: UserPreferencesRepository,
     private val auth: FirebaseAuth,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
@@ -35,6 +41,13 @@ class ProfileViewModel @Inject constructor(
 
     private val _userReviews = MutableStateFlow<List<ReviewEntity>>(emptyList())
     val userReviews: StateFlow<List<ReviewEntity>> = _userReviews.asStateFlow()
+
+    val favoriteActors: StateFlow<List<FavoriteActorEntity>> =
+        favoriteActorDao.observeAll().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     val username: StateFlow<String> = userPrefs.username
     val avatarUrl: StateFlow<String?> = userPrefs.avatarUrl
@@ -225,6 +238,20 @@ class ProfileViewModel @Inject constructor(
     fun deleteReview(reviewId: String) {
         viewModelScope.launch {
             reviewRepository.deleteReview(reviewId)
+        }
+    }
+
+    fun removeFavoriteActor(actor: FavoriteActorEntity) {
+        viewModelScope.launch {
+            actorRepository.toggleFavorite(
+                ActorSummary(
+                    id = actor.id,
+                    name = actor.name,
+                    profilePath = actor.profilePath,
+                    knownForDepartment = null,
+                    popularity = null
+                )
+            )
         }
     }
 }

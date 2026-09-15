@@ -223,35 +223,73 @@ fun CalendarScreen(
                 }
 
                 is CalendarUiState.Success -> {
-                    if (state.episodes.isEmpty()) {
-                        EmptyCalendarState()
-                    } else {
-                        LazyColumn(
-                            state             = listState,
-                            modifier          = Modifier.fillMaxSize(),
-                            contentPadding    = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            var lastDateKey: String? = null
-                            state.episodes.forEach { episode ->
-                                val episodeDate = runCatching { LocalDate.parse(episode.airDate) }.getOrNull()
-                                val dateKey     = episode.airDate
-                                val headerLabel = episodeDate?.let { relativeDateLabel(it, today) } ?: episode.airDate
+                    var timeRangeFilter by remember { mutableStateOf("ALL") }
+                    val filteredEpisodes = remember(state.episodes, timeRangeFilter, today) {
+                        when (timeRangeFilter) {
+                            "WEEK" -> {
+                                val weekEnd = today.plusDays(7).toString()
+                                state.episodes.filter { it.airDate >= today.toString() && it.airDate <= weekEnd }
+                            }
+                            "MONTH" -> {
+                                val monthEnd = today.plusDays(30).toString()
+                                state.episodes.filter { it.airDate >= today.toString() && it.airDate <= monthEnd }
+                            }
+                            else -> state.episodes
+                        }
+                    }
 
-                                if (dateKey != lastDateKey) {
-                                    lastDateKey = dateKey
-                                    item(key = "header_$dateKey") {
-                                        DateHeader(headerLabel)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = timeRangeFilter == "ALL",
+                                onClick = { timeRangeFilter = "ALL" },
+                                label = { Text("All (${state.episodes.size})", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = timeRangeFilter == "WEEK",
+                                onClick = { timeRangeFilter = "WEEK" },
+                                label = { Text("Next 7 Days", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = timeRangeFilter == "MONTH",
+                                onClick = { timeRangeFilter = "MONTH" },
+                                label = { Text("Next 30 Days", fontSize = 11.sp) }
+                            )
+                        }
+
+                        if (filteredEpisodes.isEmpty()) {
+                            EmptyCalendarState()
+                        } else {
+                            LazyColumn(
+                                state             = listState,
+                                modifier          = Modifier.fillMaxSize(),
+                                contentPadding    = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                var lastDateKey: String? = null
+                                filteredEpisodes.forEach { episode ->
+                                    val episodeDate = runCatching { LocalDate.parse(episode.airDate) }.getOrNull()
+                                    val dateKey     = episode.airDate
+                                    val headerLabel = episodeDate?.let { relativeDateLabel(it, today) } ?: episode.airDate
+
+                                    if (dateKey != lastDateKey) {
+                                        lastDateKey = dateKey
+                                        item(key = "header_$dateKey") {
+                                            DateHeader(headerLabel)
+                                        }
+                                    }
+                                    item(key = "${episode.mediaId}_${episode.airDate}_${episode.seasonEpisodeLabel}") {
+                                        UpcomingEpisodeCard(
+                                            episode = episode,
+                                            onClick = { onEpisodeClick(episode.mediaId) }
+                                        )
                                     }
                                 }
-                                item(key = "${episode.mediaId}_${episode.airDate}_${episode.seasonEpisodeLabel}") {
-                                    UpcomingEpisodeCard(
-                                        episode = episode,
-                                        onClick = { onEpisodeClick(episode.mediaId) }
-                                    )
-                                }
+                                item { Spacer(Modifier.height(24.dp)) }
                             }
-                            item { Spacer(Modifier.height(24.dp)) }
                         }
                     }
                 }
