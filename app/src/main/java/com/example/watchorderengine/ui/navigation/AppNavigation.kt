@@ -35,6 +35,7 @@ import com.example.watchorderengine.ui.screens.home.HomeScreenWrapper
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.timeline.TimelineScreen
 import com.example.watchorderengine.util.ConnectivityObserver
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 
 // ─── Navigation helper ───
@@ -419,7 +420,13 @@ fun AppNavigation(
                         onRateMediaClick = { navController.navigate(Screen.Discovery.route) },
                         onImportClick = { navController.navigate(Screen.ImportList.route) },
                         onEditProfileClick = { navController.navigate(Screen.EditProfile.route) },
-                        onFriendActivityClick = { navController.navigate(Screen.FriendActivity.route) }
+                        onFriendActivityClick = { navController.navigate(Screen.FriendActivity.route) },
+                        onViewPublicProfileClick = {
+                            val uid = FirebaseAuth.getInstance().currentUser?.uid
+                            if (uid != null) {
+                                navController.navigate(Screen.PublicProfile.route(uid))
+                            }
+                        }
                     )
                 }
 

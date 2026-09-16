@@ -56,6 +56,7 @@ fun ProfileScreen(
     onImportClick: () -> Unit = {},
     onEditProfileClick: () -> Unit = {},
     onFriendActivityClick: () -> Unit = {},
+    onViewPublicProfileClick: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val theme = LocalAppTheme.current
@@ -85,7 +86,7 @@ fun ProfileScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(240.dp)
+                            .height(260.dp)
                     ) {
                         // Background Gradient
                         Box(
@@ -101,6 +102,9 @@ fun ProfileScreen(
                         Row(
                             modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)
                         ) {
+                            IconButton(onClick = onViewPublicProfileClick) {
+                                Icon(Icons.Default.Visibility, "View Public Profile Preview", tint = theme.textPrimary)
+                            }
                             IconButton(onClick = onFriendActivityClick) {
                                 Icon(Icons.Default.People, "Friend Activity", tint = theme.textPrimary)
                             }
@@ -119,38 +123,59 @@ fun ProfileScreen(
                                 model = viewModel.getAvatarModel(avatarUrl) ?: "https://ui-avatars.com/api/?name=${username.ifBlank { "User" }}&background=random&color=fff",
                                 contentDescription = "Profile Picture",
                                 modifier = Modifier
-                                    .size(100.dp)
+                                    .size(90.dp)
                                     .clip(CircleShape)
                                     .border(3.dp, theme.accent, CircleShape),
                                 contentScale = ContentScale.Crop
                             )
 
-                            Spacer(Modifier.height(16.dp))
+                            Spacer(Modifier.height(10.dp))
 
                             // Non-editable Username
                             Text(
                                 username.uppercase(),
                                 color = theme.textPrimary,
-                                fontSize = 24.sp,
+                                fontSize = 22.sp,
                                 fontWeight = FontWeight.Black,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(horizontal = 24.dp)
                             )
                             
-                            if (stats?.profileRank != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                if (stats?.profileRank != null) {
+                                    Surface(
+                                        color = theme.accent,
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            stats.profileRank.uppercase(),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.Black,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+                                }
+
                                 Surface(
-                                    color = theme.accent,
-                                    shape = RoundedCornerShape(4.dp),
-                                    modifier = Modifier.padding(top = 4.dp)
+                                    onClick = onViewPublicProfileClick,
+                                    color = theme.surface,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.4f))
                                 ) {
-                                    Text(
-                                        stats.profileRank.uppercase(),
+                                    Row(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Black,
-                                        color = Color.Black,
-                                        letterSpacing = 1.sp
-                                    )
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Visibility, null, tint = theme.accent, modifier = Modifier.size(12.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Public Preview", color = theme.textPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                             
@@ -267,19 +292,24 @@ fun ProfileScreen(
                                             )
                                         }
 
-                                        IconButton(
-                                            onClick = { viewModel.removeFavoriteActor(actor) },
-                                            modifier = Modifier
-                                                .size(20.dp)
-                                                .align(Alignment.TopEnd)
-                                                .background(theme.surface, CircleShape)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                contentDescription = "Remove actor",
-                                                tint = theme.statusFiller,
-                                                modifier = Modifier.size(12.dp)
-                                            )
+                                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .size(16.dp)
+                                                    .clip(CircleShape)
+                                                    .background(theme.surface)
+                                                    .border(1.dp, theme.statusFiller.copy(alpha = 0.5f), CircleShape)
+                                                    .clickable { viewModel.removeFavoriteActor(actor) },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Close,
+                                                    contentDescription = "Remove actor",
+                                                    tint = theme.statusFiller,
+                                                    modifier = Modifier.size(9.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
