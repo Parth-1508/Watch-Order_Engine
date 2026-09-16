@@ -6,6 +6,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -20,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -49,7 +52,9 @@ fun EditProfileScreen(
     val avatarUrl by viewModel.avatarUrl.collectAsStateWithLifecycle()
     val isStatsPublic by viewModel.isStatsPublic.collectAsStateWithLifecycle()
     val isFavoritesPublic by viewModel.isFavoritesPublic.collectAsStateWithLifecycle()
+    val isFavoriteActorsPublic by viewModel.isFavoriteActorsPublic.collectAsStateWithLifecycle()
     val favoriteShows by viewModel.favoriteShows.collectAsStateWithLifecycle()
+    val favoriteActors by viewModel.favoriteActors.collectAsStateWithLifecycle()
     val candidateShows by viewModel.candidateShows.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isUploadingAvatar by viewModel.isUploadingAvatar.collectAsStateWithLifecycle()
@@ -219,6 +224,55 @@ fun EditProfileScreen(
                         checked = isFavoritesPublic,
                         onCheckedChange = { viewModel.setFavoritesPublic(it) }
                     )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = theme.textPrimary.copy(alpha = 0.05f)
+                    )
+                    PreferenceToggleRow(
+                        icon = Icons.Default.People,
+                        title = "PUBLIC FAVORITE ACTORS",
+                        subtitle = if (isFavoriteActorsPublic) "VISIBLE ON YOUR PUBLIC PROFILE" else "HIDDEN FROM OTHER USERS",
+                        checked = isFavoriteActorsPublic,
+                        onCheckedChange = { viewModel.setFavoriteActorsPublic(it) }
+                    )
+                }
+            }
+
+            // Favorite actors display section
+            if (favoriteActors.isNotEmpty()) {
+                SectionHeader("FAVORITE ACTORS")
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
+                    items(favoriteActors, key = { it.id }) { actor ->
+                        Column(
+                            modifier = Modifier.width(76.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            AsyncImage(
+                                model = actor.profilePath,
+                                contentDescription = actor.name,
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .clip(CircleShape)
+                                    .background(theme.surface)
+                                    .border(2.dp, theme.accent, CircleShape),
+                                contentScale = ContentScale.Crop,
+                                error = rememberVectorPainter(Icons.Default.AccountCircle)
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                actor.name,
+                                color = theme.textPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
 

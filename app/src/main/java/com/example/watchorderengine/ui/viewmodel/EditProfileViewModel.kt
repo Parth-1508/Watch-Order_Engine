@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.watchorderengine.data.db.dao.FavoriteActorDao
+import com.example.watchorderengine.data.model.ActorSummary
+import com.example.watchorderengine.data.model.FavoriteActorsCodec
 import com.example.watchorderengine.data.model.FavoriteShowsCodec
 import com.example.watchorderengine.data.model.MediaCategory
 import com.example.watchorderengine.data.model.MediaSummary
@@ -40,6 +43,7 @@ sealed interface SaveProfileState {
 class EditProfileViewModel @Inject constructor(
     private val userProfileRepository: UserProfileRepository,
     private val mediaRepository: MediaRepository,
+    private val favoriteActorDao: FavoriteActorDao,
     private val userPrefs: UserPreferencesRepository,
     private val auth: FirebaseAuth,
 ) : ViewModel() {
@@ -58,8 +62,14 @@ class EditProfileViewModel @Inject constructor(
     private val _isFavoritesPublic = MutableStateFlow(false)
     val isFavoritesPublic: StateFlow<Boolean> = _isFavoritesPublic.asStateFlow()
 
+    private val _isFavoriteActorsPublic = MutableStateFlow(true)
+    val isFavoriteActorsPublic: StateFlow<Boolean> = _isFavoriteActorsPublic.asStateFlow()
+
     private val _favoriteShows = MutableStateFlow<List<MediaSummary>>(emptyList())
     val favoriteShows: StateFlow<List<MediaSummary>> = _favoriteShows.asStateFlow()
+
+    private val _favoriteActors = MutableStateFlow<List<ActorSummary>>(emptyList())
+    val favoriteActors: StateFlow<List<ActorSummary>> = _favoriteActors.asStateFlow()
 
     private val _candidateShows = MutableStateFlow<List<MediaSummary>>(emptyList())
     val candidateShows: StateFlow<List<MediaSummary>> = _candidateShows.asStateFlow()
@@ -95,6 +105,7 @@ class EditProfileViewModel @Inject constructor(
                 val profileDef = async { userProfileRepository.getProfile(uid) }
                 val completedDef = async { mediaRepository.getListByState(TrackingState.COMPLETED) }
                 val watchingDef = async { mediaRepository.getListByState(TrackingState.WATCHING) }
+                val favActorsDef = async { favoriteActorDao.getAll() }
 
                 val profile = profileDef.await().getOrNull()
                 if (profile != null) {
@@ -102,8 +113,20 @@ class EditProfileViewModel @Inject constructor(
                     _avatarUrl.value = profile.avatarUrl ?: _avatarUrl.value
                     _isStatsPublic.value = profile.isStatsPublic
                     _isFavoritesPublic.value = profile.isFavoritesPublic
+                    _isFavoriteActorsPublic.value = profile.isFavoriteActorsPublic
                     _favoriteShows.value = profile.favoriteShows
                     existingWatchStats = profile.watchStats
+                }
+
+                val favActorEntities = favActorsDef.await()
+                _favoriteActors.value = favActorEntities.map {
+                    ActorSummary(
+                        id = it.id,
+                        name = it.name,
+                        profilePath = it.profilePath,
+                        knownForDepartment = null,
+                        popularity = null
+                    )
                 }
 
                 _candidateShows.value = (completedDef.await() + watchingDef.await())
@@ -123,6 +146,10 @@ class EditProfileViewModel @Inject constructor(
 
     fun setFavoritesPublic(public: Boolean) {
         _isFavoritesPublic.value = public
+    }
+
+    fun setFavoriteActorsPublic(public: Boolean) {
+        _isFavoriteActorsPublic.value = public
     }
 
     fun toggleFavoriteShow(media: MediaSummary) {
@@ -176,7 +203,9 @@ class EditProfileViewModel @Inject constructor(
                     avatarUrl = _avatarUrl.value,
                     isStatsPublic = _isStatsPublic.value,
                     isFavoritesPublic = _isFavoritesPublic.value,
+                    isFavoriteActorsPublic = _isFavoriteActorsPublic.value,
                     favoriteShowsJson = FavoriteShowsCodec.encode(_favoriteShows.value),
+                    favoriteActorsJson = FavoriteActorsCodec.encode(_favoriteActors.value),
                     watchStatsJson = computeWatchStatsJson(),
                 )
 
