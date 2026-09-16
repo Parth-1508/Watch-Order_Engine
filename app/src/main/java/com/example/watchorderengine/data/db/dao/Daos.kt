@@ -137,6 +137,13 @@ interface EpisodeDao {
     @Query("SELECT COUNT(*) FROM episodes WHERE mediaId = :mediaId AND seasonNumber > 0")
     suspend fun getCountByMedia(mediaId: String): Int
 
+    @Query("""
+        SELECT COUNT(*) FROM episodes
+        WHERE mediaId IN (SELECT mediaId FROM user_progress WHERE trackingState IN ('WATCHING', 'COMPLETED', 'PAUSED'))
+          AND seasonNumber > 0
+    """)
+    suspend fun countTotalEpisodesInActiveShows(): Int
+
     @Query("SELECT COUNT(*) FROM episodes WHERE mediaId = :mediaId AND seasonNumber > 0")
     fun observeCountByMedia(mediaId: String): Flow<Int>
 
@@ -232,6 +239,13 @@ interface EpisodeWatchedDao {
 
     @Query("SELECT COUNT(*) FROM episode_watched")
     suspend fun countAllWatchedRaw(): Int
+
+    @Query("""
+        SELECT COUNT(*) FROM episode_watched w
+        INNER JOIN episodes e ON w.episodeId = e.id
+        WHERE e.episodeType = 'FILLER'
+    """)
+    suspend fun countWatchedFillerEpisodes(): Int
 
     @Query("SELECT episodeId FROM episode_watched")
     suspend fun getAllWatchedIds(): List<String>

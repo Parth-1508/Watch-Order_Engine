@@ -2575,6 +2575,14 @@ class MediaRepository @Inject constructor(
         } catch (e: Exception) { 0 }
     }
 
+    suspend fun countWatchedFillerEpisodes(): Int = withContext(Dispatchers.IO) {
+        try { db.episodeWatchedDao().countWatchedFillerEpisodes() } catch (e: Exception) { 0 }
+    }
+
+    suspend fun countTotalEpisodesInActiveShows(): Int = withContext(Dispatchers.IO) {
+        try { db.episodeDao().countTotalEpisodesInActiveShows() } catch (e: Exception) { 0 }
+    }
+
     /** Real total minutes watched — handles dual-ID mapping to ensure legacy history is counted. */
     suspend fun getTotalWatchedMinutes(): Int = withContext(Dispatchers.IO) {
         try { db.episodeWatchedDao().sumWatchedRuntimeMinutesTypeSafe() } catch (e: Exception) { 0 }

@@ -9,6 +9,7 @@ import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.model.UserStats
 import com.example.watchorderengine.data.db.entity.ReviewEntity
 import com.example.watchorderengine.data.model.ActorSummary
+import com.example.watchorderengine.data.model.MediaCategory
 import com.example.watchorderengine.data.prefs.UserPreferencesRepository
 import com.example.watchorderengine.data.repository.ActorRepository
 import com.example.watchorderengine.data.repository.MediaRepository
@@ -106,6 +107,8 @@ class ProfileViewModel @Inject constructor(
                 val totalWatchedDef = async { repository.countWatchedEpisodes() }
                 val totalMinutesDef = async { repository.getTotalWatchedMinutes() }
                 val streakDef       = async { repository.computeWatchStreak() }
+                val watchedFillerDef = async { repository.countWatchedFillerEpisodes() }
+                val totalActiveEpsDef = async { repository.countTotalEpisodesInActiveShows() }
 
                 val watching  = watchingDef.await()
                 val planned   = plannedDef.await()
@@ -122,9 +125,41 @@ class ProfileViewModel @Inject constructor(
                     return@launch
                 }
 
-                val totalWatched = totalWatchedDef.await()
-                val totalMinutes = totalMinutesDef.await()
-                val streak       = streakDef.await()
+                val totalWatched  = totalWatchedDef.await()
+                val totalMinutes  = totalMinutesDef.await()
+                val streak        = streakDef.await()
+                val watchedFiller = watchedFillerDef.await()
+                val totalActiveEps = totalActiveEpsDef.await()
+
+                val canonPurity = if (totalWatched > 0) {
+                    (((totalWatched - watchedFiller).toFloat() / totalWatched) * 100).toInt().coerceIn(0, 100)
+                } else 100
+
+                val totalStarted = (completed.size + watching.size + paused.size + dropped.size).coerceAtLeast(1)
+                val completionRate = if (totalActiveEps > 0) {
+                    ((totalWatched.toFloat() / totalActiveEps) * 100).toInt().coerceIn(0, 100)
+                } else {
+                    ((completed.size.toFloat() / totalStarted) * 100).toInt().coerceIn(0, 100)
+                }
+
+                val allTracked = completed + watching + paused
+                val decadeCounts = allTracked.mapNotNull {
+                    val year = it.releaseYear.toIntOrNull() ?: return@mapNotNull null
+                    when {
+                        year >= 2020 -> "2020s"
+                        year >= 2010 -> "2010s"
+                        year >= 2000 -> "2000s"
+                        else         -> "Classic"
+                    }
+                }.groupingBy { it }.eachCount()
+
+                val categoryCounts = allTracked.groupingBy { 
+                    when (it.mediaCategory) {
+                        MediaCategory.ANIME -> "Anime"
+                        MediaCategory.MOVIE -> "Movies"
+                        else                                                         -> "TV Shows"
+                    }
+                }.eachCount()
 
                 // Top genres from all tracked media + onboarding choices
                 val preferredGenres = userPrefs.selectedGenres.first()
@@ -149,7 +184,6 @@ class ProfileViewModel @Inject constructor(
                 val recentlyWatched = (watching + completed).take(6)
 
                 // ── Profile score ────────────────────────────────────────────────
-                // Update: Count both Movie category AND Anime films (identified by TMDB movie ID prefix)
                 val totalMovies = completed.count { 
                     it.mediaCategory == com.example.watchorderengine.data.model.MediaCategory.MOVIE || 
                     it.id.contains("_m_") 
@@ -162,21 +196,25 @@ class ProfileViewModel @Inject constructor(
                 )
 
                 _stats.value = UserStats(
-                    totalMinutesWatched  = totalMinutes.toLong(),
-                    totalEpisodesWatched = totalWatched,
-                    totalMoviesWatched   = totalMovies,
-                    showsCompleted       = completed.size,
-                    showsDropped         = dropped.size,
-                    showsWatching        = watching.size,
-                    showsPlanned         = planned.size,
-                    showsPaused          = paused.size,
-                    topGenres            = topGenres,
-                    averageRating        = _liveAverageRating.value,
-                    recentlyWatched      = recentlyWatched,
-                    favoriteGenre        = topGenres.firstOrNull(),
-                    streakDays           = streak,
-                    profileScore         = score,
-                    profileRank          = getRankForScore(score)
+                    totalMinutesWatched    = totalMinutes.toLong(),
+                    totalEpisodesWatched   = totalWatched,
+                    totalMoviesWatched     = totalMovies,
+                    showsCompleted         = completed.size,
+                    showsDropped           = dropped.size,
+                    showsWatching          = watching.size,
+                    showsPlanned           = planned.size,
+                    showsPaused            = paused.size,
+                    topGenres              = topGenres,
+                    averageRating          = _liveAverageRating.value,
+                    recentlyWatched        = recentlyWatched,
+                    favoriteGenre          = topGenres.firstOrNull(),
+                    streakDays             = streak,
+                    profileScore           = score,
+                    profileRank            = getRankForScore(score),
+                    completionRatePercent  = completionRate,
+                    canonPurityPercent     = canonPurity,
+                    decadeBreakdown        = decadeCounts,
+                    categoryDistribution   = categoryCounts
                 )
             } finally {
                 _isLoading.value = false
