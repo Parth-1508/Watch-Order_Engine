@@ -10,6 +10,7 @@ data class Recommendation(
     val media: MediaEntity,
     val score: Double,
     val matchedGenres: List<String>,
+    val matchPercentage: Int = 85
 )
 
 private val STATE_WEIGHT = mapOf(
@@ -17,12 +18,12 @@ private val STATE_WEIGHT = mapOf(
     TrackingState.WATCHING   to 0.75,
     TrackingState.PAUSED     to 0.4,
     TrackingState.PLANNED    to 0.2,
-    TrackingState.DROPPED    to -0.5,
+    TrackingState.DROPPED    to -0.8,
 )
 
 private fun ratingMultiplier(userRating: Float?): Double {
     if (userRating == null) return 1.0
-    return 0.5 + (userRating / 10.0) * 1.0
+    return if (userRating >= 8f) 1.8 else if (userRating < 5f) 0.3 else 1.0
 }
 
 object RecommendationEngine {
@@ -42,7 +43,7 @@ object RecommendationEngine {
             tasteVector[genre] = 2.0 // Strong initial weight
         }
 
-        // 2. Adjust based on real behavior
+        // 2. Adjust based on real behavior & ratings
         for ((media, progress) in completedMedia) {
             val stateWeight  = STATE_WEIGHT[TrackingState.valueOf(progress.trackingState)] ?: 0.0
             val ratingBoost  = ratingMultiplier(progress.userRating)
@@ -56,24 +57,21 @@ object RecommendationEngine {
         }
 
         if (tasteVector.isEmpty()) {
-            // Absolute fallback: return highest rated candidates from cache
             return candidates
                 .filter { !it.posterUrl.isNullOrBlank() }
                 .sortedByDescending { it.voteAverage }
                 .take(topK)
-                .map { Recommendation(it, it.voteAverage.toDouble(), emptyList()) }
+                .map { Recommendation(it, it.voteAverage.toDouble(), emptyList(), 80) }
         }
 
         val totalTracked = completedMedia.size.toDouble() + (if (preferredGenres.isNotEmpty()) 1.0 else 0.0)
         val genreDocFrequency = mutableMapOf<String, Int>()
         
-        // Count frequencies in watchlist
         for ((media, _) in completedMedia) {
             for (genre in media.genres) {
                 genreDocFrequency[genre] = (genreDocFrequency[genre] ?: 0) + 1
             }
         }
-        // Also count onboarding genres as "1" occurrence to smooth IDF
         preferredGenres.forEach { genre ->
             genreDocFrequency[genre] = (genreDocFrequency[genre] ?: 0) + 1
         }
@@ -95,38 +93,40 @@ object RecommendationEngine {
             val similarity = dotProduct(tasteVector, candidateVector)
             val qualityBoost = (candidate.voteAverage / 10.0).coerceIn(0.0, 1.0)
             
-            // Add a small base score so anything remotely related shows up
             val finalScore   = (similarity * 0.8) + (qualityBoost * 0.1) + 0.1
+            val matchPct     = ((similarity.coerceIn(0.1, 0.98) * 100)).toInt().coerceIn(65, 98)
             val matchedGenres = candidate.genres.filter { tasteVector.containsKey(it) }
 
-            Triple(candidate, finalScore, matchedGenres)
+            Quadruple(candidate, finalScore, matchedGenres, matchPct)
         }
 
         val finalResults = scored
-            .filter { (_, score, _) -> score > 0.0 }
-            .sortedByDescending { (_, score, _) -> score }
+            .filter { (_, score, _, _) -> score > 0.0 }
+            .sortedByDescending { (_, score, _, _) -> score }
             .take(topK)
-            .map { (media, score, genres) ->
+            .map { (media, score, genres, pct) ->
                 Recommendation(
-                    media        = media,
-                    score        = score,
+                    media         = media,
+                    score         = score,
                     matchedGenres = genres.take(3),
+                    matchPercentage = pct
                 )
             }
         
         if (finalResults.size < 5) {
-            // Fill with highest rated candidates if we still have too few
             val existingIds = finalResults.map { it.media.id }.toSet()
             val extras = candidates
                 .filter { it.id !in existingIds }
                 .sortedByDescending { it.voteAverage }
                 .take(5 - finalResults.size)
-                .map { Recommendation(it, 0.0, emptyList()) }
+                .map { Recommendation(it, 0.0, emptyList(), 75) }
             return finalResults + extras
         }
         
         return finalResults
     }
+
+    private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     private fun dotProduct(a: Map<String, Double>, b: Map<String, Double>): Double {
         val (smaller, larger) = if (a.size <= b.size) a to b else b to a

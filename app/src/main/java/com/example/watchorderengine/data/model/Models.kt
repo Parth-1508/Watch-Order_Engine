@@ -406,20 +406,23 @@ data class ContextTag(
  */
 @Serializable
 data class UserStats(
-    val totalMinutesWatched: Long,
-    val totalEpisodesWatched: Int,
-    val totalMoviesWatched: Int,
-    val showsCompleted: Int,
-    val showsDropped: Int,
-    val showsWatching: Int,
-    val showsPlanned: Int,
-    val showsPaused: Int,
-    val topGenres: List<String>,
-    val averageRating: Float?,
-    // ERROR #4 new fields
+    val totalMinutesWatched: Long = 0,
+    val totalEpisodesWatched: Int = 0,
+    val totalMoviesWatched: Int = 0,
+    val showsCompleted: Int = 0,
+    val showsDropped: Int = 0,
+    val showsWatching: Int = 0,
+    val showsPlanned: Int = 0,
+    val showsPaused: Int = 0,
+    val topGenres: List<String> = emptyList(),
+    val averageRating: Float? = null,
     val recentlyWatched: List<MediaSummary> = emptyList(),
     val favoriteGenre: String? = null,
     val streakDays: Int = 0,
     val profileScore: Int = 0,
-    val profileRank: String = "Novice"
+    val profileRank: String = "Novice",
+    val completionRatePercent: Int = 0,
+    val canonPurityPercent: Int = 100,
+    val decadeBreakdown: Map<String, Int> = emptyMap(),
+    val categoryDistribution: Map<String, Int> = emptyMap()
 )

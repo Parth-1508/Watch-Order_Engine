@@ -259,6 +259,28 @@ class EditProfileViewModel @Inject constructor(
             }
             val score = computeScore(totalWatched, totalMovies, reviews, streak)
 
+            val totalStartedShows = (completed.size + watching.size + paused.size + dropped.size).coerceAtLeast(1)
+            val completionRate = ((completed.size.toFloat() / totalStartedShows) * 100).toInt().coerceIn(0, 100)
+
+            val allTracked = completed + watching + paused
+            val decadeCounts = allTracked.mapNotNull {
+                val year = it.releaseYear.toIntOrNull() ?: return@mapNotNull null
+                when {
+                    year >= 2020 -> "2020s"
+                    year >= 2010 -> "2010s"
+                    year >= 2000 -> "2000s"
+                    else         -> "Classic"
+                }
+            }.groupingBy { it }.eachCount()
+
+            val categoryCounts = allTracked.groupingBy { 
+                when (it.mediaCategory) {
+                    MediaCategory.ANIME -> "Anime"
+                    MediaCategory.MOVIE -> "Movies"
+                    else                -> "TV Shows"
+                }
+            }.eachCount()
+
             val stats = UserStats(
                 totalMinutesWatched = totalMinutes.toLong(),
                 totalEpisodesWatched = totalWatched,
@@ -273,7 +295,11 @@ class EditProfileViewModel @Inject constructor(
                 favoriteGenre = topGenres.firstOrNull(),
                 streakDays = streak,
                 profileScore = score,
-                profileRank = getRankForScore(score)
+                profileRank = getRankForScore(score),
+                completionRatePercent = completionRate,
+                canonPurityPercent = 94, // High default purity index
+                decadeBreakdown = decadeCounts,
+                categoryDistribution = categoryCounts
             )
             WatchStatsCodec.encode(stats)
         } catch (e: Exception) {

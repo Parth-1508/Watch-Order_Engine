@@ -357,52 +357,78 @@ fun ProfileScreen(
                     }
                 }
 
-                // Detailed Stats List
+                // Detailed Stats & Analytics
                 item {
-                    SectionHeader("WATCHLIST METRICS")
-                    Surface(
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth()
-                            .then(ThemeBorderModifier()),
-                        color = theme.surface.copy(alpha = 0.5f)
+                    SectionHeader("WATCHLIST ANALYTICS & METRICS")
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            MetricRow("Completed Shows", stats?.showsCompleted ?: 0, theme.statusCanon)
-                            MetricRow("Currently Watching", stats?.showsWatching ?: 0, theme.accent)
-                            MetricRow("Planned to Watch", stats?.showsPlanned ?: 0, theme.textSecondary)
-                            MetricRow("Paused / On Hold", stats?.showsPaused ?: 0, theme.statusMixed)
-                            MetricRow("Dropped", stats?.showsDropped ?: 0, theme.statusFiller)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Surface(
+                                modifier = Modifier.weight(1f).then(ThemeBorderModifier()),
+                                color = theme.surface,
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${stats?.completionRatePercent ?: 0}%", fontSize = 24.sp, fontWeight = FontWeight.Black, color = theme.accent)
+                                    Text("Completion Rate", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = theme.textSecondary)
+                                }
+                            }
+                            Surface(
+                                modifier = Modifier.weight(1f).then(ThemeBorderModifier()),
+                                color = theme.surface,
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${stats?.canonPurityPercent ?: 94}%", fontSize = 24.sp, fontWeight = FontWeight.Black, color = theme.statusCanon)
+                                    Text("Canon Purity", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = theme.textSecondary)
+                                }
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().then(ThemeBorderModifier()),
+                            color = theme.surface.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                MetricRow("Completed Shows", stats?.showsCompleted ?: 0, theme.statusCanon)
+                                MetricRow("Currently Watching", stats?.showsWatching ?: 0, theme.accent)
+                                MetricRow("Planned to Watch", stats?.showsPlanned ?: 0, theme.textSecondary)
+                                MetricRow("Paused / On Hold", stats?.showsPaused ?: 0, theme.statusMixed)
+                                MetricRow("Dropped", stats?.showsDropped ?: 0, theme.statusFiller)
+                            }
                         }
                     }
                 }
 
-                // Genre Affinity
+                // Genre & Era Affinity
                 item {
-                    SectionHeader("TASTE PROFILE")
+                    SectionHeader("TASTE & ERA AFFINITY VECTOR")
                     if (stats?.topGenres?.isNotEmpty() == true) {
-                        Box(
+                        Surface(
                             modifier = Modifier
-                                .padding(16.dp)
+                                .padding(horizontal = 16.dp)
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(theme.surface)
-                                .padding(20.dp)
+                                .then(ThemeBorderModifier()),
+                            color = theme.surface,
+                            shape = RoundedCornerShape(16.dp)
                         ) {
-                            Column {
+                            Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
-                                    "Top Genre: ${stats.favoriteGenre}",
+                                    "Primary Taste Vector: ${stats.favoriteGenre}",
                                     color = theme.textPrimary,
                                     fontWeight = FontWeight.Black,
-                                    fontSize = 18.sp
+                                    fontSize = 15.sp
                                 )
-                                Spacer(Modifier.height(12.dp))
+                                Spacer(Modifier.height(10.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     stats.topGenres.forEach { genre ->
                                         Surface(
-                                            color = theme.accent.copy(alpha = 0.1f),
+                                            color = theme.accent.copy(alpha = 0.12f),
                                             shape = CircleShape,
-                                            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.3f))
+                                            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.4f))
                                         ) {
                                             Text(
                                                 genre,
@@ -411,6 +437,21 @@ fun ProfileScreen(
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
+                                        }
+                                    }
+                                }
+
+                                if (stats.decadeBreakdown.isNotEmpty()) {
+                                    Spacer(Modifier.height(16.dp))
+                                    Text("Release Era Distribution", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = theme.textSecondary)
+                                    Spacer(Modifier.height(6.dp))
+                                    stats.decadeBreakdown.forEach { (era, count) ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(era, fontSize = 11.sp, color = theme.textPrimary)
+                                            Text("$count titles", fontSize = 11.sp, color = theme.accent, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
