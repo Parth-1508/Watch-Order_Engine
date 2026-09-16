@@ -61,7 +61,17 @@ data class AnilistListEntry(
 
 @JsonClass(generateAdapter = true)
 data class AnilistPagedMedia(
-    @Json(name = "media") val media: List<AnilistMedia>?
+    @Json(name = "media") val media: List<AnilistMedia>?,
+    @Json(name = "airingSchedules") val airingSchedules: List<AnilistAiringSchedule>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AnilistAiringSchedule(
+    val id: Int,
+    val airingAt: Long,
+    val timeUntilAiring: Long? = null,
+    val episode: Int,
+    val media: AnilistMedia? = null
 )
 
 @JsonClass(generateAdapter = true)

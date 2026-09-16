@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
 import javax.inject.Inject
 
 @HiltViewModel
@@ -31,8 +32,15 @@ class CalendarViewModel @Inject constructor(
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
 
+    private val _dailyGlobalSchedule = MutableStateFlow<List<UpcomingEpisode>>(emptyList())
+    val dailyGlobalSchedule: StateFlow<List<UpcomingEpisode>> = _dailyGlobalSchedule.asStateFlow()
+
+    private val _isGlobalScheduleLoading = MutableStateFlow(false)
+    val isGlobalScheduleLoading: StateFlow<Boolean> = _isGlobalScheduleLoading.asStateFlow()
+
     init {
         refresh(showSpinner = false)
+        loadGlobalScheduleForDate(_selectedDate.value)
     }
 
     fun refresh(showSpinner: Boolean = true) {
@@ -58,10 +66,27 @@ class CalendarViewModel @Inject constructor(
         }
     }
 
+    fun loadGlobalScheduleForDate(date: LocalDate) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isGlobalScheduleLoading.value = true
+            try {
+                val zoneId = ZoneId.systemDefault()
+                val startOfDay = date.atStartOfDay(zoneId).toEpochSecond()
+                val endOfDay = date.plusDays(1).atStartOfDay(zoneId).toEpochSecond() - 1
+
+                val schedule = repository.fetchGlobalAiringScheduleForDay(startOfDay, endOfDay)
+                _dailyGlobalSchedule.value = schedule
+            } catch (e: Exception) {
+                _dailyGlobalSchedule.value = emptyList()
+            } finally {
+                _isGlobalScheduleLoading.value = false
+            }
+        }
+    }
+
     fun goToToday() {
         val today = LocalDate.now()
-        _selectedDate.value = today
-        _selectedMonth.value = YearMonth.from(today)
+        selectDate(today)
     }
 
     fun previousMonth() {
@@ -74,12 +99,11 @@ class CalendarViewModel @Inject constructor(
 
     fun selectDate(date: LocalDate) {
         _selectedDate.value = date
-        // If the user taps a date in an adjacent month shown in the grid,
-        // sync the header month to match.
         val month = YearMonth.from(date)
         if (month != _selectedMonth.value) {
             _selectedMonth.value = month
         }
+        loadGlobalScheduleForDate(date)
     }
 }
 

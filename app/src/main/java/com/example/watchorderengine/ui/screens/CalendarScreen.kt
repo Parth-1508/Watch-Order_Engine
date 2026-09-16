@@ -1,14 +1,17 @@
 package com.example.watchorderengine.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +20,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Tv
@@ -28,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,7 +56,150 @@ import java.time.format.TextStyle
 import java.time.temporal.WeekFields
 import java.util.Locale
 import kotlinx.coroutines.launch
+import java.time.temporal.ChronoUnit
 
+@Composable
+fun HorizontalDateSelectorBar(
+    selectedDate: LocalDate,
+    onDateSelect: (LocalDate) -> Unit
+) {
+    val theme = LocalAppTheme.current
+    val days = remember(selectedDate) {
+        (-2..3).map { selectedDate.plusDays(it.toLong()) }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF0F1420))
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        IconButton(
+            onClick = { onDateSelect(selectedDate.minusDays(1)) },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous Day", tint = theme.textPrimary, modifier = Modifier.size(28.dp))
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            days.forEach { date ->
+                val isSelected = date == selectedDate
+                val monthDay = remember(date) {
+                    val monthStr = date.month.name.take(3)
+                    "$monthStr ${date.dayOfMonth}"
+                }
+                val dayOfWeek = remember(date) {
+                    date.dayOfWeek.name.take(3)
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clickable { onDateSelect(date) }
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        monthDay,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) Color.White.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.4f)
+                    )
+                    Text(
+                        dayOfWeek,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .height(3.dp)
+                            .width(28.dp)
+                            .background(if (isSelected) Color.White else Color.Transparent)
+                    )
+                }
+            }
+        }
+
+        IconButton(
+            onClick = { onDateSelect(selectedDate.plusDays(1)) },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next Day", tint = theme.textPrimary, modifier = Modifier.size(28.dp))
+        }
+    }
+}
+
+@Composable
+fun DailyAiringScheduleRow(
+    episode: UpcomingEpisode,
+    onEpisodeClick: (String) -> Unit
+) {
+    val theme = LocalAppTheme.current
+    Surface(
+        onClick = { onEpisodeClick(episode.mediaId) },
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFF141A28),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = episode.episodeName.ifBlank { "12:00" },
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Black,
+                color = theme.accent,
+                modifier = Modifier.width(52.dp)
+            )
+
+            Text(
+                text = episode.showTitle,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = theme.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+            )
+
+            Surface(
+                color = Color(0xFF1E2638),
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.height(32.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = theme.accent,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Episode ${episode.episodeNumber}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarScreen(
     onBack: () -> Unit,
@@ -61,43 +211,16 @@ fun CalendarScreen(
     val isRefreshing  by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val selectedMonth by viewModel.selectedMonth.collectAsStateWithLifecycle()
     val selectedDate  by viewModel.selectedDate.collectAsStateWithLifecycle()
+    val dailyGlobalSchedule by viewModel.dailyGlobalSchedule.collectAsStateWithLifecycle()
+    val isGlobalScheduleLoading by viewModel.isGlobalScheduleLoading.collectAsStateWithLifecycle()
+
     val today         = remember { LocalDate.now() }
     val listState     = rememberLazyListState()
-    val scope         = rememberCoroutineScope()
 
-    var isCalendarExpanded by remember { mutableStateOf(true) }
+    var isCalendarExpanded by remember { mutableStateOf(false) }
+    var selectedCalendarTab by remember { mutableStateOf(0) } // 0 = Global Schedule, 1 = Watchlist Releases
 
     val episodes = (uiState as? CalendarUiState.Success)?.episodes ?: emptyList()
-
-    // Initial scroll to Today
-    LaunchedEffect(episodes) {
-        if (episodes.isNotEmpty()) {
-            val todayStr = today.toString()
-            var index = 0
-            var lastDateKey: String? = null
-            var targetIndex = -1
-            
-            for (ep in episodes) {
-                if (ep.airDate != lastDateKey) {
-                    if (ep.airDate == todayStr) {
-                        targetIndex = index
-                        break
-                    }
-                    index++ // header
-                    lastDateKey = ep.airDate
-                }
-                if (ep.airDate == todayStr) {
-                    targetIndex = index
-                    break
-                }
-                index++ // item
-            }
-            
-            if (targetIndex >= 0) {
-                listState.scrollToItem(targetIndex)
-            }
-        }
-    }
 
     // date -> how many episodes air that day, for the grid's per-cell badge
     val markedDates: Map<LocalDate, Int> = remember(episodes) {
@@ -150,145 +273,178 @@ fun CalendarScreen(
             }
         }
 
-        // ── Month grid ───────────────────────────────────────────────────────
-        androidx.compose.animation.AnimatedVisibility(visible = isCalendarExpanded) {
-            MonthGridCalendar(
-                yearMonth    = selectedMonth,
-                selectedDate = selectedDate,
-                today        = today,
-                markedDates  = markedDates,
-                onPrevMonth  = { viewModel.previousMonth() },
-                onNextMonth  = { viewModel.nextMonth() },
-                onDateClick  = { date ->
-                    viewModel.selectDate(date)
-                    val targetDateStr = date.toString()
-                    var index = 0
-                    var lastDateKey: String? = null
-                    var foundIndex = -1
-                    for (ep in episodes) {
-                        if (ep.airDate != lastDateKey) {
-                            if (ep.airDate == targetDateStr) {
-                                foundIndex = index
-                                break
-                            }
-                            index++ // header
-                            lastDateKey = ep.airDate
-                        }
-                        if (ep.airDate == targetDateStr) {
-                            foundIndex = index
-                            break
-                        }
-                        index++ // item
-                    }
-                    
-                    if (foundIndex >= 0) {
-                        scope.launch { listState.animateScrollToItem(foundIndex) }
-                    }
-                }
+        PrimaryTabRow(
+            selectedTabIndex = selectedCalendarTab,
+            containerColor = theme.background,
+            contentColor = theme.accent
+        ) {
+            Tab(
+                selected = selectedCalendarTab == 0,
+                onClick = { selectedCalendarTab = 0 },
+                text = { Text("GLOBAL SCHEDULE", fontWeight = FontWeight.Black, fontSize = 12.sp) }
+            )
+            Tab(
+                selected = selectedCalendarTab == 1,
+                onClick = { selectedCalendarTab = 1 },
+                text = { Text("MY WATCHLIST RELEASES", fontWeight = FontWeight.Black, fontSize = 12.sp) }
             )
         }
 
-        HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
+        if (selectedCalendarTab == 0) {
+            // Global Live Schedule Mode (Matching screenshot)
+            HorizontalDateSelectorBar(
+                selectedDate = selectedDate,
+                onDateSelect = { date -> viewModel.selectDate(date) }
+            )
 
-        // ── Agenda list ──────────────────────────────────────────────────────
-        AnimatedContent(
-            targetState    = uiState,
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
-            label          = "calendar_state"
-        ) { state ->
-            when (state) {
-                is CalendarUiState.Loading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = theme.accent)
+            if (isGlobalScheduleLoading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = theme.accent)
+                }
+            } else if (dailyGlobalSchedule.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.CalendarMonth, null, tint = theme.textSecondary, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text("No scheduled airings found for this date.", color = theme.textSecondary, fontSize = 13.sp)
                     }
                 }
-
-                is CalendarUiState.Error -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                state.message,
-                                color     = Color(0xFFFF6B6B),
-                                fontSize  = 13.sp,
-                                textAlign = TextAlign.Center,
-                                modifier  = Modifier.padding(horizontal = 32.dp)
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Button(
-                                onClick = { viewModel.refresh() },
-                                colors  = ButtonDefaults.buttonColors(containerColor = theme.accent)
-                            ) { Text("Retry") }
-                        }
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(dailyGlobalSchedule, key = { it.mediaId + it.episodeNumber + it.episodeName }) { episode ->
+                        DailyAiringScheduleRow(
+                            episode = episode,
+                            onEpisodeClick = { onEpisodeClick(episode.mediaId) }
+                        )
                     }
                 }
+            }
+        } else {
+            // Watchlist Mode
+            // ── Month grid ───────────────────────────────────────────────────────
+            AnimatedVisibility(visible = isCalendarExpanded) {
+                MonthGridCalendar(
+                    yearMonth    = selectedMonth,
+                    selectedDate = selectedDate,
+                    today        = today,
+                    markedDates  = markedDates,
+                    onPrevMonth  = { viewModel.previousMonth() },
+                    onNextMonth  = { viewModel.nextMonth() },
+                    onDateClick  = { date ->
+                        viewModel.selectDate(date)
+                    }
+                )
+            }
 
-                is CalendarUiState.Success -> {
-                    var timeRangeFilter by remember { mutableStateOf("ALL") }
-                    val filteredEpisodes = remember(state.episodes, timeRangeFilter, today) {
-                        when (timeRangeFilter) {
-                            "WEEK" -> {
-                                val weekEnd = today.plusDays(7).toString()
-                                state.episodes.filter { it.airDate >= today.toString() && it.airDate <= weekEnd }
-                            }
-                            "MONTH" -> {
-                                val monthEnd = today.plusDays(30).toString()
-                                state.episodes.filter { it.airDate >= today.toString() && it.airDate <= monthEnd }
-                            }
-                            else -> state.episodes
+            HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
+
+            // ── Agenda list ──────────────────────────────────────────────────────
+            AnimatedContent(
+                targetState    = uiState,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label          = "calendar_state"
+            ) { state ->
+                when (state) {
+                    is CalendarUiState.Loading -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = theme.accent)
                         }
                     }
 
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            FilterChip(
-                                selected = timeRangeFilter == "ALL",
-                                onClick = { timeRangeFilter = "ALL" },
-                                label = { Text("All (${state.episodes.size})", fontSize = 11.sp) }
-                            )
-                            FilterChip(
-                                selected = timeRangeFilter == "WEEK",
-                                onClick = { timeRangeFilter = "WEEK" },
-                                label = { Text("Next 7 Days", fontSize = 11.sp) }
-                            )
-                            FilterChip(
-                                selected = timeRangeFilter == "MONTH",
-                                onClick = { timeRangeFilter = "MONTH" },
-                                label = { Text("Next 30 Days", fontSize = 11.sp) }
-                            )
+                    is CalendarUiState.Error -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    state.message,
+                                    color     = Color(0xFFFF6B6B),
+                                    fontSize  = 13.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier  = Modifier.padding(horizontal = 32.dp)
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Button(
+                                    onClick = { viewModel.refresh() },
+                                    colors  = ButtonDefaults.buttonColors(containerColor = theme.accent)
+                                ) { Text("Retry") }
+                            }
+                        }
+                    }
+
+                    is CalendarUiState.Success -> {
+                        var timeRangeFilter by remember { mutableStateOf("ALL") }
+                        val filteredEpisodes = remember(state.episodes, timeRangeFilter, today) {
+                            when (timeRangeFilter) {
+                                "WEEK" -> {
+                                    val weekEnd = today.plusDays(7).toString()
+                                    state.episodes.filter { it.airDate >= today.toString() && it.airDate <= weekEnd }
+                                }
+                                "MONTH" -> {
+                                    val monthEnd = today.plusDays(30).toString()
+                                    state.episodes.filter { it.airDate >= today.toString() && it.airDate <= monthEnd }
+                                }
+                                else -> state.episodes
+                            }
                         }
 
-                        if (filteredEpisodes.isEmpty()) {
-                            EmptyCalendarState()
-                        } else {
-                            LazyColumn(
-                                state             = listState,
-                                modifier          = Modifier.fillMaxSize(),
-                                contentPadding    = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                var lastDateKey: String? = null
-                                filteredEpisodes.forEach { episode ->
-                                    val episodeDate = runCatching { LocalDate.parse(episode.airDate) }.getOrNull()
-                                    val dateKey     = episode.airDate
-                                    val headerLabel = episodeDate?.let { relativeDateLabel(it, today) } ?: episode.airDate
+                                FilterChip(
+                                    selected = timeRangeFilter == "ALL",
+                                    onClick = { timeRangeFilter = "ALL" },
+                                    label = { Text("All (${state.episodes.size})", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = timeRangeFilter == "WEEK",
+                                    onClick = { timeRangeFilter = "WEEK" },
+                                    label = { Text("Next 7 Days", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = timeRangeFilter == "MONTH",
+                                    onClick = { timeRangeFilter = "MONTH" },
+                                    label = { Text("Next 30 Days", fontSize = 11.sp) }
+                                )
+                            }
 
-                                    if (dateKey != lastDateKey) {
-                                        lastDateKey = dateKey
-                                        item(key = "header_$dateKey") {
-                                            DateHeader(headerLabel)
+                            if (filteredEpisodes.isEmpty()) {
+                                EmptyCalendarState()
+                            } else {
+                                LazyColumn(
+                                    state             = listState,
+                                    modifier          = Modifier.fillMaxSize(),
+                                    contentPadding    = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    var lastDateKey: String? = null
+                                    filteredEpisodes.forEach { episode ->
+                                        val episodeDate = runCatching { LocalDate.parse(episode.airDate) }.getOrNull()
+                                        val dateKey     = episode.airDate
+                                        val headerLabel = episodeDate?.let { relativeDateLabel(it, today) } ?: episode.airDate
+
+                                        if (dateKey != lastDateKey) {
+                                            lastDateKey = dateKey
+                                            item(key = "header_$dateKey") {
+                                                DateHeader(headerLabel)
+                                            }
+                                        }
+                                        item(key = "${episode.mediaId}_${episode.airDate}_${episode.seasonEpisodeLabel}") {
+                                            UpcomingEpisodeCard(
+                                                episode = episode,
+                                                onClick = { onEpisodeClick(episode.mediaId) }
+                                            )
                                         }
                                     }
-                                    item(key = "${episode.mediaId}_${episode.airDate}_${episode.seasonEpisodeLabel}") {
-                                        UpcomingEpisodeCard(
-                                            episode = episode,
-                                            onClick = { onEpisodeClick(episode.mediaId) }
-                                        )
-                                    }
+                                    item { Spacer(Modifier.height(24.dp)) }
                                 }
-                                item { Spacer(Modifier.height(24.dp)) }
                             }
                         }
                     }
@@ -302,14 +458,8 @@ fun CalendarScreen(
 // Month grid calendar
 // ═════════════════════════════════════════════════════════════════════════════
 
-/** One cell in the grid. [date] is null for leading/trailing blanks outside the visible month. */
 private data class GridDay(val date: LocalDate?, val inCurrentMonth: Boolean)
 
-/**
- * Builds a full-weeks grid (always a multiple of 7 cells) for [yearMonth],
- * starting on the locale's actual first day of the week (Monday in most of
- * Europe, Sunday in the US, etc.) rather than hardcoding one.
- */
 private fun buildMonthGrid(yearMonth: YearMonth, firstDayOfWeek: DayOfWeek): List<GridDay> {
     val firstOfMonth = yearMonth.atDay(1)
     val daysInMonth  = yearMonth.lengthOfMonth()
@@ -321,11 +471,7 @@ private fun buildMonthGrid(yearMonth: YearMonth, firstDayOfWeek: DayOfWeek): Lis
         if (dayNum in 1..daysInMonth) {
             GridDay(yearMonth.atDay(dayNum), inCurrentMonth = true)
         } else {
-            // Show the real adjacent-month date (dimmed) rather than a blank
-            // cell — tapping it is still useful, it just flips the header
-            // month via CalendarViewModel.selectDate()'s own month-sync logic.
-            val adjacentDate = firstOfMonth.plusDays((i - leadingBlanks).toLong())
-            GridDay(adjacentDate, inCurrentMonth = false)
+            GridDay(null, inCurrentMonth = false)
         }
     }
 }
@@ -341,63 +487,91 @@ private fun MonthGridCalendar(
     onDateClick: (LocalDate) -> Unit
 ) {
     val theme = LocalAppTheme.current
-    val firstDayOfWeek = remember { WeekFields.of(Locale.getDefault()).firstDayOfWeek }
-    val weekdayLabels = remember(firstDayOfWeek) {
-        (0..6).map { firstDayOfWeek.plus(it.toLong()) }
+    val locale = Locale.getDefault()
+
+    val firstDayOfWeek = remember(locale) {
+        WeekFields.of(locale).firstDayOfWeek
     }
-    val grid = remember(yearMonth, firstDayOfWeek) { buildMonthGrid(yearMonth, firstDayOfWeek) }
 
-    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+    val gridDays = remember(yearMonth, firstDayOfWeek) {
+        buildMonthGrid(yearMonth, firstDayOfWeek)
+    }
 
-        // Month header + nav arrows
+    val monthHeaderLabel = remember(yearMonth, locale) {
+        val formatter = DateTimeFormatter.ofPattern("MMMM yyyy", locale)
+        yearMonth.format(formatter).uppercase(locale)
+    }
+
+    val dayOfWeekLabels = remember(firstDayOfWeek, locale) {
+        (0..6).map { offset ->
+            val day = firstDayOfWeek.plus(offset.toLong())
+            day.getDisplayName(TextStyle.SHORT, locale).uppercase(locale).take(2)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            IconButton(onClick = onPrevMonth) {
+            IconButton(onClick = onPrevMonth, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous month", tint = theme.textPrimary)
             }
+
             Text(
-                yearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())).uppercase(),
-                fontSize   = 15.sp,
+                monthHeaderLabel,
+                fontSize   = 14.sp,
                 fontWeight = FontWeight.Black,
-                color      = theme.textPrimary
+                color      = theme.textPrimary,
+                letterSpacing = 1.sp
             )
-            IconButton(onClick = onNextMonth) {
+
+            IconButton(onClick = onNextMonth, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next month", tint = theme.textPrimary)
             }
         }
 
-        // Weekday header row
-        Row(modifier = Modifier.fillMaxWidth()) {
-            weekdayLabels.forEach { dow ->
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            dayOfWeekLabels.forEach { label ->
                 Text(
-                    dow.getDisplayName(TextStyle.SHORT, Locale.getDefault()).take(2).uppercase(),
-                    modifier   = Modifier.weight(1f),
-                    textAlign  = TextAlign.Center,
+                    label,
                     fontSize   = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    color      = theme.textSecondary
+                    color      = theme.textSecondary,
+                    textAlign  = TextAlign.Center,
+                    modifier   = Modifier.width(36.dp)
                 )
             }
         }
 
-        Spacer(Modifier.height(4.dp))
-
-        // Grid — plain rows, never more than 6 weeks (42 cells), so no need
-        // for LazyVerticalGrid or its nested-scroll complications here.
-        grid.chunked(7).forEach { week ->
-            Row(modifier = Modifier.fillMaxWidth()) {
-                week.forEach { cell ->
-                    GridDayCell(
-                        cell         = cell,
-                        isToday      = cell.date == today,
-                        isSelected   = cell.date == selectedDate,
-                        episodeCount = cell.date?.let { markedDates[it] } ?: 0,
-                        onClick      = { cell.date?.let(onDateClick) },
-                        modifier     = Modifier.weight(1f)
-                    )
+        val rows = gridDays.chunked(7)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            rows.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround
+                ) {
+                    row.forEach { day ->
+                        GridDayCell(
+                            day          = day,
+                            selectedDate = selectedDate,
+                            today        = today,
+                            markedCount  = day.date?.let { markedDates[it] } ?: 0,
+                            onClick      = { day.date?.let(onDateClick) }
+                        )
+                    }
                 }
             }
         }
@@ -406,77 +580,82 @@ private fun MonthGridCalendar(
 
 @Composable
 private fun GridDayCell(
-    cell: GridDay,
-    isToday: Boolean,
-    isSelected: Boolean,
-    episodeCount: Int,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    day: GridDay,
+    selectedDate: LocalDate,
+    today: LocalDate,
+    markedCount: Int,
+    onClick: () -> Unit
 ) {
-    val date = cell.date
+    val theme = LocalAppTheme.current
+    val date = day.date
+
     if (date == null) {
-        // Shouldn't normally happen (buildMonthGrid always fills in the real
-        // adjacent-month date), but Spacer is the correct leaf composable for
-        // an empty grid slot if it ever does — Box requires a content lambda
-        // with no default, so a bare Box(modifier) here wouldn't compile.
-        Spacer(modifier.aspectRatio(1f))
+        Box(Modifier.size(36.dp))
         return
     }
 
-    val theme = LocalAppTheme.current
+    val isSelected = date == selectedDate
+    val isToday    = date == today
+
+    val backgroundColor = when {
+        isSelected -> theme.accent
+        isToday    -> theme.accent.copy(alpha = 0.15f)
+        else       -> Color.Transparent
+    }
+
+    val textColor = when {
+        isSelected -> Color.Black
+        isToday    -> theme.accent
+        else       -> theme.textPrimary
+    }
+
+    val borderColor = when {
+        isToday && !isSelected -> theme.accent.copy(alpha = 0.5f)
+        else                   -> Color.Transparent
+    }
+
     Box(
-        modifier = modifier
-            .aspectRatio(1f)
-            .padding(1.dp)
+        modifier = Modifier
+            .size(36.dp)
             .clip(CircleShape)
-            .background(if (isSelected) theme.accent else Color.Transparent)
-            .border(
-                width = if (isToday && !isSelected) 1.dp else 0.dp,
-                color = theme.accent,
-                shape = CircleShape
-            )
+            .background(backgroundColor)
+            .border(1.dp, borderColor, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
             Text(
-                date.dayOfMonth.toString(),
-                fontSize   = 11.sp,
-                fontWeight = if (isToday || isSelected) FontWeight.Black else FontWeight.Normal,
-                color = when {
-                    isSelected -> Color.White
-                    !cell.inCurrentMonth -> theme.textSecondary.copy(alpha = 0.35f)
-                    else -> theme.textPrimary
-                }
+                text       = date.dayOfMonth.toString(),
+                fontSize   = 12.sp,
+                fontWeight = if (isSelected || isToday) FontWeight.Black else FontWeight.Normal,
+                color      = textColor
             )
-            if (episodeCount > 0) {
+
+            if (markedCount > 0 && !isSelected) {
                 Box(
                     modifier = Modifier
-                        .padding(top = 1.dp)
-                        .size(3.dp)
+                        .size(4.dp)
                         .clip(CircleShape)
-                        .background(if (isSelected) Color.White else theme.accent)
+                        .background(if (isToday) theme.accent else theme.statusCanon)
                 )
-            } else {
-                Spacer(Modifier.size(3.dp).padding(top = 1.dp))
             }
         }
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Agenda rows
-// ═════════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun DateHeader(label: String) {
     val theme = LocalAppTheme.current
     Text(
-        text       = label.uppercase(),
-        fontSize   = 12.sp,
-        fontWeight = FontWeight.Black,
-        color      = theme.accent,
-        modifier   = Modifier.padding(top = 14.dp, bottom = 6.dp)
+        text          = label.uppercase(),
+        fontSize      = 11.sp,
+        fontWeight    = FontWeight.Black,
+        color         = theme.accent,
+        letterSpacing = 1.sp,
+        modifier      = Modifier.padding(top = 12.dp, bottom = 4.dp)
     )
 }
 
@@ -484,31 +663,36 @@ private fun DateHeader(label: String) {
 private fun UpcomingEpisodeCard(episode: UpcomingEpisode, onClick: () -> Unit) {
     val theme = LocalAppTheme.current
     Surface(
-        onClick  = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        color = theme.surface,
-        shape = RoundedCornerShape(10.dp)
+        onClick = onClick,
+        shape   = RoundedCornerShape(12.dp),
+        color   = theme.surface,
+        border  = BorderStroke(1.dp, theme.border.copy(alpha = 0.1f)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
+            modifier          = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
                 model              = episode.posterUrl,
-                contentDescription = null,
-                contentScale       = ContentScale.Crop,
+                contentDescription = episode.showTitle,
                 modifier           = Modifier
-                    .size(44.dp, 62.dp)
+                    .width(42.dp)
+                    .height(60.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(theme.surfaceHover)
+                    .background(theme.background),
+                contentScale       = ContentScale.Crop,
+                error              = rememberVectorPainter(Icons.Default.Tv)
             )
+
             Spacer(Modifier.width(12.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     episode.showTitle,
+                    color      = theme.textPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize   = 14.sp,
-                    color      = theme.textPrimary,
                     maxLines   = 1,
                     overflow   = TextOverflow.Ellipsis
                 )
@@ -567,12 +751,13 @@ private fun EmptyCalendarState() {
     }
 }
 
-// ─── Date label helper ──────────────────────────────────────────────────────
-
-private fun relativeDateLabel(date: LocalDate, today: LocalDate): String = when {
-    date == today                                            -> "Today"
-    date == today.plusDays(1)                                -> "Tomorrow"
-    date == today.minusDays(1)                               -> "Yesterday"
-    date.isAfter(today) && date.isBefore(today.plusDays(7))  -> date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
-    else -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()))
+private fun relativeDateLabel(date: LocalDate, today: LocalDate): String {
+    val diff = ChronoUnit.DAYS.between(today, date)
+    return when (diff) {
+        0L   -> "Today — ${date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))}"
+        1L   -> "Tomorrow — ${date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))}"
+        -1L  -> "Yesterday — ${date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))}"
+        in 2..6 -> "${date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))}"
+        else -> date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+    }
 }

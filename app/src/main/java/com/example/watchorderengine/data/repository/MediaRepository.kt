@@ -42,7 +42,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -2086,6 +2089,63 @@ class MediaRepository @Inject constructor(
         (myEpisodes + trendingTmdbEpisodes + trendingAnilist)
             .distinctBy { it.mediaId + it.airDate + it.episodeNumber }
             .sortedBy { it.airDate } // Ascending (Past to Future)
+    }
+
+    suspend fun fetchGlobalAiringScheduleForDay(dayStartSec: Long, dayEndSec: Long): List<UpcomingEpisode> = withContext(Dispatchers.IO) {
+        val query = """
+            query (${'$'}start: Int, ${'$'}end: Int) {
+              Page (page: 1, perPage: 50) {
+                airingSchedules (airingAt_greater: ${'$'}start, airingAt_lesser: ${'$'}end, sort: TIME) {
+                  id
+                  airingAt
+                  episode
+                  media {
+                    id
+                    title { english romaji }
+                    coverImage { large }
+                    format
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        val variables = mapOf(
+            "start" to dayStartSec,
+            "end" to dayEndSec
+        )
+
+        try {
+            val response = anilistApi.query(AnilistRequest(query, variables))
+            if (!response.isSuccessful) return@withContext emptyList()
+
+            val schedules = response.body()?.data?.page?.airingSchedules ?: return@withContext emptyList()
+
+            val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+
+            schedules.mapNotNull { sched ->
+                val media = sched.media ?: return@mapNotNull null
+                val title = media.title?.english ?: media.title?.romaji ?: "Untitled"
+                val date = Date(sched.airingAt * 1000L)
+                val airDateIso = dateFormat.format(date)
+                val timeStr = timeFormat.format(date)
+
+                UpcomingEpisode(
+                    mediaId = "anilist_${media.id}",
+                    showTitle = title,
+                    posterUrl = media.coverImage?.large,
+                    mediaCategory = if (media.format == "MOVIE") "MOVIE" else "ANIME",
+                    seasonNumber = 1,
+                    episodeNumber = sched.episode,
+                    episodeName = timeStr,
+                    airDate = airDateIso
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchGlobalAiringScheduleForDay failed: ${e.message}")
+            emptyList()
+        }
     }
 
     private suspend fun fetchAiringTrendingAnime(startDateIso: String): List<UpcomingEpisode> {
