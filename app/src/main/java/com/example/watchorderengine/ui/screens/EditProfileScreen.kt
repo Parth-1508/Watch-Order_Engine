@@ -56,6 +56,7 @@ fun EditProfileScreen(
     val favoriteShows by viewModel.favoriteShows.collectAsStateWithLifecycle()
     val favoriteActors by viewModel.favoriteActors.collectAsStateWithLifecycle()
     val candidateShows by viewModel.candidateShows.collectAsStateWithLifecycle()
+    val showSearchQuery by viewModel.showSearchQuery.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isUploadingAvatar by viewModel.isUploadingAvatar.collectAsStateWithLifecycle()
     val pendingCropUri by viewModel.pendingCropUri.collectAsStateWithLifecycle()
@@ -278,12 +279,41 @@ fun EditProfileScreen(
 
             // Favorite shows
             SectionHeader("FAVORITE SHOWS (UP TO 5)")
+
+            OutlinedTextField(
+                value = showSearchQuery,
+                onValueChange = { viewModel.onShowSearchQueryChanged(it) },
+                placeholder = { Text("Search your watchlist (Watching, Completed, Paused)...", fontSize = 12.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = theme.accent, modifier = Modifier.size(18.dp)) },
+                trailingIcon = {
+                    if (showSearchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onShowSearchQueryChanged("") }) {
+                            Icon(Icons.Default.Close, null, tint = theme.textSecondary, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = theme.surface,
+                    unfocusedContainerColor = theme.surface,
+                    focusedBorderColor = theme.accent,
+                    unfocusedBorderColor = theme.border.copy(alpha = 0.3f),
+                    focusedTextColor = theme.textPrimary,
+                    unfocusedTextColor = theme.textPrimary
+                ),
+                singleLine = true
+            )
+
             if (candidateShows.isEmpty()) {
                 Text(
-                    "Mark shows as Watching or Completed to pick favorites here.",
+                    if (showSearchQuery.isNotBlank()) "No shows matching \"$showSearchQuery\" in your watchlist."
+                    else "Mark shows as Watching, Completed, or Paused to pick favorites here.",
                     color = theme.textSecondary,
                     fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             } else {
                 LazyVerticalGrid(

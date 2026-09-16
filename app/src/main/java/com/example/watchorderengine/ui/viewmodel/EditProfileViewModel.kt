@@ -21,9 +21,12 @@ import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -72,7 +75,17 @@ class EditProfileViewModel @Inject constructor(
     val favoriteActors: StateFlow<List<ActorSummary>> = _favoriteActors.asStateFlow()
 
     private val _candidateShows = MutableStateFlow<List<MediaSummary>>(emptyList())
-    val candidateShows: StateFlow<List<MediaSummary>> = _candidateShows.asStateFlow()
+
+    private val _showSearchQuery = MutableStateFlow("")
+    val showSearchQuery: StateFlow<String> = _showSearchQuery.asStateFlow()
+
+    val candidateShows: StateFlow<List<MediaSummary>> = combine(
+        _candidateShows,
+        _showSearchQuery
+    ) { candidates, query ->
+        if (query.isBlank()) candidates
+        else candidates.filter { it.title.contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -105,6 +118,7 @@ class EditProfileViewModel @Inject constructor(
                 val profileDef = async { userProfileRepository.getProfile(uid) }
                 val completedDef = async { mediaRepository.getListByState(TrackingState.COMPLETED) }
                 val watchingDef = async { mediaRepository.getListByState(TrackingState.WATCHING) }
+                val pausedDef = async { mediaRepository.getListByState(TrackingState.PAUSED) }
                 val favActorsDef = async { favoriteActorDao.getAll() }
 
                 val profile = profileDef.await().getOrNull()
@@ -129,11 +143,15 @@ class EditProfileViewModel @Inject constructor(
                     )
                 }
 
-                _candidateShows.value = (completedDef.await() + watchingDef.await())
+                _candidateShows.value = (completedDef.await() + watchingDef.await() + pausedDef.await())
                     .distinctBy { it.id }
             }
             _isLoading.value = false
         }
+    }
+
+    fun onShowSearchQueryChanged(query: String) {
+        _showSearchQuery.value = query
     }
 
     fun updateDisplayName(name: String) {
