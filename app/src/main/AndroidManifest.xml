@@ -100,6 +100,19 @@
                 android:resource="@xml/upcoming_calendar_widget_info" />
         </receiver>
 
+        <!-- Watch Streak habit ring home screen widget -->
+        <receiver
+            android:name=".widget.WatchStreakWidgetReceiver"
+            android:exported="false"
+            android:label="@string/watch_streak_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/watch_streak_widget_info" />
+        </receiver>
+
         <!--
           Secure file sharing for social media export cards.
           Enables ShareCardExporter.kt to share Bitmaps from the internal cache
