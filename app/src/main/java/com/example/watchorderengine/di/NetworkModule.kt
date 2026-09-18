@@ -6,9 +6,11 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.example.watchorderengine.BuildConfig
 import com.example.watchorderengine.network.AnilistApiService
 import com.example.watchorderengine.network.JikanApiService
+import com.example.watchorderengine.network.OmdbApiService
 import com.example.watchorderengine.network.TmdbApiService
 import com.example.watchorderengine.network.TmdbAuthInterceptor
 import com.example.watchorderengine.network.TmdbConfig
+import com.example.watchorderengine.network.TvmazeApiService
 import com.example.watchorderengine.network.gemini.GeminiService
 import dagger.Module
 import dagger.Provides
@@ -204,5 +206,27 @@ object NetworkModule {
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideTvmazeApiService(@AnilistClient client: OkHttpClient, moshi: Moshi): TvmazeApiService {
+        return Retrofit.Builder()
+            .baseUrl("https://api.tvmaze.com/")
+            .client(client)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(TvmazeApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideOmdbApiService(@AnilistClient client: OkHttpClient, moshi: Moshi): OmdbApiService {
+        return Retrofit.Builder()
+            .baseUrl("https://www.omdbapi.com/")
+            .client(client)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(OmdbApiService::class.java)
     }
 }

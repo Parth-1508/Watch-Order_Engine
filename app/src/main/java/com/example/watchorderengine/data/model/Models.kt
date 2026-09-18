@@ -176,6 +176,13 @@ data class MediaDetail(
     val trailerKey: String?,
     val originalLanguage: String?,
 
+    // OMDb & TVMaze Benchmark & Network metadata
+    val imdbRating: Float? = null,
+    val rottenTomatoesScore: String? = null,
+    val metascore: Int? = null,
+    val awardsSummary: String? = null,
+    val networkName: String? = null,
+
     /**
      * Streaming / rental / purchase options for this title.
      * Resolved once at cache time; empty list hides the "Where to Watch" card.

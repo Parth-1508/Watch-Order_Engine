@@ -411,6 +411,65 @@ private fun DetailContent(
                         }
                         Text("${watchedCount}/${totalEps} eps", color = theme.textSecondary, fontSize = 10.sp)
                     }
+
+                    // Ratings Benchmark Card (OMDb)
+                    if (detail.imdbRating != null || !detail.rottenTomatoesScore.isNullOrBlank() || detail.metascore != null) {
+                        Spacer(Modifier.height(10.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = theme.surface,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, theme.border.copy(alpha = 0.1f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceAround,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                detail.imdbRating?.let { rating ->
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("🟡 IMDb", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = theme.textSecondary)
+                                        Text("${String.format("%.1f", rating)} ★", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color(0xFFFFD700))
+                                    }
+                                }
+                                detail.rottenTomatoesScore?.let { rt ->
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("🍅 Tomatoes", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = theme.textSecondary)
+                                        Text(rt, fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color(0xFFFF4B6E))
+                                    }
+                                }
+                                detail.metascore?.let { meta ->
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("🎯 Metacritic", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = theme.textSecondary)
+                                        Text("$meta / 100", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color(0xFF60A5FA))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Awards & Accolades Card (OMDb)
+                    if (!detail.awardsSummary.isNullOrBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = theme.accent.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.2f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = theme.accent, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text("AWARDS & ACCOLADES", fontSize = 9.sp, fontWeight = FontWeight.Black, color = theme.accent)
+                                    Text(detail.awardsSummary!!, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.textPrimary)
+                                }
+                            }
+                        }
+                    }
                     
                     // Overview Section
                     if (detail.overview.isNotBlank()) {

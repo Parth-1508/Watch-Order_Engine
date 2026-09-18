@@ -59,6 +59,7 @@ import com.example.watchorderengine.viewmodel.DisplayNode
 import com.example.watchorderengine.viewmodel.TimelineRow
 import com.example.watchorderengine.viewmodel.TimelineViewModel
 import kotlinx.coroutines.launch
+import java.net.URLEncoder
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -556,17 +557,38 @@ fun CommunityHeader(
 }
 
 @Composable
-fun DiscussionHubSection() {
+fun DiscussionHubSection(showTitle: String? = null, imdbId: String? = null) {
     val theme = LocalAppTheme.current
     val uriHandler = LocalUriHandler.current
     
-    val forums = listOf(
-        ForumLink("Reddit Movies", "r/movies", "https://www.reddit.com/r/movies/", Icons.Default.ChatBubbleOutline),
-        ForumLink("IMDb Boards", "Community", "https://www.imdb.com/community/", Icons.Default.StarOutline),
-        ForumLink("Letterboxd", "Journal", "https://letterboxd.com/journal/", Icons.Default.Visibility),
-        ForumLink("Rotten Tomatoes", "Critics", "https://www.rottentomatoes.com/", Icons.Default.Poll),
-        ForumLink("Fandom Wiki", "Knowledge", "https://www.fandom.com/", Icons.Default.MenuBook)
-    )
+    val encodedTitle = remember(showTitle) {
+        showTitle?.let { try { URLEncoder.encode(it, "UTF-8") } catch(e: Exception) { null } }
+    }
+
+    val forums = remember(showTitle, imdbId, encodedTitle) {
+        if (showTitle != null) {
+            val imdbUrl = if (!imdbId.isNullOrBlank()) "https://www.imdb.com/title/$imdbId/reviews"
+                          else "https://www.imdb.com/find/?q=$encodedTitle"
+            val rtUrl = "https://www.google.com/search?q=site:rottentomatoes.com+$encodedTitle"
+            val redditUrl = "https://www.reddit.com/r/movies/search/?q=$encodedTitle"
+            val letterboxdUrl = "https://letterboxd.com/search/$encodedTitle/"
+
+            listOf(
+                ForumLink("IMDb Reviews", "Direct Reviews", imdbUrl, Icons.Default.StarOutline),
+                ForumLink("Rotten Tomatoes", "Critics & Ratings", rtUrl, Icons.Default.Poll),
+                ForumLink("Reddit Thread", "Community Search", redditUrl, Icons.Default.ChatBubbleOutline),
+                ForumLink("Letterboxd", "Film Journal", letterboxdUrl, Icons.Default.Visibility)
+            )
+        } else {
+            listOf(
+                ForumLink("Reddit Movies", "r/movies", "https://www.reddit.com/r/movies/", Icons.Default.ChatBubbleOutline),
+                ForumLink("IMDb Boards", "Community", "https://www.imdb.com/community/", Icons.Default.StarOutline),
+                ForumLink("Letterboxd", "Journal", "https://letterboxd.com/journal/", Icons.Default.Visibility),
+                ForumLink("Rotten Tomatoes", "Critics", "https://www.rottentomatoes.com/", Icons.Default.Poll),
+                ForumLink("Fandom Wiki", "Knowledge", "https://www.fandom.com/", Icons.Default.MenuBook)
+            )
+        }
+    }
 
     Column(modifier = Modifier.padding(vertical = 12.dp)) {
         Text(

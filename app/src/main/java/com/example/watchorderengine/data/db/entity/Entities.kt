@@ -63,6 +63,13 @@ data class MediaEntity(
      */
     val jikanFillerSynced: Boolean = false,
 
+    // OMDb & TVMaze Benchmark & Network metadata
+    val imdbRating: Float? = null,
+    val rottenTomatoesScore: String? = null,
+    val metascore: Int? = null,
+    val awardsSummary: String? = null,
+    val networkName: String? = null,
+
     /**
      * Schema version 15 adds these four columns — the "quick glance" next-
      * episode fields for the Release Calendar, straight from TMDB's

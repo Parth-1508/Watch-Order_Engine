@@ -23,6 +23,8 @@ import com.example.watchorderengine.network.gemini.GeminiService
 import com.example.watchorderengine.network.model.TmdbWatchProvider
 import com.example.watchorderengine.network.model.TmdbWatchProviderCountry
 import androidx.paging.map
+import com.example.watchorderengine.network.OmdbApiService
+import com.example.watchorderengine.network.TvmazeApiService
 import com.example.watchorderengine.util.ContentFilters
 import com.example.watchorderengine.util.retry
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -60,6 +62,8 @@ class MediaRepository @Inject constructor(
     private val apiService: TmdbApiService,
     private val jikanApiService: JikanApiService,
     private val anilistApi: com.example.watchorderengine.network.AnilistApiService,
+    private val omdbApi: OmdbApiService,
+    private val tvmazeApi: TvmazeApiService,
     private val geminiService: GeminiService,
     private val watchOrderRepository: WatchOrderRepository,
     private val friendActivityRepository: FriendActivityRepository,
@@ -389,6 +393,11 @@ class MediaRepository @Inject constructor(
             releaseYear      = entity.releaseDate?.take(4) ?: "",
             trailerKey       = entity.trailerKey,
             originalLanguage = entity.originalLanguage,
+            imdbRating          = entity.imdbRating,
+            rottenTomatoesScore = entity.rottenTomatoesScore,
+            metascore           = entity.metascore,
+            awardsSummary       = entity.awardsSummary,
+            networkName         = entity.networkName,
             watchProviders   = providers ?: emptyList(),
             cast             = cast ?: emptyList(),
             recommendations  = recs,
@@ -400,13 +409,42 @@ class MediaRepository @Inject constructor(
             } else null
         )
       }
+    private suspend fun enrichWithOmdbData(imdbId: String?, title: String, entity: MediaEntity): MediaEntity {
+        return try {
+            val omdbResp = if (!imdbId.isNullOrBlank()) {
+                omdbApi.getByImdbId(imdbId)
+            } else {
+                omdbApi.getByTitle(title)
+            }
+
+            if (omdbResp.isSuccessful && omdbResp.body()?.response == "True") {
+                val omdb = omdbResp.body()!!
+                val rating = omdb.imdbRating?.toFloatOrNull()
+                val meta = omdb.metascore?.toIntOrNull()
+                val rtScore = omdb.ratings?.firstOrNull { it.source?.contains("Rotten Tomatoes", ignoreCase = true) == true }?.value
+                val awards = omdb.awards?.takeIf { it != "N/A" }
+
+                entity.copy(
+                    imdbRating = rating ?: entity.imdbRating,
+                    rottenTomatoesScore = rtScore ?: entity.rottenTomatoesScore,
+                    metascore = meta ?: entity.metascore,
+                    awardsSummary = awards ?: entity.awardsSummary
+                )
+            } else entity
+        } catch (e: Exception) {
+            Log.w(TAG, "OMDb enrichment failed for $title: ${e.message}")
+            entity
+        }
+    }
+
     private suspend fun fetchAndCacheMovie(tmdbId: Int, mediaId: String): Boolean {
         return try {
             val response = retry { apiService.getMovie(tmdbId) }
             if (!response.isSuccessful || response.body() == null) return false
             val body = response.body()!!
-            val entity   = body.toMediaEntity(mediaId)
+            var entity   = body.toMediaEntity(mediaId)
             val castJson = buildCastJson(body, isMovie = true)
+            entity = enrichWithOmdbData(body.externalIds?.imdbId, body.title ?: body.name ?: "", entity)
             db.mediaDao().upsert(entity.copy(castJson = castJson))
             true
         } catch (e: Exception) {
@@ -420,7 +458,8 @@ class MediaRepository @Inject constructor(
             val response = retry { apiService.getTvShow(tmdbId) }
             if (!response.isSuccessful || response.body() == null) return false
             val body = response.body()!!
-            val entity = body.toMediaEntity(mediaId)
+            var entity = body.toMediaEntity(mediaId)
+            entity = enrichWithOmdbData(body.externalIds?.imdbId, body.name ?: body.title ?: "", entity)
             db.mediaDao().upsert(entity)
 
             if (body.seasons != null) {
