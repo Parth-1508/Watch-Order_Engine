@@ -2230,7 +2230,7 @@ class MediaRepository @Inject constructor(
             if (tmdbSearch.isSuccessful) {
                 val match = tmdbSearch.body()?.results?.firstOrNull {
                     val candidateTitle = it.title ?: it.name ?: ""
-                    candidateTitle.contains(title, ignoreCase = true) || title.contains(candidateTitle, ignoreCase = true)
+                    isTitleMatch(candidateTitle, title)
                 }
                 if (match != null) {
                     val isTmdbMovie = match.mediaType == "movie" || isMovie
