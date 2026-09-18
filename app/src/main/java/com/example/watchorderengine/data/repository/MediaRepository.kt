@@ -100,8 +100,10 @@ class MediaRepository @Inject constructor(
      *   "tmdb_10193"   → 10193  (legacy untyped format)
      *   "10193"        → 10193  (very old format)
      */
-    internal fun extractTmdbId(mediaId: String): Int? =
-        mediaId.substringAfterLast("_").toIntOrNull()
+    internal fun extractTmdbId(mediaId: String): Int? {
+        if (mediaId.startsWith("anilist_")) return null
+        return mediaId.substringAfterLast("_").toIntOrNull()
+    }
 
     internal fun isMovieId(mediaId: String): Boolean = mediaId.contains("_m_")
     internal fun isTvId(mediaId: String):    Boolean = mediaId.contains("_t_")
@@ -235,18 +237,16 @@ class MediaRepository @Inject constructor(
             val cachedEntity = db.mediaDao().getById(mediaId)
                 ?: db.mediaDao().getByAnilistId(anilistId)
 
-            if (cachedEntity != null) {
-                if (cachedEntity.tmdbId > 0) {
-                    val realTmdbId = cachedEntity.tmdbId
-                    return if (cachedEntity.mediaCategory == "MOVIE") {
-                        fetchAndCacheMovie(realTmdbId, cachedEntity.id)
-                    } else {
-                        fetchAndCacheTv(realTmdbId, cachedEntity.id)
-                    }
+            if (cachedEntity != null && cachedEntity.tmdbId > 0) {
+                val realTmdbId = cachedEntity.tmdbId
+                return if (cachedEntity.mediaCategory == "MOVIE") {
+                    fetchAndCacheMovie(realTmdbId, cachedEntity.id)
+                } else {
+                    fetchAndCacheTv(realTmdbId, cachedEntity.id)
                 }
-                return true
             }
-            return false
+
+            return fetchAndCacheAnilistAnime(anilistId, mediaId)
         }
 
         val tmdbId = extractTmdbId(mediaId) ?: return false
@@ -269,6 +269,7 @@ class MediaRepository @Inject constructor(
 
     private suspend fun buildMediaDetail(mediaId: String): MediaDetail? {
         val tmdbId = extractTmdbId(mediaId)
+        val anilistId = if (mediaId.startsWith("anilist_")) mediaId.removePrefix("anilist_").toIntOrNull() else null
 
         val typedCategories = when {
             isMovieId(mediaId) -> listOf("MOVIE")
@@ -276,6 +277,7 @@ class MediaRepository @Inject constructor(
             else               -> listOf("MOVIE", "TV_SHOW", "ANIME")
         }
         val entity = db.mediaDao().getById(mediaId)
+            ?: anilistId?.let { db.mediaDao().getByAnilistId(it) }
             ?: tmdbId?.let { db.mediaDao().getByTmdbIdAndCategory(it, typedCategories) }
             ?: tmdbId?.let { db.mediaDao().getByTmdbId(it) }
             ?: tmdbId?.let { 
@@ -2266,6 +2268,61 @@ class MediaRepository @Inject constructor(
             db.mediaDao().upsert(it.copy(anilistId = anilistId, tmdbId = 0))
         }
         return@withContext fallbackId
+    }
+
+    private suspend fun fetchAndCacheAnilistAnime(anilistId: Int, targetMediaId: String): Boolean = withContext(Dispatchers.IO) {
+        val query = """
+            query (${'$'}id: Int) {
+              Media (id: ${'$'}id, type: ANIME) {
+                id
+                idMal
+                title { english romaji native }
+                description
+                coverImage { large }
+                bannerImage
+                episodes
+                averageScore
+                genres
+                status
+                format
+              }
+            }
+        """.trimIndent()
+
+        try {
+            val response = anilistApi.query(AnilistRequest(query, mapOf("id" to anilistId)))
+            if (!response.isSuccessful) return@withContext false
+            val m = response.body()?.data?.media ?: return@withContext false
+
+            val title = m.title?.english ?: m.title?.romaji ?: "Untitled"
+            val totalEps = m.episodes ?: 12
+            val poster = m.coverImage?.large
+            val banner = m.bannerImage ?: poster
+
+            val node = MediaNode(
+                id = targetMediaId,
+                title = title,
+                posterUrl = poster,
+                tmdb_id = 0,
+                tmdb_media_type = if (m.format == "MOVIE") "movie" else "tv"
+            )
+            ensureMetadataCached(node)
+            db.mediaDao().getById(targetMediaId)?.let {
+                db.mediaDao().upsert(
+                    it.copy(
+                        anilistId = anilistId,
+                        tmdbId = 0,
+                        overview = m.description ?: "",
+                        numberOfEpisodes = totalEps,
+                        status = "RELEASING"
+                    )
+                )
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchAndCacheAnilistAnime failed for $anilistId: ${e.message}")
+            false
+        }
     }
 
     private suspend fun fetchAiringTrendingAnime(startDateIso: String): List<UpcomingEpisode> {
