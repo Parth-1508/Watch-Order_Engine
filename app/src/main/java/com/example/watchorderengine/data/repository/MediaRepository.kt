@@ -2188,7 +2188,7 @@ class MediaRepository @Inject constructor(
         }
 
         (watchlistEpisodes + favoriteActorReleases)
-            .distinctBy { it.mediaId + it.airDate + it.episodeNumber + it.episodeName }
+            .distinctBy { "${it.mediaId}_${it.airDate}_${it.seasonNumber}_${it.episodeNumber}_${it.episodeName}" }
             .sortedBy { it.airDate }
     }
 

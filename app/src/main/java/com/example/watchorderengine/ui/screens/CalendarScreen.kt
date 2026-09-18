@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -479,7 +480,7 @@ fun CalendarScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(filteredGlobalSchedule, key = { it.mediaId + it.episodeNumber + it.episodeName }) { episode ->
+                    itemsIndexed(filteredGlobalSchedule, key = { idx, episode -> "${episode.mediaId}_${episode.airDate}_${episode.episodeNumber}_${episode.episodeName}_$idx" }) { _, episode ->
                         DailyAiringScheduleRow(
                             episode = episode,
                             isReminderSet = episode.mediaId in reminderEpisodeIds,
@@ -594,18 +595,18 @@ fun CalendarScreen(
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     var lastDateKey: String? = null
-                                    filteredEpisodes.forEach { episode ->
+                                    filteredEpisodes.forEachIndexed { idx, episode ->
                                         val episodeDate = runCatching { LocalDate.parse(episode.airDate) }.getOrNull()
                                         val dateKey     = episode.airDate
                                         val headerLabel = episodeDate?.let { relativeDateLabel(it, today) } ?: episode.airDate
 
                                         if (dateKey != lastDateKey) {
                                             lastDateKey = dateKey
-                                            item(key = "header_$dateKey") {
+                                            item(key = "header_${dateKey}_$idx") {
                                                 DateHeader(headerLabel)
                                             }
                                         }
-                                        item(key = "${episode.mediaId}_${episode.airDate}_${episode.seasonEpisodeLabel}") {
+                                        item(key = "${episode.mediaId}_${episode.airDate}_${episode.seasonEpisodeLabel}_${episode.episodeName}_$idx") {
                                             UpcomingEpisodeCard(
                                                 episode = episode,
                                                 onClick = { onEpisodeClick(episode.mediaId) }
