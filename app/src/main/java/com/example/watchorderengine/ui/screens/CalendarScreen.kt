@@ -220,39 +220,50 @@ fun CalendarScreen(
 
     val today         = remember { LocalDate.now() }
     val listState     = rememberLazyListState()
+    val scope         = rememberCoroutineScope()
 
     var isCalendarExpanded by remember { mutableStateOf(false) }
     var selectedCalendarTab by remember { mutableStateOf(0) } // 0 = Global Schedule, 1 = Watchlist Releases
 
     val episodes = (uiState as? CalendarUiState.Success)?.episodes ?: emptyList()
 
+    val scrollToDate = remember(episodes) {
+        { targetDate: LocalDate ->
+            if (episodes.isNotEmpty()) {
+                val targetStr = targetDate.toString()
+                var index = 0
+                var lastDateKey: String? = null
+                var bestIndex = -1
+
+                for (ep in episodes) {
+                    if (ep.airDate != lastDateKey) {
+                        if (ep.airDate >= targetStr && bestIndex == -1) {
+                            bestIndex = index
+                        }
+                        index++ // header
+                        lastDateKey = ep.airDate
+                    }
+                    if (ep.airDate >= targetStr && bestIndex == -1) {
+                        bestIndex = index
+                    }
+                    index++ // item
+                }
+
+                if (bestIndex == -1) {
+                    bestIndex = (index - 1).coerceAtLeast(0)
+                }
+
+                scope.launch {
+                    listState.animateScrollToItem(bestIndex)
+                }
+            }
+        }
+    }
+
     // Auto-scroll Watchlist Releases tab directly to Today's date / first upcoming episode
     LaunchedEffect(selectedCalendarTab, episodes) {
         if (selectedCalendarTab == 1 && episodes.isNotEmpty()) {
-            val todayStr = today.toString()
-            var index = 0
-            var lastDateKey: String? = null
-            var targetIndex = -1
-
-            for (ep in episodes) {
-                if (ep.airDate != lastDateKey) {
-                    if (ep.airDate >= todayStr) {
-                        targetIndex = index
-                        break
-                    }
-                    index++ // header
-                    lastDateKey = ep.airDate
-                }
-                if (ep.airDate >= todayStr) {
-                    targetIndex = index
-                    break
-                }
-                index++ // item
-            }
-
-            if (targetIndex >= 0) {
-                listState.scrollToItem(targetIndex)
-            }
+            scrollToDate(selectedDate)
         }
     }
 
@@ -373,6 +384,7 @@ fun CalendarScreen(
                     onNextMonth  = { viewModel.nextMonth() },
                     onDateClick  = { date ->
                         viewModel.selectDate(date)
+                        scrollToDate(date)
                     }
                 )
             }
@@ -434,7 +446,10 @@ fun CalendarScreen(
                             ) {
                                 FilterChip(
                                     selected = timeRangeFilter == "ALL",
-                                    onClick = { timeRangeFilter = "ALL" },
+                                    onClick = {
+                                        timeRangeFilter = "ALL"
+                                        scrollToDate(selectedDate)
+                                    },
                                     label = { Text("All (${state.episodes.size})", fontSize = 11.sp) }
                                 )
                                 FilterChip(
