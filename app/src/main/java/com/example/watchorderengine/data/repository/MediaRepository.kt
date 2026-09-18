@@ -148,15 +148,17 @@ class MediaRepository @Inject constructor(
      * timeline as completed before ever opening the individual media detail screens.
      */
     suspend fun ensureMetadataCached(node: MediaNode) = withContext(Dispatchers.IO) {
-        val mediaId = buildMediaId(node.tmdb_id, node.tmdb_media_type)
+        val mediaId = if (node.id.isNotBlank()) node.id else buildMediaId(node.tmdb_id, node.tmdb_media_type)
         if (db.mediaDao().getById(mediaId) != null) return@withContext
+
+        val anilistId = if (mediaId.startsWith("anilist_")) mediaId.removePrefix("anilist_").toIntOrNull() else null
 
         // Pre-seed with the data we already have from the timeline/Gemini
         db.mediaDao().upsert(
             MediaEntity(
                 id = mediaId,
                 tmdbId = node.tmdb_id,
-                anilistId = null,
+                anilistId = anilistId,
                 title = node.title,
                 originalTitle = node.title,
                 overview = "",
@@ -164,7 +166,7 @@ class MediaRepository @Inject constructor(
                 status = "RELEASED",
                 posterUrl = node.posterUrl,
                 backdropUrl = null,
-                mediaCategory = if (node.tmdb_media_type == "movie") "MOVIE" else "TV_SHOW",
+                mediaCategory = if (node.tmdb_media_type == "movie") "MOVIE" else if (mediaId.startsWith("anilist_")) "ANIME" else "TV_SHOW",
                 genres = emptyList(),
                 ageRating = "NR",
                 voteAverage = 0f,
@@ -183,8 +185,10 @@ class MediaRepository @Inject constructor(
         )
 
         // Optionally trigger a full fetch in the background to get overview/genres/etc.
-        repositoryScope.launch {
-            refreshDetail(mediaId)
+        if (!mediaId.startsWith("anilist_") && node.tmdb_id > 0) {
+            repositoryScope.launch {
+                refreshDetail(mediaId)
+            }
         }
     }
 
