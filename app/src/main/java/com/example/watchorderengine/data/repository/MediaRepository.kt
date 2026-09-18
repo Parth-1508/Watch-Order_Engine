@@ -2073,20 +2073,40 @@ class MediaRepository @Inject constructor(
         for (mediaId in trackedMedia) {
             val media = mediaMap[mediaId] ?: continue
             val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
-            for (ep in episodes) {
-                val dateIso = ep.airDate?.takeIf { it.isNotBlank() } ?: continue
-                watchlistEpisodes.add(
-                    UpcomingEpisode(
-                        mediaId       = ep.mediaId,
-                        showTitle     = media.title,
-                        posterUrl     = media.posterUrl,
-                        mediaCategory = media.mediaCategory,
-                        seasonNumber  = ep.seasonNumber,
-                        episodeNumber = ep.episodeNumber,
-                        episodeName   = ep.title.ifBlank { "Episode ${ep.episodeNumber}" },
-                        airDate       = dateIso,
+
+            if (episodes.isNotEmpty()) {
+                for (ep in episodes) {
+                    val dateIso = ep.airDate?.takeIf { it.isNotBlank() } ?: continue
+                    watchlistEpisodes.add(
+                        UpcomingEpisode(
+                            mediaId       = ep.mediaId,
+                            showTitle     = media.title,
+                            posterUrl     = media.posterUrl,
+                            mediaCategory = media.mediaCategory,
+                            seasonNumber  = ep.seasonNumber,
+                            episodeNumber = ep.episodeNumber,
+                            episodeName   = ep.title.ifBlank { "Episode ${ep.episodeNumber}" },
+                            airDate       = dateIso,
+                        )
                     )
-                )
+                }
+            } else {
+                // If individual episodes aren't cached in Room yet, use show's release date
+                val releaseDateIso = media.releaseDate?.takeIf { it.isNotBlank() }
+                if (releaseDateIso != null) {
+                    watchlistEpisodes.add(
+                        UpcomingEpisode(
+                            mediaId       = media.id,
+                            showTitle     = media.title,
+                            posterUrl     = media.posterUrl,
+                            mediaCategory = media.mediaCategory,
+                            seasonNumber  = 1,
+                            episodeNumber = 1,
+                            episodeName   = if (media.mediaCategory == "MOVIE") "Movie Premiere" else "Series Premiere",
+                            airDate       = releaseDateIso,
+                        )
+                    )
+                }
             }
         }
 

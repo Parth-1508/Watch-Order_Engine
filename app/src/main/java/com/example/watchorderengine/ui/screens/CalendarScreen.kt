@@ -226,6 +226,36 @@ fun CalendarScreen(
 
     val episodes = (uiState as? CalendarUiState.Success)?.episodes ?: emptyList()
 
+    // Auto-scroll Watchlist Releases tab directly to Today's date / first upcoming episode
+    LaunchedEffect(selectedCalendarTab, episodes) {
+        if (selectedCalendarTab == 1 && episodes.isNotEmpty()) {
+            val todayStr = today.toString()
+            var index = 0
+            var lastDateKey: String? = null
+            var targetIndex = -1
+
+            for (ep in episodes) {
+                if (ep.airDate != lastDateKey) {
+                    if (ep.airDate >= todayStr) {
+                        targetIndex = index
+                        break
+                    }
+                    index++ // header
+                    lastDateKey = ep.airDate
+                }
+                if (ep.airDate >= todayStr) {
+                    targetIndex = index
+                    break
+                }
+                index++ // item
+            }
+
+            if (targetIndex >= 0) {
+                listState.scrollToItem(targetIndex)
+            }
+        }
+    }
+
     // date -> how many episodes air that day, for the grid's per-cell badge
     val markedDates: Map<LocalDate, Int> = remember(episodes) {
         episodes
