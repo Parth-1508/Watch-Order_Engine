@@ -448,25 +448,26 @@ class MediaDetailViewModel @Inject constructor(
     }
 
     private suspend fun checkAutoCompletion(mediaId: String) {
-        // We can't rely on _mediaDetail.value yet as loadMediaDetail is asynchronous
-        // Let's grab the fresh state from repository
         repository.getMediaDetailFlow(mediaId).collect { detail ->
             if (detail != null) {
                 val watched = detail.userProgress?.totalEpisodesWatched ?: 0
                 val total = detail.numberOfEpisodes ?: 0
                 val currentState = detail.userProgress?.trackingState
+                val status = (detail.status ?: "").lowercase()
 
-                if (total > 0 && watched >= total && currentState != TrackingState.COMPLETED) {
+                val isOngoing = status.contains("returning") || 
+                        status.contains("ongoing") || 
+                        status.contains("releasing") || 
+                        status.contains("in production")
+
+                if (!isOngoing && total > 0 && watched >= total && currentState != TrackingState.COMPLETED) {
                     repository.updateTrackingState(mediaId, TrackingState.COMPLETED)
-                    // One final reload to sync the UI state
                     loadMediaDetail(mediaId, forceRefresh = true)
-                } else if (total > 0 && watched < total && currentState == TrackingState.COMPLETED) {
-                    // If it was completed but now has unmarked episodes, move back to Watching
+                } else if ((isOngoing || (total > 0 && watched < total)) && currentState == TrackingState.COMPLETED) {
                     repository.updateTrackingState(mediaId, TrackingState.WATCHING)
                     loadMediaDetail(mediaId, forceRefresh = true)
                 }
             }
-            // Stop after first emission (cached or refreshed)
             return@collect
         }
     }

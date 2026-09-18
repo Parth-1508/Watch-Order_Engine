@@ -291,8 +291,9 @@ interface EpisodeWatchedDao {
         INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
         SELECT id, mediaId, :timestamp FROM episodes
         WHERE mediaId = :mediaId AND absoluteEpisodeNumber <= :upToAbsoluteNumber AND seasonNumber > 0
+          AND (airDate IS NULL OR airDate = '' OR airDate <= :todayIso)
     """)
-    suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int, timestamp: Long)
+    suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int, timestamp: Long, todayIso: String = "9999-12-31")
 
     @Transaction
     @Query("""
@@ -301,16 +302,18 @@ interface EpisodeWatchedDao {
         WHERE mediaId = :mediaId 
           AND (seasonNumber < :targetSeason OR (seasonNumber = :targetSeason AND episodeNumber < :targetEpisode))
           AND seasonNumber > 0
+          AND (airDate IS NULL OR airDate = '' OR airDate <= :todayIso)
     """)
-    suspend fun markBulkPreviousAsWatched(mediaId: String, targetSeason: Int, targetEpisode: Int, timestamp: Long)
+    suspend fun markBulkPreviousAsWatched(mediaId: String, targetSeason: Int, targetEpisode: Int, timestamp: Long, todayIso: String = "9999-12-31")
 
     @Transaction
     @Query("""
         INSERT OR REPLACE INTO episode_watched (episodeId, mediaId, watchedAt)
         SELECT id, mediaId, :timestamp FROM episodes
         WHERE mediaId = :mediaId AND seasonNumber > 0
+          AND (airDate IS NULL OR airDate = '' OR airDate <= :todayIso)
     """)
-    suspend fun markAllAsWatched(mediaId: String, timestamp: Long)
+    suspend fun markAllAsWatched(mediaId: String, timestamp: Long, todayIso: String = "9999-12-31")
 
     @Transaction
     @Query("""

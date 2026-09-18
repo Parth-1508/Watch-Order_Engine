@@ -2083,10 +2083,14 @@ class MediaRepository @Inject constructor(
             } else null
         }
 
-        // 3. Trending/Airing Anime (AniList)
+        // 3. Trending/Airing Anime & Global Airing Schedule
         val trendingAnilist = fetchAiringTrendingAnime(startDateIso)
 
-        (myEpisodes + trendingTmdbEpisodes + trendingAnilist)
+        val nowSec = System.currentTimeMillis() / 1000L
+        val weekAheadSec = nowSec + (7 * 24 * 60 * 60L)
+        val globalScheduleWeek = fetchGlobalAiringScheduleForDay(nowSec, weekAheadSec)
+
+        (myEpisodes + trendingTmdbEpisodes + trendingAnilist + globalScheduleWeek)
             .distinctBy { it.mediaId + it.airDate + it.episodeNumber }
             .sortedBy { it.airDate } // Ascending (Past to Future)
     }
@@ -2123,16 +2127,30 @@ class MediaRepository @Inject constructor(
 
             val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
             val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val selectedDateIso = dateFormat.format(Date(dayStartSec * 1000L))
 
-            schedules.mapNotNull { sched ->
+            val animeEpisodes = schedules.mapNotNull { sched ->
                 val media = sched.media ?: return@mapNotNull null
                 val title = media.title?.english ?: media.title?.romaji ?: "Untitled"
                 val date = Date(sched.airingAt * 1000L)
                 val airDateIso = dateFormat.format(date)
                 val timeStr = timeFormat.format(date)
 
+                val canonicalId = db.mediaDao().getByAnilistId(media.id)?.id
+                    ?: db.mediaDao().getByTmdbId(media.id)?.id
+                    ?: "anilist_${media.id}"
+
+                val episodeNode = MediaNode(
+                    id = canonicalId,
+                    title = title,
+                    posterUrl = media.coverImage?.large,
+                    tmdb_id = media.id,
+                    tmdb_media_type = if (media.format == "MOVIE") "movie" else "tv"
+                )
+                ensureMetadataCached(episodeNode)
+
                 UpcomingEpisode(
-                    mediaId = "anilist_${media.id}",
+                    mediaId = canonicalId,
                     showTitle = title,
                     posterUrl = media.coverImage?.large,
                     mediaCategory = if (media.format == "MOVIE") "MOVIE" else "ANIME",
@@ -2142,6 +2160,37 @@ class MediaRepository @Inject constructor(
                     airDate = airDateIso
                 )
             }
+
+            // TMDB On-The-Air TV Shows & Upcoming Movies for global coverage
+            val tmdbEpisodes = mutableListOf<UpcomingEpisode>()
+            try {
+                val tmdbOnAirResp = apiService.getOnTheAirTv()
+                if (tmdbOnAirResp.isSuccessful) {
+                    tmdbOnAirResp.body()?.results?.forEach { item ->
+                        val itemTitle = item.title ?: item.name ?: return@forEach
+                        val canonicalId = "tmdb_t_${item.id}"
+                        ensureMetadataCached(MediaNode(id = canonicalId, title = itemTitle, posterUrl = TmdbConfig.buildImageUrl(item.posterPath), tmdb_id = item.id, tmdb_media_type = "tv"))
+                        tmdbEpisodes.add(
+                            UpcomingEpisode(
+                                mediaId = canonicalId,
+                                showTitle = itemTitle,
+                                posterUrl = TmdbConfig.buildImageUrl(item.posterPath),
+                                mediaCategory = "TV_SHOW",
+                                seasonNumber = 1,
+                                episodeNumber = 1,
+                                episodeName = "20:00",
+                                airDate = item.firstAirDate ?: selectedDateIso
+                            )
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "TMDB on-the-air schedule fetch failed: ${e.message}")
+            }
+
+            (animeEpisodes + tmdbEpisodes.filter { it.airDate == selectedDateIso })
+                .distinctBy { it.mediaId + it.episodeNumber }
+                .sortedBy { it.episodeName }
         } catch (e: Exception) {
             Log.w(TAG, "fetchGlobalAiringScheduleForDay failed: ${e.message}")
             emptyList()
@@ -2307,11 +2356,13 @@ class MediaRepository @Inject constructor(
     suspend fun markAllPreviousAsWatched(mediaId: String, upToAbsoluteNumber: Int) =
         withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
+            val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().time)
             // 1. Optimized Room update
-            db.episodeWatchedDao().markAllPreviousAsWatched(mediaId, upToAbsoluteNumber - 1, now)
+            db.episodeWatchedDao().markAllPreviousAsWatched(mediaId, upToAbsoluteNumber - 1, now, todayIso)
 
             // 2. Optimized Firestore sync (still needs IDs for bulk update)
             val episodes = db.episodeDao().getEpisodesInRange(mediaId, 1, upToAbsoluteNumber - 1)
+                .filter { it.airDate.isNullOrBlank() || it.airDate!! <= todayIso }
             syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
         }
 
@@ -2319,13 +2370,13 @@ class MediaRepository @Inject constructor(
         mediaId: String, targetSeason: Int, targetEpisode: Int
     ) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
+        val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().time)
         // 1. Optimized Room update using bulk SQL
-        db.episodeWatchedDao().markBulkPreviousAsWatched(mediaId, targetSeason, targetEpisode, now)
+        db.episodeWatchedDao().markBulkPreviousAsWatched(mediaId, targetSeason, targetEpisode, now, todayIso)
         
         // 2. Sync to Firestore (still needs IDs for bulk update)
         val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
-            .filter { it.seasonNumber < targetSeason ||
-                (it.seasonNumber == targetSeason && it.episodeNumber < targetEpisode) }
+            .filter { (it.seasonNumber < targetSeason || (it.seasonNumber == targetSeason && it.episodeNumber < targetEpisode)) && (it.airDate.isNullOrBlank() || it.airDate!! <= todayIso) }
         
         syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
     }
@@ -2335,11 +2386,13 @@ class MediaRepository @Inject constructor(
             ensureEpisodesCached(mediaId)
         }
         val now = System.currentTimeMillis()
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().time)
         // 1. Optimized Room update
-        db.episodeWatchedDao().markAllAsWatched(mediaId, now)
+        db.episodeWatchedDao().markAllAsWatched(mediaId, now, todayIso)
         
         // 2. Optimized Firestore sync
         val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+            .filter { it.airDate.isNullOrBlank() || it.airDate!! <= todayIso }
         syncEpisodesToFirestore(mediaId, episodes.map { it.id }, true)
     }
 

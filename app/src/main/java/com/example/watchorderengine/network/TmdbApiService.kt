@@ -1,6 +1,8 @@
 package com.example.watchorderengine.network
 
 import com.example.watchorderengine.network.model.TmdbDetailResponse
+import com.example.watchorderengine.network.model.TmdbMediaResult
+import com.example.watchorderengine.network.model.TmdbPagedResults
 import com.example.watchorderengine.network.model.TmdbPersonCredits
 import com.example.watchorderengine.network.model.TmdbPersonImages
 import com.example.watchorderengine.network.model.TmdbPersonSearchResponse
@@ -45,6 +47,18 @@ interface TmdbApiService {
         @Query("language")        language: String = "en-US",
         @Query("append_to_response") appendToResponse: String = TmdbConfig.APPEND_TO_RESPONSE_MOVIE
     ): Response<TmdbDetailResponse>
+
+    @GET("tv/on_the_air")
+    suspend fun getOnTheAirTv(
+        @Query("language") language: String = "en-US",
+        @Query("page") page: Int = 1
+    ): Response<TmdbPagedResults<TmdbMediaResult>>
+
+    @GET("movie/upcoming")
+    suspend fun getUpcomingMovies(
+        @Query("language") language: String = "en-US",
+        @Query("page") page: Int = 1
+    ): Response<TmdbPagedResults<TmdbMediaResult>>
 
     /**
      * Fetches full metadata for a single TV show.
