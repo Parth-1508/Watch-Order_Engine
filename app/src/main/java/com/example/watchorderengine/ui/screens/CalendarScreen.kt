@@ -21,10 +21,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
@@ -39,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +55,7 @@ import com.example.watchorderengine.data.model.UpcomingEpisode
 import com.example.watchorderengine.ui.theme.LocalAppTheme
 import com.example.watchorderengine.ui.viewmodel.CalendarUiState
 import com.example.watchorderengine.ui.viewmodel.CalendarViewModel
+import com.example.watchorderengine.util.launchProviderByName
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -143,61 +148,134 @@ fun HorizontalDateSelectorBar(
 @Composable
 fun DailyAiringScheduleRow(
     episode: UpcomingEpisode,
-    onEpisodeClick: (String) -> Unit
+    isReminderSet: Boolean = false,
+    onEpisodeClick: (String) -> Unit,
+    onReminderToggle: () -> Unit = {},
+    onQuickWatchlist: () -> Unit = {}
 ) {
     val theme = LocalAppTheme.current
+    val context = LocalContext.current
+
+    val providerName = remember(episode.showTitle) {
+        val lower = episode.showTitle.lowercase()
+        when {
+            lower.contains("netflix") -> "Netflix"
+            lower.contains("crunchyroll") -> "Crunchyroll"
+            lower.contains("disney") -> "Disney+"
+            lower.contains("hbo") || lower.contains("max") -> "HBO Max"
+            lower.contains("prime") || lower.contains("amazon") -> "Prime Video"
+            lower.contains("sony") || lower.contains("liv") -> "Sony LIV"
+            else -> null
+        }
+    }
+
     Surface(
         onClick = { onEpisodeClick(episode.mediaId) },
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         color = Color(0xFF141A28),
+        border = BorderStroke(1.dp, theme.border.copy(alpha = 0.1f)),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = episode.episodeName.ifBlank { "12:00" },
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Black,
-                color = theme.accent,
-                modifier = Modifier.width(52.dp)
-            )
-
-            Text(
-                text = episode.showTitle,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = theme.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-            )
-
-            Surface(
-                color = Color(0xFF1E2638),
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.height(32.dp)
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                if (!episode.posterUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = episode.posterUrl,
+                        contentDescription = episode.showTitle,
+                        modifier = Modifier
+                            .size(width = 36.dp, height = 52.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(theme.background),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+
+                Text(
+                    text = episode.episodeName.ifBlank { "12:00" },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                    color = theme.accent,
+                    modifier = Modifier.width(48.dp)
+                )
+
+                Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    Text(
+                        text = episode.showTitle,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = theme.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (providerName != null) {
+                        Surface(
+                            onClick = { launchProviderByName(context, providerName, episode.showTitle) },
+                            color = theme.accent.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text(
+                                "▶ $providerName",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = theme.accent,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
+
+                IconButton(
+                    onClick = onReminderToggle,
+                    modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = null,
+                        if (isReminderSet) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
+                        contentDescription = "Set Airing Reminder",
+                        tint = if (isReminderSet) theme.accent else theme.textSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onQuickWatchlist,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.AddCircleOutline,
+                        contentDescription = "Add to Watchlist",
                         tint = theme.accent,
-                        modifier = Modifier.size(12.dp)
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "Episode ${episode.episodeNumber}",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                }
+
+                Surface(
+                    color = Color(0xFF1E2638),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = theme.accent,
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "Ep ${episode.episodeNumber}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
                 }
             }
         }
@@ -218,6 +296,16 @@ fun CalendarScreen(
     val selectedDate  by viewModel.selectedDate.collectAsStateWithLifecycle()
     val dailyGlobalSchedule by viewModel.dailyGlobalSchedule.collectAsStateWithLifecycle()
     val isGlobalScheduleLoading by viewModel.isGlobalScheduleLoading.collectAsStateWithLifecycle()
+    val reminderEpisodeIds by viewModel.reminderEpisodeIds.collectAsStateWithLifecycle()
+    val activeCategoryFilter by viewModel.activeCategoryFilter.collectAsStateWithLifecycle()
+
+    val filteredGlobalSchedule = remember(dailyGlobalSchedule, activeCategoryFilter) {
+        if (activeCategoryFilter.isNullOrBlank()) dailyGlobalSchedule
+        else dailyGlobalSchedule.filter {
+            it.mediaCategory.equals(activeCategoryFilter, ignoreCase = true) ||
+            it.showTitle.contains(activeCategoryFilter!!, ignoreCase = true)
+        }
+    }
 
     val today         = remember { LocalDate.now() }
     val listState     = rememberLazyListState()
@@ -348,17 +436,33 @@ fun CalendarScreen(
         }
 
         if (selectedCalendarTab == 0) {
-            // Global Live Schedule Mode (Matching screenshot)
+            // Global Live Schedule Mode
             HorizontalDateSelectorBar(
                 selectedDate = selectedDate,
                 onDateSelect = { date -> viewModel.selectDate(date) }
             )
 
+            // Category & Genre Filter Chips
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val filters = listOf("ALL", "ANIME", "TV_SHOW", "MOVIE")
+                filters.forEach { cat ->
+                    val isSel = (cat == "ALL" && activeCategoryFilter == null) || activeCategoryFilter == cat
+                    FilterChip(
+                        selected = isSel,
+                        onClick = { viewModel.setCategoryFilter(if (cat == "ALL") null else cat) },
+                        label = { Text(if (cat == "TV_SHOW") "TV SHOWS" else cat, fontSize = 11.sp) }
+                    )
+                }
+            }
+
             if (isGlobalScheduleLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = theme.accent)
                 }
-            } else if (dailyGlobalSchedule.isEmpty()) {
+            } else if (filteredGlobalSchedule.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(32.dp),
                     contentAlignment = Alignment.Center
@@ -366,7 +470,7 @@ fun CalendarScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.CalendarMonth, null, tint = theme.textSecondary, modifier = Modifier.size(48.dp))
                         Spacer(Modifier.height(12.dp))
-                        Text("No scheduled airings found for this date.", color = theme.textSecondary, fontSize = 13.sp)
+                        Text("No scheduled airings found for this category/date.", color = theme.textSecondary, fontSize = 13.sp)
                     }
                 }
             } else {
@@ -375,10 +479,13 @@ fun CalendarScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(dailyGlobalSchedule, key = { it.mediaId + it.episodeNumber + it.episodeName }) { episode ->
+                    items(filteredGlobalSchedule, key = { it.mediaId + it.episodeNumber + it.episodeName }) { episode ->
                         DailyAiringScheduleRow(
                             episode = episode,
-                            onEpisodeClick = { onEpisodeClick(episode.mediaId) }
+                            isReminderSet = episode.mediaId in reminderEpisodeIds,
+                            onEpisodeClick = { onEpisodeClick(episode.mediaId) },
+                            onReminderToggle = { viewModel.toggleNotificationReminder(episode.mediaId) },
+                            onQuickWatchlist = { viewModel.quickAddToWatchlist(episode.mediaId) }
                         )
                     }
                 }

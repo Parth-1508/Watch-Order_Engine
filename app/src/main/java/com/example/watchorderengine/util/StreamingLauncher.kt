@@ -77,6 +77,26 @@ fun launchStreamingProvider(
     fallbackUrl?.let { tryStart(context, Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
 }
 
+fun launchProviderByName(context: Context, providerName: String, title: String) {
+    val providerId = when (providerName.lowercase()) {
+        "netflix" -> 8
+        "crunchyroll" -> 283
+        "disney+" -> 337
+        "hbo max", "max" -> 1899
+        "prime video" -> 119
+        "hulu" -> 15
+        else -> 8
+    }
+    val providerItem = WatchProviderItem(
+        providerId = providerId,
+        providerName = providerName,
+        logoUrl = null,
+        offerType = "stream",
+        justWatchUrl = "https://www.justwatch.com"
+    )
+    launchStreamingProvider(context, providerItem, title, "https://www.justwatch.com")
+}
+
 private fun isAppInstalled(context: Context, packageName: String): Boolean =
     try {
         context.packageManager.getPackageInfo(packageName, 0)

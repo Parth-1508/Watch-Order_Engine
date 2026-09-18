@@ -2,6 +2,7 @@ package com.example.watchorderengine.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.watchorderengine.data.model.TrackingState
 import com.example.watchorderengine.data.model.UpcomingEpisode
 import com.example.watchorderengine.data.repository.MediaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,6 +38,12 @@ class CalendarViewModel @Inject constructor(
 
     private val _isGlobalScheduleLoading = MutableStateFlow(false)
     val isGlobalScheduleLoading: StateFlow<Boolean> = _isGlobalScheduleLoading.asStateFlow()
+
+    private val _reminderEpisodeIds = MutableStateFlow<Set<String>>(emptySet())
+    val reminderEpisodeIds: StateFlow<Set<String>> = _reminderEpisodeIds.asStateFlow()
+
+    private val _activeCategoryFilter = MutableStateFlow<String?>(null)
+    val activeCategoryFilter: StateFlow<String?> = _activeCategoryFilter.asStateFlow()
 
     init {
         refresh(showSpinner = false)
@@ -113,6 +120,22 @@ class CalendarViewModel @Inject constructor(
             _selectedMonth.value = month
         }
         loadGlobalScheduleForDate(date)
+    }
+
+    fun setCategoryFilter(category: String?) {
+        _activeCategoryFilter.value = category
+    }
+
+    fun toggleNotificationReminder(episodeKey: String) {
+        val current = _reminderEpisodeIds.value
+        _reminderEpisodeIds.value = if (episodeKey in current) current - episodeKey else current + episodeKey
+    }
+
+    fun quickAddToWatchlist(mediaId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateTrackingState(mediaId, TrackingState.WATCHING)
+            refresh(showSpinner = false)
+        }
     }
 }
 
