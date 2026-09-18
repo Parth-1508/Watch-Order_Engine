@@ -230,6 +230,25 @@ class MediaRepository @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     private suspend fun refreshDetail(mediaId: String): Boolean {
+        if (mediaId.startsWith("anilist_")) {
+            val anilistId = mediaId.removePrefix("anilist_").toIntOrNull() ?: return false
+            val cachedEntity = db.mediaDao().getById(mediaId)
+                ?: db.mediaDao().getByAnilistId(anilistId)
+
+            if (cachedEntity != null) {
+                if (cachedEntity.tmdbId > 0) {
+                    val realTmdbId = cachedEntity.tmdbId
+                    return if (cachedEntity.mediaCategory == "MOVIE") {
+                        fetchAndCacheMovie(realTmdbId, cachedEntity.id)
+                    } else {
+                        fetchAndCacheTv(realTmdbId, cachedEntity.id)
+                    }
+                }
+                return true
+            }
+            return false
+        }
+
         val tmdbId = extractTmdbId(mediaId) ?: return false
         val cachedEntity = db.mediaDao().getById(mediaId)
             ?: db.mediaDao().getByTmdbId(tmdbId)
@@ -2135,25 +2154,20 @@ class MediaRepository @Inject constructor(
                 val date = Date(sched.airingAt * 1000L)
                 val airDateIso = dateFormat.format(date)
                 val timeStr = timeFormat.format(date)
+                val isMovie = media.format == "MOVIE"
 
-                val canonicalId = db.mediaDao().getByAnilistId(media.id)?.id
-                    ?: db.mediaDao().getByTmdbId(media.id)?.id
-                    ?: "anilist_${media.id}"
-
-                val episodeNode = MediaNode(
-                    id = canonicalId,
+                val canonicalId = resolveCanonicalMediaIdForAnime(
+                    anilistId = media.id,
                     title = title,
                     posterUrl = media.coverImage?.large,
-                    tmdb_id = media.id,
-                    tmdb_media_type = if (media.format == "MOVIE") "movie" else "tv"
+                    isMovie = isMovie
                 )
-                ensureMetadataCached(episodeNode)
 
                 UpcomingEpisode(
                     mediaId = canonicalId,
                     showTitle = title,
                     posterUrl = media.coverImage?.large,
-                    mediaCategory = if (media.format == "MOVIE") "MOVIE" else "ANIME",
+                    mediaCategory = if (isMovie) "MOVIE" else "ANIME",
                     seasonNumber = 1,
                     episodeNumber = sched.episode,
                     episodeName = timeStr,
@@ -2195,6 +2209,63 @@ class MediaRepository @Inject constructor(
             Log.w(TAG, "fetchGlobalAiringScheduleForDay failed: ${e.message}")
             emptyList()
         }
+    }
+
+    private suspend fun resolveCanonicalMediaIdForAnime(
+        anilistId: Int,
+        title: String,
+        posterUrl: String?,
+        isMovie: Boolean
+    ): String = withContext(Dispatchers.IO) {
+        val existingByAnilist = db.mediaDao().getByAnilistId(anilistId)
+        if (existingByAnilist != null) return@withContext existingByAnilist.id
+
+        val existingById = db.mediaDao().getById("anilist_$anilistId")
+        if (existingById != null) return@withContext existingById.id
+
+        try {
+            val tmdbSearch = apiService.searchMulti(title)
+            if (tmdbSearch.isSuccessful) {
+                val match = tmdbSearch.body()?.results?.firstOrNull {
+                    val candidateTitle = it.title ?: it.name ?: ""
+                    candidateTitle.contains(title, ignoreCase = true) || title.contains(candidateTitle, ignoreCase = true)
+                }
+                if (match != null) {
+                    val isTmdbMovie = match.mediaType == "movie" || isMovie
+                    val prefix = if (isTmdbMovie) "tmdb_m_" else "tmdb_t_"
+                    val canonicalId = "$prefix${match.id}"
+
+                    val node = MediaNode(
+                        id = canonicalId,
+                        title = title,
+                        posterUrl = posterUrl ?: TmdbConfig.buildImageUrl(match.posterPath),
+                        tmdb_id = match.id,
+                        tmdb_media_type = if (isTmdbMovie) "movie" else "tv"
+                    )
+                    ensureMetadataCached(node)
+                    db.mediaDao().getById(canonicalId)?.let {
+                        db.mediaDao().upsert(it.copy(anilistId = anilistId))
+                    }
+                    return@withContext canonicalId
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "resolveCanonicalMediaIdForAnime search failed for $title: ${e.message}")
+        }
+
+        val fallbackId = "anilist_$anilistId"
+        val fallbackNode = MediaNode(
+            id = fallbackId,
+            title = title,
+            posterUrl = posterUrl,
+            tmdb_id = 0,
+            tmdb_media_type = if (isMovie) "movie" else "tv"
+        )
+        ensureMetadataCached(fallbackNode)
+        db.mediaDao().getById(fallbackId)?.let {
+            db.mediaDao().upsert(it.copy(anilistId = anilistId, tmdbId = 0))
+        }
+        return@withContext fallbackId
     }
 
     private suspend fun fetchAiringTrendingAnime(startDateIso: String): List<UpcomingEpisode> {
