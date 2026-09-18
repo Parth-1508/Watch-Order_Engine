@@ -90,11 +90,20 @@ class CalendarViewModel @Inject constructor(
     }
 
     fun previousMonth() {
-        _selectedMonth.value = _selectedMonth.value.minusMonths(1)
+        val newMonth = _selectedMonth.value.minusMonths(1)
+        selectMonthYear(newMonth)
     }
 
     fun nextMonth() {
-        _selectedMonth.value = _selectedMonth.value.plusMonths(1)
+        val newMonth = _selectedMonth.value.plusMonths(1)
+        selectMonthYear(newMonth)
+    }
+
+    fun selectMonthYear(yearMonth: YearMonth) {
+        _selectedMonth.value = yearMonth
+        val newDate = yearMonth.atDay(1)
+        _selectedDate.value = newDate
+        loadGlobalScheduleForDate(newDate)
     }
 
     fun selectDate(date: LocalDate) {

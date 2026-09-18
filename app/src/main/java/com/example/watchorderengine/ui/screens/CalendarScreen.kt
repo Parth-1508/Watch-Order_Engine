@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -224,6 +225,17 @@ fun CalendarScreen(
 
     var isCalendarExpanded by remember { mutableStateOf(false) }
     var selectedCalendarTab by remember { mutableStateOf(0) } // 0 = Global Schedule, 1 = Watchlist Releases
+    var showMonthYearPicker by remember { mutableStateOf(false) }
+
+    if (showMonthYearPicker) {
+        MonthYearPickerDialog(
+            initialYearMonth = selectedMonth,
+            onDismiss = { showMonthYearPicker = false },
+            onSelect = { yearMonth ->
+                viewModel.selectMonthYear(yearMonth)
+            }
+        )
+    }
 
     val episodes = (uiState as? CalendarUiState.Success)?.episodes ?: emptyList()
 
@@ -385,7 +397,8 @@ fun CalendarScreen(
                     onDateClick  = { date ->
                         viewModel.selectDate(date)
                         scrollToDate(date)
-                    }
+                    },
+                    onMonthYearClick = { showMonthYearPicker = true }
                 )
             }
 
@@ -533,7 +546,8 @@ private fun MonthGridCalendar(
     markedDates: Map<LocalDate, Int>,
     onPrevMonth: () -> Unit,
     onNextMonth: () -> Unit,
-    onDateClick: (LocalDate) -> Unit
+    onDateClick: (LocalDate) -> Unit,
+    onMonthYearClick: () -> Unit
 ) {
     val theme = LocalAppTheme.current
     val locale = Locale.getDefault()
@@ -574,13 +588,28 @@ private fun MonthGridCalendar(
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous month", tint = theme.textPrimary)
             }
 
-            Text(
-                monthHeaderLabel,
-                fontSize   = 14.sp,
-                fontWeight = FontWeight.Black,
-                color      = theme.textPrimary,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onMonthYearClick() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    monthHeaderLabel,
+                    fontSize   = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    color      = theme.textPrimary,
+                    letterSpacing = 1.sp
+                )
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Default.ArrowDropDown,
+                    contentDescription = "Pick Month & Year",
+                    tint = theme.accent,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
 
             IconButton(onClick = onNextMonth, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next month", tint = theme.textPrimary)
@@ -809,4 +838,84 @@ private fun relativeDateLabel(date: LocalDate, today: LocalDate): String {
         in 2..6 -> "${date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))}"
         else -> date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
     }
+}
+
+@Composable
+private fun MonthYearPickerDialog(
+    initialYearMonth: YearMonth,
+    onDismiss: () -> Unit,
+    onSelect: (YearMonth) -> Unit
+) {
+    val theme = LocalAppTheme.current
+    var selectedYear by remember { mutableIntStateOf(initialYearMonth.year) }
+    var selectedMonth by remember { mutableIntStateOf(initialYearMonth.monthValue) }
+
+    val monthNames = remember {
+        listOf("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = theme.surface,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { selectedYear -= 1 }) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous Year", tint = theme.accent)
+                }
+                Text(
+                    "$selectedYear",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = theme.textPrimary
+                )
+                IconButton(onClick = { selectedYear += 1 }) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next Year", tint = theme.accent)
+                }
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                val chunkedMonths = monthNames.chunked(3)
+                chunkedMonths.forEachIndexed { rowIndex, row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        row.forEachIndexed { colIndex, name ->
+                            val monthNum = rowIndex * 3 + colIndex + 1
+                            val isSelected = monthNum == selectedMonth
+                            Surface(
+                                onClick = {
+                                    selectedMonth = monthNum
+                                    onSelect(YearMonth.of(selectedYear, monthNum))
+                                    onDismiss()
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) theme.accent else theme.background,
+                                modifier = Modifier.weight(1f).height(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        name,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = if (isSelected) Color.Black else theme.textPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", color = theme.textSecondary, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
 }

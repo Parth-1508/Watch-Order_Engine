@@ -2217,6 +2217,7 @@ class MediaRepository @Inject constructor(
             // TMDB On-The-Air TV Shows & Upcoming Movies for global coverage
             val tmdbEpisodes = mutableListOf<UpcomingEpisode>()
             try {
+                // 1. TMDB TV Shows On The Air
                 val tmdbOnAirResp = apiService.getOnTheAirTv()
                 if (tmdbOnAirResp.isSuccessful) {
                     tmdbOnAirResp.body()?.results?.forEach { item ->
@@ -2232,13 +2233,36 @@ class MediaRepository @Inject constructor(
                                 seasonNumber = 1,
                                 episodeNumber = 1,
                                 episodeName = "20:00",
-                                airDate = item.firstAirDate ?: selectedDateIso
+                                airDate = selectedDateIso
+                            )
+                        )
+                    }
+                }
+
+                // 2. TMDB Upcoming Movies
+                val tmdbUpcomingResp = apiService.getUpcomingMovies()
+                if (tmdbUpcomingResp.isSuccessful) {
+                    tmdbUpcomingResp.body()?.results?.forEach { item ->
+                        val itemTitle = item.title ?: item.name ?: return@forEach
+                        val releaseDateIso = item.releaseDate ?: return@forEach
+                        val canonicalId = "tmdb_m_${item.id}"
+                        ensureMetadataCached(MediaNode(id = canonicalId, title = itemTitle, posterUrl = TmdbConfig.buildImageUrl(item.posterPath), tmdb_id = item.id, tmdb_media_type = "movie"))
+                        tmdbEpisodes.add(
+                            UpcomingEpisode(
+                                mediaId = canonicalId,
+                                showTitle = itemTitle,
+                                posterUrl = TmdbConfig.buildImageUrl(item.posterPath),
+                                mediaCategory = "MOVIE",
+                                seasonNumber = 1,
+                                episodeNumber = 1,
+                                episodeName = "Theater Premiere",
+                                airDate = releaseDateIso
                             )
                         )
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "TMDB on-the-air schedule fetch failed: ${e.message}")
+                Log.w(TAG, "TMDB global schedule fetch failed: ${e.message}")
             }
 
             (animeEpisodes + tmdbEpisodes.filter { it.airDate == selectedDateIso })
