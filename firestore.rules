@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ─── USER DATA & PROGRESS (Private) ───────────────────────────
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      match /{allSubcollections=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // ─── PUBLIC USER PROFILES & ACTIVITY ───────────────────────────
+    match /user_profiles/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+
+      match /activity/{activityId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Collection Group rule for activity feed
+    match /{path=**}/activity/{activityId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+
+    // ─── FOLLOWS (FRIEND SHARING) ──────────────────────────────────
+    match /follows/{followId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (
+        request.resource.data.followerId == request.auth.uid ||
+        resource.data.followerId == request.auth.uid
+      );
+    }
+
+    // ─── REVIEWS (GLOBAL) ──────────────────────────────────────────
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.user_id == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+    }
+
+    // ─── NOTIFICATIONS ─────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+
+    // ─── COMMUNITY FEED & COMMENTS ─────────────────────────────────
+    match /global_feed/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['likedByUsers', 'likesCount', 'commentsCount']);
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      }
+    }
+
+    // ─── UNIVERSES & SHARED DATA ───────────────────────────────────
+    match /universes/{universeId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && resource.data.owner_id == request.auth.uid;
+      match /{allSubcollections=**} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+    }
+
+    // ─── GLOBAL NODE COLLECTION-GROUP SEARCH ──────────────────────
+    match /{path=**}/nodes/{nodeId} {
+      allow read: if true;
+    }
+
+    // ─── SHARED GEMINI RESULT CACHES ───────────────────────────────
+    match /arc_segmentation_cache/{mediaId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.data.keys().hasAll(['mediaId', 'episodeCountAtSegmentation', 'arcs'])
+        && request.resource.data.mediaId is string
+        && request.resource.data.mediaId == mediaId
+        && request.resource.data.episodeCountAtSegmentation is int
+        && request.resource.data.episodeCountAtSegmentation >= 0
+        && request.resource.data.arcs is list
+        && request.resource.data.arcs.size() > 0
+        && request.resource.data.arcs.size() <= 500;
+    }
+
+    match /watch_order_sort_cache/{mediaId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.data.keys().hasAll(['mediaId', 'rawItemsFingerprint', 'nodes', 'edges'])
+        && request.resource.data.mediaId is string
+        && request.resource.data.mediaId == mediaId
+        && request.resource.data.rawItemsFingerprint is string
+        && request.resource.data.rawItemsFingerprint.size() > 0
+        && request.resource.data.nodes is list
+        && request.resource.data.nodes.size() > 0
+        && request.resource.data.nodes.size() <= 2000
+        && request.resource.data.edges is list
+        && request.resource.data.edges.size() <= 5000;
+    }
+  }
+}
