@@ -23,6 +23,7 @@ import com.example.watchorderengine.network.gemini.GeminiService
 import com.example.watchorderengine.network.model.TmdbWatchProvider
 import com.example.watchorderengine.network.model.TmdbWatchProviderCountry
 import androidx.paging.map
+import com.example.watchorderengine.util.ContentFilters
 import com.example.watchorderengine.util.retry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.firebase.auth.FirebaseAuth
@@ -2056,68 +2057,80 @@ class MediaRepository @Inject constructor(
      * this) to pick up dates announced since the last cache.
      */
     /**
-     * Expanded calendar: sources every future-dated episode already cached for
-     * any tracked show (except DROPPED), plus dates up to 14 days in the past,
-     * plus current Trending titles from both TMDB and AniList.
+     * Sources lifetime episode airings for all shows in the user's watchlist
+     * (except DROPPED), plus releases starring the user's favorite actors.
      */
     suspend fun getUpcomingEpisodes(): List<UpcomingEpisode> = withContext(Dispatchers.IO) {
-        val today = java.util.Calendar.getInstance()
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-        
-        // 30 days in past
-        val startCal = today.clone() as Calendar
-        startCal.add(Calendar.DATE, -30)
-        val startDateIso = sdf.format(startCal.time)
+        // 1. Lifetime Episode Airings for User's Watchlist Shows (WATCHING, COMPLETED, PAUSED, PLANNED)
+        val trackedMedia = db.userProgressDao().getAll()
+            .filter { it.trackingState != "DROPPED" }
+            .map { it.mediaId }
+            .toSet()
 
-        // 1. My Tracked Shows (expanded)
-        val episodes = db.episodeDao().getUpcomingExpanded(startDateIso)
-        
-        val mediaMap = db.mediaDao()
-            .getByIds(episodes.map { it.mediaId }.distinct())
-            .associateBy { it.id }
+        val mediaMap = db.mediaDao().getByIds(trackedMedia.toList()).associateBy { it.id }
 
-        val myEpisodes = episodes.mapNotNull { ep ->
-            val media = mediaMap[ep.mediaId] ?: return@mapNotNull null
-            UpcomingEpisode(
-                mediaId       = ep.mediaId,
-                showTitle     = media.title,
-                posterUrl     = media.posterUrl,
-                mediaCategory = media.mediaCategory,
-                seasonNumber  = ep.seasonNumber,
-                episodeNumber = ep.episodeNumber,
-                episodeName   = ep.title.ifBlank { "Episode ${ep.episodeNumber}" },
-                airDate       = ep.airDate!!,
-            )
-        }
-
-        // 2. Trending & Recently Released Shows (TMDB)
-        val trendingTmdb = runCatching { (getTrending() + getRecentlyReleased()).distinctBy { it.id } }.getOrDefault(emptyList())
-        val trendingTmdbEpisodes = trendingTmdb.mapNotNull { summary ->
-            val date = summary.releaseDate
-            if (date != null && date >= startDateIso) {
-                UpcomingEpisode(
-                    mediaId = summary.id,
-                    showTitle = summary.title,
-                    posterUrl = summary.posterUrl,
-                    mediaCategory = summary.mediaCategory.name,
-                    seasonNumber = 1,
-                    episodeNumber = 1,
-                    episodeName = if (summary.mediaCategory == MediaCategory.MOVIE) "Theater Release" else "Series Premiere",
-                    airDate = date
+        val watchlistEpisodes = mutableListOf<UpcomingEpisode>()
+        for (mediaId in trackedMedia) {
+            val media = mediaMap[mediaId] ?: continue
+            val episodes = db.episodeDao().getAllEpisodesByMedia(mediaId)
+            for (ep in episodes) {
+                val dateIso = ep.airDate?.takeIf { it.isNotBlank() } ?: continue
+                watchlistEpisodes.add(
+                    UpcomingEpisode(
+                        mediaId       = ep.mediaId,
+                        showTitle     = media.title,
+                        posterUrl     = media.posterUrl,
+                        mediaCategory = media.mediaCategory,
+                        seasonNumber  = ep.seasonNumber,
+                        episodeNumber = ep.episodeNumber,
+                        episodeName   = ep.title.ifBlank { "Episode ${ep.episodeNumber}" },
+                        airDate       = dateIso,
+                    )
                 )
-            } else null
+            }
         }
 
-        // 3. Trending/Airing Anime & Global Airing Schedule
-        val trendingAnilist = fetchAiringTrendingAnime(startDateIso)
+        // 2. Releases Starring Favorite Actors
+        val favoriteActors = db.favoriteActorDao().getAll()
+        val favoriteActorReleases = mutableListOf<UpcomingEpisode>()
 
-        val nowSec = System.currentTimeMillis() / 1000L
-        val weekAheadSec = nowSec + (7 * 24 * 60 * 60L)
-        val globalScheduleWeek = fetchGlobalAiringScheduleForDay(nowSec, weekAheadSec)
+        for (actor in favoriteActors.take(8)) {
+            try {
+                val resp = apiService.getPersonCombinedCredits(actor.id)
+                if (resp.isSuccessful) {
+                    val credits = resp.body()?.cast ?: emptyList()
+                    val scripted = credits.filter { ContentFilters.isScriptedCredit(it) }
 
-        (myEpisodes + trendingTmdbEpisodes + trendingAnilist + globalScheduleWeek)
-            .distinctBy { it.mediaId + it.airDate + it.episodeNumber }
-            .sortedBy { it.airDate } // Ascending (Past to Future)
+                    for (credit in scripted.take(10)) {
+                        val isMovie = credit.mediaType == "movie" || credit.title != null
+                        val dateIso = credit.releaseDate ?: credit.firstAirDate ?: continue
+                        if (dateIso.isBlank()) continue
+
+                        val prefix = if (isMovie) "tmdb_m_" else "tmdb_t_"
+                        val canonicalId = "$prefix${credit.id}"
+
+                        favoriteActorReleases.add(
+                            UpcomingEpisode(
+                                mediaId       = canonicalId,
+                                showTitle     = credit.title ?: credit.name ?: "Untitled",
+                                posterUrl     = TmdbConfig.buildImageUrl(credit.posterPath),
+                                mediaCategory = if (isMovie) "MOVIE" else "TV_SHOW",
+                                seasonNumber  = 1,
+                                episodeNumber = 1,
+                                episodeName   = "Starring ${actor.name}",
+                                airDate       = dateIso
+                            )
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed fetching credits for favorite actor ${actor.name}: ${e.message}")
+            }
+        }
+
+        (watchlistEpisodes + favoriteActorReleases)
+            .distinctBy { it.mediaId + it.airDate + it.episodeNumber + it.episodeName }
+            .sortedBy { it.airDate }
     }
 
     suspend fun fetchGlobalAiringScheduleForDay(dayStartSec: Long, dayEndSec: Long): List<UpcomingEpisode> = withContext(Dispatchers.IO) {
