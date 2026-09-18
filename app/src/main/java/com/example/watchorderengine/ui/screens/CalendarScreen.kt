@@ -9,6 +9,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -65,26 +67,28 @@ fun HorizontalDateSelectorBar(
 ) {
     val theme = LocalAppTheme.current
     val days = remember(selectedDate) {
-        (-2..3).map { selectedDate.plusDays(it.toLong()) }
+        (-3..3).map { selectedDate.plusDays(it.toLong()) }
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFF0F1420))
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(
             onClick = { onDateSelect(selectedDate.minusDays(1)) },
-            modifier = Modifier.size(36.dp)
+            modifier = Modifier.padding(start = 4.dp).size(36.dp)
         ) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous Day", tint = theme.textPrimary, modifier = Modifier.size(28.dp))
         }
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             days.forEach { date ->
@@ -101,7 +105,7 @@ fun HorizontalDateSelectorBar(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .clickable { onDateSelect(date) }
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
                         monthDay,

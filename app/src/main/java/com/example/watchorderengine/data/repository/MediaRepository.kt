@@ -2224,10 +2224,21 @@ class MediaRepository @Inject constructor(
         isMovie: Boolean
     ): String = withContext(Dispatchers.IO) {
         val existingByAnilist = db.mediaDao().getByAnilistId(anilistId)
-        if (existingByAnilist != null) return@withContext existingByAnilist.id
+        if (existingByAnilist != null) {
+            if (isTitleMatch(existingByAnilist.title, title)) {
+                return@withContext existingByAnilist.id
+            } else {
+                Log.w(TAG, "Self-healing stale Room mapping for anilistId $anilistId: '${existingByAnilist.title}' != '$title'")
+                db.mediaDao().upsert(existingByAnilist.copy(anilistId = null))
+            }
+        }
 
         val existingById = db.mediaDao().getById("anilist_$anilistId")
-        if (existingById != null) return@withContext existingById.id
+        if (existingById != null) {
+            if (isTitleMatch(existingById.title, title)) {
+                return@withContext existingById.id
+            }
+        }
 
         try {
             val tmdbSearch = apiService.searchMulti(title)
