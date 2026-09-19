@@ -134,7 +134,7 @@ firebase deploy --only firestore:rules
 
 ## 👤 Developer
 
-Designed & developed as a solo project by **Parth**.
+Designed & developed as a solo project by **Parth-1508**.
 
 ---
 
