@@ -158,8 +158,12 @@ class GeminiService @Inject constructor(
     private val mediaTypeJson = "application/json; charset=utf-8".toMediaType()
 
     companion object {
-        private const val ENDPOINT =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
+        private val MODEL_ENDPOINTS = listOf(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
+        )
     }
 
     /**
@@ -216,35 +220,37 @@ class GeminiService @Inject constructor(
 
         var lastError: String? = null
 
-        // Cycle through keys until one works or all fail
-        for (apiKey in allKeys) {
-            val request = Request.Builder()
-                .url("$ENDPOINT?key=$apiKey")
-                .post(requestJson.toRequestBody(mediaTypeJson))
-                .header("Content-Type", "application/json")
-                .build()
+        // Cycle through endpoints and keys until one works or all fail
+        for (endpointUrl in MODEL_ENDPOINTS) {
+            for (apiKey in allKeys) {
+                val request = Request.Builder()
+                    .url("$endpointUrl?key=$apiKey")
+                    .post(requestJson.toRequestBody(mediaTypeJson))
+                    .header("Content-Type", "application/json")
+                    .build()
 
-            try {
-                val response = client.newCall(request).execute()
-                val body = response.body?.string() ?: continue
-                
-                if (response.isSuccessful) {
-                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
-                    val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                        ?: return@withContext GeminiResult.Error("Gemini returned an empty response body.")
+                try {
+                    val response = client.newCall(request).execute()
+                    val body = response.body?.string() ?: continue
+                    
+                    if (response.isSuccessful) {
+                        val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
+                        val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                            ?: return@withContext GeminiResult.Error("Gemini returned an empty response body.")
 
-                    val parsed = moshi.adapter(GeminiWatchOrder::class.java).fromJson(rawJson)
-                        ?: return@withContext GeminiResult.Error("Failed to parse Gemini response.")
+                        val parsed = moshi.adapter(GeminiWatchOrder::class.java).fromJson(rawJson)
+                            ?: return@withContext GeminiResult.Error("Failed to parse Gemini response.")
 
-                    return@withContext GeminiResult.Success(sanitizeAgainstRawItems(parsed, rawItems))
-                } else {
-                    lastError = "Gemini error HTTP ${response.code}: $body"
-                    if (response.code == 401 || response.code == 429) continue
-                    else break
+                        return@withContext GeminiResult.Success(sanitizeAgainstRawItems(parsed, rawItems))
+                    } else {
+                        lastError = "Gemini error HTTP ${response.code}: $body"
+                        if (response.code == 401 || response.code == 429 || response.code == 503 || response.code == 404) continue
+                        else break
+                    }
+                } catch (e: Exception) {
+                    lastError = "Network error: ${e.message}"
+                    continue
                 }
-            } catch (e: Exception) {
-                lastError = "Network error: ${e.message}"
-                continue
             }
         }
 
@@ -305,28 +311,30 @@ class GeminiService @Inject constructor(
         )
         val requestJson = moshi.adapter(GeminiRequestBody::class.java).toJson(requestBody)
 
-        for (apiKey in allKeys) {
-            val request = Request.Builder()
-                .url("$ENDPOINT?key=$apiKey")
-                .post(requestJson.toRequestBody(mediaTypeJson))
-                .header("Content-Type", "application/json")
-                .build()
+        for (endpointUrl in MODEL_ENDPOINTS) {
+            for (apiKey in allKeys) {
+                val request = Request.Builder()
+                    .url("$endpointUrl?key=$apiKey")
+                    .post(requestJson.toRequestBody(mediaTypeJson))
+                    .header("Content-Type", "application/json")
+                    .build()
 
-            try {
-                val response = client.newCall(request).execute()
-                val body = response.body?.string() ?: continue
-                if (response.isSuccessful) {
-                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
-                    val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: continue
-                    val parsed = moshi.adapter(GeminiArcSegmentResponse::class.java).fromJson(rawJson)
-                    if (parsed != null && parsed.arcs.isNotEmpty()) return@withContext parsed.arcs
-                } else if (response.code == 401 || response.code == 429) {
+                try {
+                    val response = client.newCall(request).execute()
+                    val body = response.body?.string() ?: continue
+                    if (response.isSuccessful) {
+                        val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
+                        val rawJson = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: continue
+                        val parsed = moshi.adapter(GeminiArcSegmentResponse::class.java).fromJson(rawJson)
+                        if (parsed != null && parsed.arcs.isNotEmpty()) return@withContext parsed.arcs
+                    } else if (response.code == 401 || response.code == 429 || response.code == 503 || response.code == 404) {
+                        continue
+                    } else {
+                        break
+                    }
+                } catch (e: Exception) {
                     continue
-                } else {
-                    break
                 }
-            } catch (e: Exception) {
-                continue
             }
         }
         null
@@ -380,23 +388,25 @@ class GeminiService @Inject constructor(
         )
         val requestJson = moshi.adapter(GeminiRequestBody::class.java).toJson(requestBody)
 
-        for (apiKey in allKeys) {
-            val request = Request.Builder()
-                .url("$ENDPOINT?key=$apiKey")
-                .post(requestJson.toRequestBody(mediaTypeJson))
-                .build()
+        for (endpointUrl in MODEL_ENDPOINTS) {
+            for (apiKey in allKeys) {
+                val request = Request.Builder()
+                    .url("$endpointUrl?key=$apiKey")
+                    .post(requestJson.toRequestBody(mediaTypeJson))
+                    .build()
 
-            try {
-                val response = client.newCall(request).execute()
-                val body = response.body?.string() ?: continue
-                if (response.isSuccessful) {
-                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
-                    val text = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
-                    if (text == null || text.equals("UNKNOWN", ignoreCase = true)) return@withContext null
-                    return@withContext text
+                try {
+                    val response = client.newCall(request).execute()
+                    val body = response.body?.string() ?: continue
+                    if (response.isSuccessful) {
+                        val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
+                        val text = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+                        if (text == null || text.equals("UNKNOWN", ignoreCase = true)) return@withContext null
+                        return@withContext text
+                    }
+                } catch (e: Exception) {
+                    continue
                 }
-            } catch (e: Exception) {
-                continue
             }
         }
         null
@@ -438,31 +448,33 @@ class GeminiService @Inject constructor(
 
         var lastError: String? = null
 
-        for (apiKey in allKeys) {
-            val request = Request.Builder()
-                .url("$ENDPOINT?key=$apiKey")
-                .post(requestJson.toRequestBody(mediaTypeJson))
-                .header("Content-Type", "application/json")
-                .build()
+        for (endpointUrl in MODEL_ENDPOINTS) {
+            for (apiKey in allKeys) {
+                val request = Request.Builder()
+                    .url("$endpointUrl?key=$apiKey")
+                    .post(requestJson.toRequestBody(mediaTypeJson))
+                    .header("Content-Type", "application/json")
+                    .build()
 
-            try {
-                val response = client.newCall(request).execute()
-                val body = response.body?.string() ?: continue
+                try {
+                    val response = client.newCall(request).execute()
+                    val body = response.body?.string() ?: continue
 
-                if (response.isSuccessful) {
-                    val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
-                    val text = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
-                    if (text.isNullOrBlank()) {
-                        return@withContext GeminiExplanationResult.Error("Gemini returned an empty explanation.")
+                    if (response.isSuccessful) {
+                        val envelope = moshi.adapter(GeminiResponse::class.java).fromJson(body)
+                        val text = envelope?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+                        if (text.isNullOrBlank()) {
+                            return@withContext GeminiExplanationResult.Error("Gemini returned an empty explanation.")
+                        }
+                        return@withContext GeminiExplanationResult.Success(text)
+                    } else {
+                        lastError = "Gemini error HTTP ${response.code}: $body"
+                        if (response.code == 401 || response.code == 429 || response.code == 503 || response.code == 404) continue else break
                     }
-                    return@withContext GeminiExplanationResult.Success(text)
-                } else {
-                    lastError = "Gemini error HTTP ${response.code}: $body"
-                    if (response.code == 401 || response.code == 429) continue else break
+                } catch (e: Exception) {
+                    lastError = "Network error: ${e.message}"
+                    continue
                 }
-            } catch (e: Exception) {
-                lastError = "Network error: ${e.message}"
-                continue
             }
         }
 

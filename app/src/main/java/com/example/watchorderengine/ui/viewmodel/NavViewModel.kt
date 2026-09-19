@@ -83,14 +83,7 @@ class NavViewModel @Inject constructor(
         
         val isTasteDone = userPrefs.isTasteProfileCompleted.first()
 
-        // 2. If the user is Anonymous and hasn't finished onboarding, 
-        // force them to the Login screen. This prevents "Ghost Guests" 
-        // from bypassing the sign-in choice.
-        if (user.isAnonymous && !isTasteDone) {
-            return "login"
-        }
-        
-        // 3. Otherwise, follow standard onboarding flow
+        // 2. Follow standard onboarding flow: Taste Profile setup if not completed, else Home
         return if (!isTasteDone) "taste_profile_setup" else "home"
     }
 }
